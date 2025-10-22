@@ -1,0 +1,22 @@
+{
+    "jobs": [ 
+        {
+            "start": 0,
+            "stop": 20,
+            "type": "udp",
+            "dest": "10.0.1.5",
+            "count": 5000,
+            "size": 0,
+            "interval": 0.1
+        },
+        {
+            "start": 5,
+            "stop": 20,
+            "type": "udp",
+            "dest": "10.0.1.5",
+            "count": 2000,
+            "size": 0,
+            "interval": 0.05
+        }
+    ]
+}

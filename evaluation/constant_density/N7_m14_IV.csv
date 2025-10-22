@@ -1,0 +1,110 @@
+Concurrency: 10 | Throughput: 467.117174 | median: 8.841173 | Write Ratio: 0.500000 | Number of Keys: 1000 | Benchmark Time: 1m0.006357266s | size: 28009 | mean: 21.412278 | min: 6.472775 | max: 14177.226810
+
+Concurrency: 10 | Throughput: 261.461169 | median: 9.656165 | Write Ratio: 0.500000 | Number of Keys: 1000 | Benchmark Time: 1m0.005086334s | size: 15670 | mean: 38.283772 | min: 6.371331 | max: 26946.062911
+Concurrency: 10 | Throughput: 709.526806 | median: 8.382189 | Write Ratio: 0.500000 | Number of Keys: 1000 | Benchmark Time: 1m0.001961393s | size: 42554 | mean: 14.094595 | min: 6.425239 | max: 13282.697333
+
+Concurrency: 20 | Throughput: 324.602919 | median: 13.824097 | Write Ratio: 0.500000 | Number of Keys: 1000 | Benchmark Time: 1m0.005621732s | size: 19455 | mean: 61.672671 | min: 6.547788 | max: 22500.753835
+Concurrency: 20 | Throughput: 428.016940 | median: 12.170869 | Write Ratio: 0.500000 | Number of Keys: 1000 | Benchmark Time: 1m5.013781912s | size: 27811 | mean: 27.974352 | min: 6.583430 | max: 27488.334943
+
+
+
+
+Concurrency: 30 | Throughput: 1329.395162 | median: 10.910346 | Write Ratio: 0.500000 | Number of Keys: 1000 | Benchmark Time: 1m0.916424477s | size: 80922 | mean: 17.503379 | min: 6.436940 | max: 14161.734326
+
+
+Concurrency: 30 | Throughput: 1304.690190 | median: 12.516612 | Write Ratio: 0.500000 | Number of Keys: 1000 | Benchmark Time: 1m0.00198406s | size: 78225 | mean: 23.001042 | min: 6.486222 | max: 12959.894343
+
+Concurrency: 60 | Throughput: 1490.241128 | median: 15.953856 | Write Ratio: 0.500000 | Number of Keys: 1000 | Benchmark Time: 1m0.005725469s | size: 89309 | mean: 40.300835 | min: 6.648508 | max: 13544.747833
+Concurrency: 60 | Throughput: 2015.116499 | median: 18.969612 | Write Ratio: 0.500000 | Number of Keys: 1000 | Benchmark Time: 1m0.015884975s | size: 120832 | mean: 29.781021 | min: 6.677008 | max: 14111.695618
+
+Concurrency: 60 | Throughput: 1412.922059 | median: 15.520032 | Write Ratio: 0.500000 | Number of Keys: 1000 | Benchmark Time: 1m0.00260201s | size: 84680 | mean: 42.486819 | min: 6.552035 | max: 28060.969245
+
+
+Concurrency: 80 | Throughput: 2786.278434 | median: 20.252253 | Write Ratio: 0.500000 | Number of Keys: 1000 | Benchmark Time: 1m0.001900012s | size: 167022 | mean: 28.720537 | min: 6.753203 | max: 10286.076650
+Concurrency: 80 | Throughput: 1450.644984 | median: 19.703398 | Write Ratio: 0.500000 | Number of Keys: 1000 | Benchmark Time: 1m0.000896795s | size: 86881 | mean: 55.230264 | min: 6.766143 | max: 28193.073459
+Concurrency: 80 | Throughput: 2213.888104 | median: 19.031409 | Write Ratio: 0.500000 | Number of Keys: 1000 | Benchmark Time: 1m0.003032565s | size: 132699 | mean: 36.156460 | min: 6.682017 | max: 13836.712003
+Concurrency: 100 | Throughput: 1735.196933 | median: 25.453090 | Write Ratio: 0.500000 | Number of Keys: 1000 | Benchmark Time: 1m2.001607983s | size: 107385 | mean: 32.437781 | min: 7.654271 | max: 27430.718500
+Concurrency: 100 | Throughput: 337.297797 | median: 25.665647 | Write Ratio: 0.500000 | Number of Keys: 1000 | Benchmark Time: 1m7.089083375s | size: 22530 | mean: 62.375242 | min: 6.878356 | max: 53548.207006
+Concurrency: 100 | Throughput: 3251.718091 | median: 22.313891 | Write Ratio: 0.500000 | Number of Keys: 1000 | Benchmark Time: 1m0.003049012s | size: 194913 | mean: 30.763344 | min: 6.672207 | max: 6242.193977
+Concurrency: 100 | Throughput: 2629.030854 | median: 24.059526 | Write Ratio: 0.500000 | Number of Keys: 1000 | Benchmark Time: 1m0.001578057s | size: 157546 | mean: 38.049342 | min: 6.722994 | max: 6638.592018
+Concurrency: 100 | Throughput: 540.880845 | median: 26.352539 | Write Ratio: 0.500000 | Number of Keys: 1000 | Benchmark Time: 1m0.000276058s | size: 32253 | mean: 185.960405 | min: 13.377761 | max: 29148.024263
+Concurrency: 200 | Throughput: 1439.690117 | median: 45.255811 | Write Ratio: 0.500000 | Number of Keys: 1000 | Benchmark Time: 1m3.829013548s | size: 91564 | mean: 127.480364 | min: 13.945174 | max: 14507.298880
+
+
+Concurrency: 200 | Throughput: 1677.364812 | median: 46.251613 | Write Ratio: 0.500000 | Number of Keys: 1000 | Benchmark Time: 1m0.002451026s | size: 100246 | mean: 119.544232 | min: 13.499852 | max: 23764.835458
+
+
+Concurrency: 300 | Throughput: 298.002014 | median: 67.998943 | Write Ratio: 0.500000 | Number of Keys: 1000 | Benchmark Time: 1m0.922406963s | size: 18110 | mean: 105.703753 | min: 26.190810 | max: 54711.231545
+Concurrency: 300 | Throughput: 956.091621 | median: 63.273288 | Write Ratio: 0.500000 | Number of Keys: 1000 | Benchmark Time: 1m5.358798895s | size: 62263 | mean: 251.573237 | min: 23.368654 | max: 16793.451200
+Concurrency: 300 | Throughput: 467.639339 | median: 61.992689 | Write Ratio: 0.500000 | Number of Keys: 1000 | Benchmark Time: 1m3.151231186s | size: 29237 | mean: 486.896807 | min: 20.612940 | max: 15940.941717
+Concurrency: 300 | Throughput: 1832.267483 | median: 64.291180 | Write Ratio: 0.500000 | Number of Keys: 1000 | Benchmark Time: 1m2.630047792s | size: 114155 | mean: 93.116395 | min: 7.413086 | max: 27259.724020
+Concurrency: 600 | Throughput: 1808.182565 | median: 137.373202 | Write Ratio: 0.500000 | Number of Keys: 1000 | Benchmark Time: 1m0.009427186s | size: 107731 | mean: 333.580301 | min: 17.832190 | max: 14826.786656
+Concurrency: 600 | Throughput: 1076.831624 | median: 118.218215 | Write Ratio: 0.500000 | Number of Keys: 1000 | Benchmark Time: 1m0.001952564s | size: 64257 | mean: 558.713345 | min: 17.852418 | max: 28767.413947
+
+
+Concurrency: 600 | Throughput: 2173.420282 | median: 124.835883 | Write Ratio: 0.500000 | Number of Keys: 1000 | Benchmark Time: 1m2.61881381s | size: 134968 | mean: 253.661333 | min: 11.252447 | max: 28007.580500
+Concurrency: 800 | Throughput: 2018.625287 | median: 174.322178 | Write Ratio: 0.500000 | Number of Keys: 1000 | Benchmark Time: 1m0.003211484s | size: 120326 | mean: 398.003907 | min: 8.260960 | max: 26956.545441
+Concurrency: 800 | Throughput: 2126.306879 | median: 170.455100 | Write Ratio: 0.500000 | Number of Keys: 1000 | Benchmark Time: 1m0.013444563s | size: 126635 | mean: 378.211338 | min: 9.664088 | max: 13825.777713
+
+Concurrency: 800 | Throughput: 2462.541118 | median: 171.128932 | Write Ratio: 0.500000 | Number of Keys: 1000 | Benchmark Time: 1m0.000216403s | size: 146156 | mean: 327.416699 | min: 12.024602 | max: 18975.796837
+
+Concurrency: 1000 | Throughput: 2953.589145 | median: 222.416743 | Write Ratio: 0.500000 | Number of Keys: 1000 | Benchmark Time: 1m0.005637656s | size: 176347 | mean: 338.866472 | min: 0.048008 | max: 13342.963101
+Concurrency: 1000 | Throughput: 1470.080711 | median: 224.106655 | Write Ratio: 0.500000 | Number of Keys: 1000 | Benchmark Time: 1m4.714814148s | size: 94769 | mean: 401.463060 | min: 0.049155 | max: 26675.259334
+
+Concurrency: 1000 | Throughput: 1474.807733 | median: 223.225492 | Write Ratio: 0.500000 | Number of Keys: 1000 | Benchmark Time: 1m0.171911243s | size: 87904 | mean: 603.441638 | min: 29.094846 | max: 15014.568453
+Concurrency: 1000 | Throughput: 1720.275536 | median: 225.478055 | Write Ratio: 0.500000 | Number of Keys: 1000 | Benchmark Time: 1m0.492634959s | size: 103372 | mean: 498.352564 | min: 0.046272 | max: 28595.167339
+
+Concurrency: 10 | Throughput: 196.750250 | median: 17.118109 | Write Ratio: 0.500000 | Number of Keys: 1000 | Benchmark Time: 1m0.005006242s | size: 11797 | mean: 50.845781 | min: 12.836464 | max: 29702.348165
+Concurrency: 10 | Throughput: 270.523682 | median: 13.188779 | Write Ratio: 0.500000 | Number of Keys: 1000 | Benchmark Time: 1m1.007597926s | size: 16495 | mean: 33.225450 | min: 6.673260 | max: 24238.451098
+Concurrency: 10 | Throughput: 914.677897 | median: 8.973595 | Write Ratio: 0.500000 | Number of Keys: 1000 | Benchmark Time: 1m0.003636436s | size: 54867 | mean: 10.930389 | min: 6.569087 | max: 617.449396
+Concurrency: 10 | Throughput: 23.714754 | median: 22.462247 | Write Ratio: 0.500000 | Number of Keys: 1000 | Benchmark Time: 1m0.004840231s | size: 1422 | mean: 421.878289 | min: 13.051478 | max: 49033.161964
+
+Concurrency: 20 | Throughput: 1335.458039 | median: 10.692224 | Write Ratio: 0.500000 | Number of Keys: 1000 | Benchmark Time: 1m0.013866168s | size: 80106 | mean: 14.973397 | min: 6.535672 | max: 12053.352438
+Concurrency: 20 | Throughput: 633.837530 | median: 14.983911 | Write Ratio: 0.500000 | Number of Keys: 1000 | Benchmark Time: 1m0.001180391s | size: 37993 | mean: 31.579180 | min: 6.618689 | max: 15723.200958
+
+Concurrency: 20 | Throughput: 309.806514 | median: 19.085901 | Write Ratio: 0.500000 | Number of Keys: 1000 | Benchmark Time: 1m0.008421864s | size: 18585 | mean: 64.556000 | min: 6.664263 | max: 27458.853115
+
+
+Concurrency: 30 | Throughput: 279.772123 | median: 12.918575 | Write Ratio: 0.500000 | Number of Keys: 1000 | Benchmark Time: 1m4.320203862s | size: 17974 | mean: 19.261601 | min: 6.633349 | max: 54600.371688
+Concurrency: 30 | Throughput: 75.171947 | median: 13.880615 | Write Ratio: 0.500000 | Number of Keys: 1000 | Benchmark Time: 1m6.314631852s | size: 4956 | mean: 165.552765 | min: 6.733312 | max: 40288.281647
+
+Concurrency: 60 | Throughput: 2073.548643 | median: 19.212977 | Write Ratio: 0.500000 | Number of Keys: 1000 | Benchmark Time: 1m0.008720042s | size: 124311 | mean: 28.944087 | min: 6.770573 | max: 13891.494861
+Concurrency: 60 | Throughput: 648.948023 | median: 22.355121 | Write Ratio: 0.500000 | Number of Keys: 1000 | Benchmark Time: 1m2.282337854s | size: 40346 | mean: 72.389141 | min: 7.027082 | max: 31869.279876
+Concurrency: 60 | Throughput: 2037.141031 | median: 21.451885 | Write Ratio: 0.500000 | Number of Keys: 1000 | Benchmark Time: 1m6.411209618s | size: 135169 | mean: 26.428090 | min: 6.757646 | max: 6985.544462
+
+
+Concurrency: 80 | Throughput: 2008.355444 | median: 25.172959 | Write Ratio: 0.500000 | Number of Keys: 1000 | Benchmark Time: 1m0.444479757s | size: 121234 | mean: 35.933244 | min: 6.973903 | max: 7033.405324
+Concurrency: 80 | Throughput: 864.071082 | median: 25.791241 | Write Ratio: 0.500000 | Number of Keys: 1000 | Benchmark Time: 1m0.002008021s | size: 51686 | mean: 92.833957 | min: 7.059392 | max: 36089.175440
+Concurrency: 80 | Throughput: 1961.072755 | median: 24.433917 | Write Ratio: 0.500000 | Number of Keys: 1000 | Benchmark Time: 1m0.001343496s | size: 117514 | mean: 40.814227 | min: 6.988962 | max: 7487.968169
+Concurrency: 80 | Throughput: 475.161203 | median: 29.379505 | Write Ratio: 0.500000 | Number of Keys: 1000 | Benchmark Time: 1m1.095055377s | size: 28870 | mean: 164.027043 | min: 8.347750 | max: 33952.356161
+
+Concurrency: 100 | Throughput: 1188.535704 | median: 33.646881 | Write Ratio: 0.500000 | Number of Keys: 1000 | Benchmark Time: 1m3.912257542s | size: 75762 | mean: 66.501456 | min: 6.991398 | max: 13655.152811
+Concurrency: 100 | Throughput: 2011.501763 | median: 33.616125 | Write Ratio: 0.500000 | Number of Keys: 1000 | Benchmark Time: 1m0.000444556s | size: 120493 | mean: 49.756453 | min: 6.858222 | max: 7128.529052
+Concurrency: 100 | Throughput: 792.724356 | median: 29.234811 | Write Ratio: 0.500000 | Number of Keys: 1000 | Benchmark Time: 1m3.336012891s | size: 50146 | mean: 108.704051 | min: 7.087666 | max: 26382.125840
+Concurrency: 100 | Throughput: 528.305850 | median: 32.340682 | Write Ratio: 0.500000 | Number of Keys: 1000 | Benchmark Time: 1m2.810207413s | size: 32984 | mean: 172.044194 | min: 8.387405 | max: 27375.978202
+
+Concurrency: 200 | Throughput: 2091.720007 | median: 63.149332 | Write Ratio: 0.500000 | Number of Keys: 1000 | Benchmark Time: 1m4.585125907s | size: 134866 | mean: 75.185583 | min: 7.445122 | max: 14290.623118
+
+Concurrency: 200 | Throughput: 966.973285 | median: 59.863714 | Write Ratio: 0.500000 | Number of Keys: 1000 | Benchmark Time: 1m3.908694219s | size: 61398 | mean: 171.708477 | min: 7.647045 | max: 25945.712154
+Concurrency: 200 | Throughput: 2818.161421 | median: 54.637299 | Write Ratio: 0.500000 | Number of Keys: 1000 | Benchmark Time: 1m0.005079464s | size: 168704 | mean: 71.025540 | min: 7.122141 | max: 4238.098748
+Concurrency: 200 | Throughput: 1658.606206 | median: 56.511117 | Write Ratio: 0.500000 | Number of Keys: 1000 | Benchmark Time: 1m4.767031261s | size: 107023 | mean: 110.373409 | min: 7.140545 | max: 26945.469070
+Concurrency: 300 | Throughput: 1092.763236 | median: 94.703575 | Write Ratio: 0.500000 | Number of Keys: 1000 | Benchmark Time: 1m5.153180165s | size: 70597 | mean: 251.686666 | min: 23.670115 | max: 12503.213415
+
+Concurrency: 300 | Throughput: 1720.064408 | median: 92.201838 | Write Ratio: 0.500000 | Number of Keys: 1000 | Benchmark Time: 1m0.005311157s | size: 102613 | mean: 175.036735 | min: 7.872923 | max: 26850.769885
+Concurrency: 300 | Throughput: 1396.941462 | median: 84.541945 | Write Ratio: 0.500000 | Number of Keys: 1000 | Benchmark Time: 1m3.214531456s | size: 88187 | mean: 194.916718 | min: 7.589703 | max: 26855.503416
+
+Concurrency: 600 | Throughput: 420.732531 | median: 199.694457 | Write Ratio: 0.500000 | Number of Keys: 1000 | Benchmark Time: 1m5.122133333s | size: 27153 | mean: 369.718109 | min: 83.126070 | max: 48461.766599
+Concurrency: 600 | Throughput: 1033.041389 | median: 165.620189 | Write Ratio: 0.500000 | Number of Keys: 1000 | Benchmark Time: 1m0.329625357s | size: 61915 | mean: 449.734550 | min: 52.840741 | max: 28620.081321
+Concurrency: 600 | Throughput: 1916.519775 | median: 168.897647 | Write Ratio: 0.500000 | Number of Keys: 1000 | Benchmark Time: 1m0.006685814s | size: 114404 | mean: 313.697355 | min: 8.482512 | max: 26467.698518
+Concurrency: 600 | Throughput: 715.684713 | median: 168.431919 | Write Ratio: 0.500000 | Number of Keys: 1000 | Benchmark Time: 1m5.604307521s | size: 46850 | mean: 506.116794 | min: 61.266627 | max: 26115.265722
+Concurrency: 600 | Throughput: 1820.934153 | median: 172.858093 | Write Ratio: 0.500000 | Number of Keys: 1000 | Benchmark Time: 1m0.018095564s | size: 108483 | mean: 330.542721 | min: 9.026754 | max: 13835.180875
+
+
+
+Concurrency: 800 | Throughput: 2707.142634 | median: 239.029162 | Write Ratio: 0.500000 | Number of Keys: 1000 | Benchmark Time: 1m0.001271439s | size: 160925 | mean: 297.024208 | min: 7.702313 | max: 5591.691630
+
+Concurrency: 1000 | Throughput: 2181.542076 | median: 321.649193 | Write Ratio: 0.500000 | Number of Keys: 1000 | Benchmark Time: 1m0.024971063s | size: 129896 | mean: 459.834868 | min: 0.059947 | max: 34299.733568
+Concurrency: 1000 | Throughput: 921.176452 | median: 305.943696 | Write Ratio: 0.500000 | Number of Keys: 1000 | Benchmark Time: 1m0.712581018s | size: 55572 | mean: 980.061278 | min: 0.062104 | max: 14447.972036
+
+Concurrency: 1000 | Throughput: 2147.168973 | median: 278.033349 | Write Ratio: 0.500000 | Number of Keys: 1000 | Benchmark Time: 1m0.005990033s | size: 127673 | mean: 468.157839 | min: 0.061109 | max: 8180.862892
+Concurrency: 1000 | Throughput: 2637.343854 | median: 303.195719 | Write Ratio: 0.500000 | Number of Keys: 1000 | Benchmark Time: 1m0.011894075s | size: 156812 | mean: 380.223595 | min: 0.064765 | max: 10965.021428

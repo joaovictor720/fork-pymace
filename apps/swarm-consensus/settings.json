@@ -1,0 +1,7 @@
+{
+    "dataPort" : 56555,
+    "consensusPort" : 57555,
+    "maxUDPPacket" : 1500,
+    "ipv4bcast": "10.0.0.255",
+    "report_folder" : "/home/mace/temp/reports/"
+}

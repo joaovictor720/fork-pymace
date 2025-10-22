@@ -1,0 +1,7 @@
+{
+  "networkPort" : 56123,
+  "helloInterval": 0.5,
+  "visibleTimeout": 20,
+  "dynamic" : "True",
+  "report_folder": "/home/mace/temp/membership"
+}

@@ -1,0 +1,11 @@
+{
+    "dataPort" : 56555,
+    "helloPort" : 57555,
+    "maxUDPPacket" : 1500,
+    "ipv4bcast": "10.0.0.255",
+    "report_folder" : "/home/mace/temp/reports/",
+    "mean_payload": 500,
+    "stddev_payload": 120,
+    "FLOPS": 50000000,
+    "beta": 1
+}

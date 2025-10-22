@@ -1,0 +1,10 @@
+flask==2.1.1
+flask_socketio==4.3.2
+apscheduler
+ping3
+geopy
+pymobility
+dpkt
+seaborn
+Werkzeug==2.0.1
+tqdm

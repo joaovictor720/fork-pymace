@@ -1,0 +1,7 @@
+{
+    "networkPort" : 56123,
+    "ipv4bcast": "10.0.1.255",
+    "interface": "bat",
+    "membership_len": 9,
+    "network": "10.0.1."
+}
