@@ -1,14 +1,15 @@
 #!/bin/bash
 
 # Chemin vers le répertoire de travail et le fichier de configuration
-WORKDIR="$HOME/Documents/pymace"
-CONFIG_FILE="/home/mace/Downloads/paxi/bin/config_3_10.json"
+WORKDIR="$HOME/git/fork-pymace"
+CONFIG_FILE="/home/mace/git/fork-pymace/apps/crdt-replica/node-config/crdt-config.json"
+SCENARIO_FILE="./scenarios/swarm-crdt.json"
 
 # Liste des valeurs de Concurrency
-CONCURRENCY_VALUES=(10 20 30 60 80 100 200 300 600 800 1000)
+CONCURRENCY_VALUES=(10) #20 30 60 80 100 200 300 600 800 1000)
 
 # Nombre d'itérations pour chaque valeur de Concurrency
-ITERATIONS=5
+ITERATIONS=3
 
 # Fonction pour modifier le fichier JSON
 modify_concurrency() {
@@ -23,7 +24,7 @@ for concurrency in "${CONCURRENCY_VALUES[@]}"; do
     echo "=== Starting tests for Concurrency: $concurrency ==="
 
     # Modifier la valeur de Concurrency dans le fichier JSON
-    modify_concurrency "$concurrency"
+    #modify_concurrency "$concurrency"
 
     # Boucle d'itérations pour la valeur actuelle de Concurrency
     for i in $(seq 1 $ITERATIONS); do
@@ -31,7 +32,7 @@ for concurrency in "${CONCURRENCY_VALUES[@]}"; do
         echo "Iteration $i: Starting pymace script with Concurrency: $concurrency..."
 
         # Lancer le programme pymace
-        sudo ./pymace.py -s ./scenarios/swarm-paxi-mob-replica7_mX.json
+        sudo ./pymace.py -s $SCENARIO_FILE
 
         # Attendre que le programme se termine
         while pgrep -f "./pymace.py" > /dev/null; do
