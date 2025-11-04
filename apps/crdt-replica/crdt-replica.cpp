@@ -13,6 +13,7 @@
 #include <arpa/inet.h>
 #include <sys/socket.h>
 #include <unistd.h>
+#include <mutex>
 
 #include "/home/mace/git/delta-enabled-crdts/delta-crdts.cc"
 
@@ -20,6 +21,8 @@ using json = nlohmann::json;
 using namespace std::chrono_literals;
 
 constexpr size_t MSG_MAX = 4096;
+
+std::mutex gc_mtx;
 
 struct node_config {
     std::string id;
@@ -42,7 +45,6 @@ void print_config(const node_config& nc) {
     std::cout << "\n";
     std::cout << nc.ops_per_sec << "\n";
     std::cout << nc.duration << "\n";
-    std::cout << nc.distribution << "\n";
     std::cout << nc.seed << "\n";
     std::cout << nc.log_file << "\n";
     std::cout << nc.monitor_interval << "\n";
@@ -71,7 +73,10 @@ node_config load_config(const std::string& cfg_path, const std::string& id) {
     nc.ops_per_sec = cfg.value("ops_per_sec", 1.0);
     nc.duration = cfg.value("duration", 10);
     nc.distribution = cfg.value("distribution", "uniform");
-    nc.seed = cfg.value("seed", 0);
+
+    // if not specified, the chosen seed will be truly random (operating system's entropy)
+    std::random_device rd;
+    nc.seed = cfg.value("seed", rd());
     nc.monitor_interval = cfg.value("monitor_interval", 1.0);
 
     std::string log_dir = cfg.value("log_dir", ".");
@@ -87,7 +92,7 @@ struct stats {
     std::atomic<int> recv_bytes{0};
 };
 
-// ---------------- networking ----------------
+// networking
 void send_msg(int sockfd, const sockaddr_in& peer, const json& msg, stats& stats) {
     std::string s = msg.dump();
     ssize_t sent = sendto(sockfd, s.data(), s.size(), 0, (sockaddr*)&peer, sizeof(peer));
@@ -115,7 +120,11 @@ void recv_loop(int sockfd, gcounter<int, std::string>& gc, stats& stats) {
                 int val = msg.value("value", 1);
                 gcounter<int, std::string> temp(sender);
                 gcounter<int, std::string> delta = temp.inc(val);
+
+                std::unique_lock<std::mutex> lock(gc_mtx);
                 gc.join(delta);
+                lock.unlock();
+                
                 stats.recv_msgs++;
                 stats.recv_bytes += n;
             }
@@ -125,7 +134,7 @@ void recv_loop(int sockfd, gcounter<int, std::string>& gc, stats& stats) {
     }
 }
 
-// ---------------- workload runners ----------------
+// workload runners
 void run_trace_mode(const json& cfg, gcounter<int, std::string>& gc, int sockfd, const std::vector<sockaddr_in>& peers, stats& stats) {
     std::ifstream f(cfg["trace_file"]);
     json trace;
@@ -143,10 +152,10 @@ void run_trace_mode(const json& cfg, gcounter<int, std::string>& gc, int sockfd,
     }
 }
 
+// operations order follow some given random distribution
 void run_random_mode(const node_config& nc, gcounter<int, std::string>& gc, int sockfd, const std::vector<sockaddr_in>& peers, stats& stats) {
     double ops_per_sec = nc.ops_per_sec;
     double duration = nc.duration;
-    std::string distrib = nc.distribution;
     unsigned seed = nc.seed;
     std::default_random_engine gen(seed);
     std::exponential_distribution<double> expd(ops_per_sec);
@@ -158,11 +167,16 @@ void run_random_mode(const node_config& nc, gcounter<int, std::string>& gc, int 
             break;
         }
 
-        double wait = (distrib == "periodic") ? 1.0 / ops_per_sec : expd(gen);
+        double wait = expd(gen);
         std::this_thread::sleep_for(std::chrono::duration<double>(wait));
 
-        int val = 1;
+        std::uniform_int_distribution<int> inc_dist(1, 10);
+        int val = inc_dist(gen);
+        
+        std::unique_lock<std::mutex> lock(gc_mtx);
         gc.inc(val);
+        lock.unlock();
+
         json msg = {
             {"type", "inc"},
             {"id", nc.id},
@@ -174,9 +188,9 @@ void run_random_mode(const node_config& nc, gcounter<int, std::string>& gc, int 
     }
 }
 
-// ---------------- monitor loop ----------------
+// monitor loop
 void monitor_loop(gcounter<int, std::string>& gc, stats& stats, double interval, const std::string& logfile) {
-    std::ofstream log(logfile, std::ios::app);
+    std::ofstream log(logfile, std::ios::trunc);
     while (true) {
         std::this_thread::sleep_for(std::chrono::duration<double>(interval));
         int local = gc.local();
@@ -193,7 +207,7 @@ void monitor_loop(gcounter<int, std::string>& gc, stats& stats, double interval,
     }
 }
 
-// ---------------- main ----------------
+// main
 int main(int argc, char* argv[]) {
     if (argc < 3) {
         std::cerr << "Usage: " << argv[0] << " -id <ID> -config <config.json>\n";

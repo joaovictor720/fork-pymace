@@ -41,7 +41,7 @@
             "fixed"
           ]
         },
-        "function": ["sleep 11 && cd /home/mace/git/fork-pymace/apps/crdt-replica/ && xterm -hold -e ./crdt-replica -id 1.1 -config /home/mace/git/fork-pymace/apps/crdt-replica/node-config/crdt-config.json"]
+        "function": ["sleep 10 && cd /home/mace/git/fork-pymace/apps/crdt-replica/ && xterm -hold -e ./crdt-replica -id 1.1 -config /home/mace/git/fork-pymace/apps/crdt-replica/node-config/crdt-config.json"]
       },
       {
         "name": "uav1",
@@ -84,7 +84,7 @@
             "fixed"
           ]
         },
-        "function": ["sleep 11 && cd /home/mace/git/fork-pymace/apps/crdt-replica/ && xterm -hold -e ./crdt-replica -id 1.2 -config /home/mace/git/fork-pymace/apps/crdt-replica/node-config/crdt-config.json"]
+        "function": ["sleep 10 && cd /home/mace/git/fork-pymace/apps/crdt-replica/ && xterm -hold -e ./crdt-replica -id 1.2 -config /home/mace/git/fork-pymace/apps/crdt-replica/node-config/crdt-config.json"]
       },
       {
         "name": "uav2",
@@ -127,7 +127,7 @@
             "fixed"
           ]
         },
-        "function": ["sleep 11 && cd /home/mace/git/fork-pymace/apps/crdt-replica/ && xterm -hold -e ./crdt-replica -id 1.3 -config /home/mace/git/fork-pymace/apps/crdt-replica/node-config/crdt-config.json"]
+        "function": ["sleep 10 && cd /home/mace/git/fork-pymace/apps/crdt-replica/ && xterm -hold -e ./crdt-replica -id 1.3 -config /home/mace/git/fork-pymace/apps/crdt-replica/node-config/crdt-config.json"]
       }
     ],
     "settings": {
@@ -139,7 +139,7 @@
       "username": "mace",
       "disks_folder": "/mnt/pymace/",
       "report_folder": "/home/mace/git/fork-pymace/reports/",
-      "runtime": 52
+      "runtime": 22
     },
     "networks": [
       {
