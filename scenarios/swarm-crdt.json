@@ -30,13 +30,14 @@
             "delay": 35,
             "duration": 15
           },
-          "mobility": { "model": "random_waypoint",
-          "zone_x" : 194,
-          "zone_y" : 194,
-          "zone_z" : 194,
-          "velocity_upper" : 2.1,
-          "velocity_lower" : 2
-        },
+          "mobility": {
+            "model": "random_waypoint",
+            "zone_x" : 194,
+            "zone_y" : 194,
+            "zone_z" : 194,
+            "velocity_upper" : 0,
+            "velocity_lower" : 0
+          },
           "network": [
             "fixed"
           ]
@@ -73,13 +74,14 @@
             "delay": 35,
             "duration": 15
           },
-          "mobility": { "model": "random_waypoint",
-          "zone_x" : 194,
-          "zone_y" : 194,
-          "zone_z" : 194,
-          "velocity_upper" : 2.1,
-          "velocity_lower" : 2
-        },
+          "mobility": {
+            "model": "random_waypoint",
+            "zone_x" : 194,
+            "zone_y" : 194,
+            "zone_z" : 194,
+            "velocity_upper" : 0,
+            "velocity_lower" : 0
+          },
           "network": [
             "fixed"
           ]
@@ -116,13 +118,14 @@
             "delay": 35,
             "duration": 15
           },
-          "mobility": { "model": "random_waypoint",
-          "zone_x" : 194,
-          "zone_y" : 194,
-          "zone_z" : 194,
-          "velocity_upper" : 2.1,
-          "velocity_lower" : 2
-        },
+          "mobility": {
+            "model": "random_waypoint",
+            "zone_x" : 194,
+            "zone_y" : 194,
+            "zone_z" : 194,
+            "velocity_upper" : 0,
+            "velocity_lower" : 0
+          },
           "network": [
             "fixed"
           ]
@@ -135,11 +138,11 @@
       "core": "True",
       "dump": "False",
       "number_of_nodes": 9,
-      "start_delay": 5,
+      "start_delay": 10,
       "username": "mace",
       "disks_folder": "/mnt/pymace/",
       "report_folder": "/home/mace/git/fork-pymace/reports/",
-      "runtime": 22
+      "runtime": 40
     },
     "networks": [
       {
@@ -147,7 +150,7 @@
         "prefix": "10.0.0.0/24",
         "routing": "batman",
         "settings": {
-          "range": "160",
+          "range": "2000",
           "bandwidth": "433000000",
           "delay": "3000",
           "jitter": "0",
@@ -160,7 +163,7 @@
         "prefix" : "10.1.0.0/24",
         "routing": "batman",
         "settings": {
-            "range": "160",
+            "range": "2000",
             "bandwidth": "433300000",
             "delay": "3000",
             "jitter": "0",

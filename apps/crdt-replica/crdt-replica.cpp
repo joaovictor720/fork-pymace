@@ -14,6 +14,10 @@
 #include <sys/socket.h>
 #include <unistd.h>
 #include <mutex>
+#include <queue>
+#include <condition_variable>
+#include <sstream>
+#include <algorithm>
 
 #include "/home/mace/git/delta-enabled-crdts/delta-crdts.cc"
 
@@ -23,6 +27,9 @@ using namespace std::chrono_literals;
 constexpr size_t MSG_MAX = 4096;
 
 std::mutex gc_mtx;
+std::queue<gcounter<int, std::string>> send_queue;
+std::mutex q_mutex;
+std::condition_variable q_cv;
 
 struct node_config {
     std::string id;
@@ -34,6 +41,13 @@ struct node_config {
     int seed;
     std::string log_file;
     double monitor_interval;
+};
+
+struct stats {
+    std::atomic<int> sent_msgs{0};
+    std::atomic<int> recv_msgs{0};
+    std::atomic<int> sent_bytes{0};
+    std::atomic<int> recv_bytes{0};
 };
 
 void print_config(const node_config& nc) {
@@ -85,12 +99,6 @@ node_config load_config(const std::string& cfg_path, const std::string& id) {
     return nc;
 }
 
-struct stats {
-    std::atomic<int> sent_msgs{0};
-    std::atomic<int> recv_msgs{0};
-    std::atomic<int> sent_bytes{0};
-    std::atomic<int> recv_bytes{0};
-};
 
 // networking
 void send_msg(int sockfd, const sockaddr_in& peer, const json& msg, stats& stats) {
@@ -99,6 +107,32 @@ void send_msg(int sockfd, const sockaddr_in& peer, const json& msg, stats& stats
     if (sent > 0) {
         stats.sent_msgs++;
         stats.sent_bytes += sent;
+    }
+}
+
+void send_msg(int sockfd, const sockaddr_in& peer, const std::string& msg, stats& stats) {
+    ssize_t sent = sendto(sockfd, msg.data(), msg.size(), 0, (sockaddr*)&peer, sizeof(peer));
+    if (sent > 0) {
+        stats.sent_msgs++;
+        stats.sent_bytes += sent;
+    }
+}
+
+void send_loop(int sockfd, const std::vector<sockaddr_in>& peers, stats& stats) {
+    while (true) {
+        std::unique_lock<std::mutex> lock(q_mutex);
+        q_cv.wait(lock, []{
+            return !send_queue.empty();
+        });
+
+        gcounter<int, std::string> next = send_queue.front();
+        send_queue.pop();
+        lock.unlock();
+
+        for (auto& p : peers) {
+            send_msg(sockfd, p, next.serialize(), stats);
+            std::this_thread::sleep_for(20ms);
+        }
     }
 }
 
@@ -114,43 +148,19 @@ void recv_loop(int sockfd, gcounter<int, std::string>& gc, stats& stats) {
         }
 
         try {
-            auto msg = json::parse(std::string(buffer, n));
-            if (msg["type"] == "inc") {
-                std::string sender = msg["id"];
-                int val = msg.value("value", 1);
-                gcounter<int, std::string> temp(sender);
-                gcounter<int, std::string> delta = temp.inc(val);
-
+            auto sender_gcounter = gcounter<int, std::string>::deserialize(std::string(buffer, n));
+            {
                 std::unique_lock<std::mutex> lock(gc_mtx);
-                gc.join(delta);
-                lock.unlock();
-                
-                stats.recv_msgs++;
-                stats.recv_bytes += n;
+                gc.join(sender_gcounter);
             }
+            stats.recv_msgs++;
+            stats.recv_bytes += n;
         } catch (...) {
             continue;
         }
     }
 }
 
-// workload runners
-void run_trace_mode(const json& cfg, gcounter<int, std::string>& gc, int sockfd, const std::vector<sockaddr_in>& peers, stats& stats) {
-    std::ifstream f(cfg["trace_file"]);
-    json trace;
-    f >> trace;
-    auto start = std::chrono::steady_clock::now();
-
-    for (auto& ev : trace) {
-        double t = ev.value("time", 0.0);
-        int val = ev.value("value", 1);
-        auto target = start + std::chrono::duration<double>(t);
-        std::this_thread::sleep_until(target);
-        gc.inc(val);
-        json msg = {{"type", "inc"}, {"id", cfg["id"]}, {"value", val}};
-        for (auto& p : peers) send_msg(sockfd, p, msg, stats);
-    }
-}
 
 // operations order follow some given random distribution
 void run_random_mode(const node_config& nc, gcounter<int, std::string>& gc, int sockfd, const std::vector<sockaddr_in>& peers, stats& stats) {
@@ -173,18 +183,15 @@ void run_random_mode(const node_config& nc, gcounter<int, std::string>& gc, int 
         std::uniform_int_distribution<int> inc_dist(1, 10);
         int val = inc_dist(gen);
         
-        std::unique_lock<std::mutex> lock(gc_mtx);
-        gc.inc(val);
-        lock.unlock();
-
-        json msg = {
-            {"type", "inc"},
-            {"id", nc.id},
-            {"value", val}
-        };
-        for (auto& p : peers) {
-            send_msg(sockfd, p, msg, stats);
+        gcounter<int, std::string> delta_obj;
+        {
+            std::unique_lock<std::mutex> gc_lock(gc_mtx);
+            delta_obj = gc.inc(val);
         }
+
+        std::unique_lock<std::mutex> op_lock(q_mutex);
+        send_queue.push(delta_obj);
+        q_cv.notify_one();
     }
 }
 
@@ -198,11 +205,15 @@ void monitor_loop(gcounter<int, std::string>& gc, stats& stats, double interval,
         log << std::fixed << std::chrono::duration<double>(std::chrono::steady_clock::now().time_since_epoch()).count()
             << ", local=" << local << ", total=" << total
             << ", sent_msgs=" << stats.sent_msgs
-            << ", recv_msgs=" << stats.recv_msgs << "\n";
+            << ", recv_msgs=" << stats.recv_msgs 
+            << ", sent_bytes=" << stats.sent_bytes 
+            << ", recv_bytes=" << stats.recv_bytes << "\n";
         std::cout << std::fixed << std::chrono::duration<double>(std::chrono::steady_clock::now().time_since_epoch()).count()
             << ", local=" << local << ", total=" << total
             << ", sent_msgs=" << stats.sent_msgs
-            << ", recv_msgs=" << stats.recv_msgs << "\n";
+            << ", recv_msgs=" << stats.recv_msgs
+            << ", sent_bytes=" << stats.sent_bytes 
+            << ", recv_bytes=" << stats.recv_bytes << "\n";
         log.flush();
     }
 }
@@ -282,9 +293,12 @@ int main(int argc, char* argv[]) {
     std::thread t_mon(monitor_loop, std::ref(gc), std::ref(stats), nc.monitor_interval, nc.log_file);
     t_mon.detach();
 
+    std::thread t_send(send_loop, sockfd, peers, std::ref(stats));
+    t_send.detach();
+
     run_random_mode(nc, gc, sockfd, peers, stats);
 
-    std::this_thread::sleep_for(1s);
+    std::this_thread::sleep_for(15s);
     std::cout << "FINAL local=" << gc.local()
               << " total=" << gc.read()
               << " sent=" << stats.sent_msgs

@@ -9,7 +9,7 @@ SCENARIO_FILE="./scenarios/swarm-crdt.json"
 CONCURRENCY_VALUES=(10) #20 30 60 80 100 200 300 600 800 1000)
 
 # Nombre d'itérations pour chaque valeur de Concurrency
-ITERATIONS=3
+ITERATIONS=1
 
 # Fonction pour modifier le fichier JSON
 modify_concurrency() {
