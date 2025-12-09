@@ -6,7 +6,6 @@
   },
   "ops_per_sec": 10,
   "duration": 10,
-  "distribution": "poisson",
   "monitor_interval": 1,
   "log_dir": "/home/mace/git/fork-pymace/reports/"
 }

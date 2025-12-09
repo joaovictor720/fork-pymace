@@ -4,8 +4,8 @@
         "name": "uav0",
         "settings": {
           "_id": 0,
-          "x": 20,
-          "y": 20,
+          "x": 0,
+          "y": 0,
           "fill": "#1100FF",
           "stroke": "black",
           "strokeWidth": 0,
@@ -49,7 +49,7 @@
         "settings": {
           "_id": 1,
           "x": 100,
-          "y": 20,
+          "y": 0,
           "fill": "#1100FF",
           "stroke": "black",
           "strokeWidth": 0,
@@ -92,8 +92,8 @@
         "name": "uav2",
         "settings": {
           "_id": 2,
-          "x": 100,
-          "y": 80,
+          "x": 194,
+          "y": 0,
           "fill": "#1100FF",
           "stroke": "black",
           "strokeWidth": 0,
@@ -150,7 +150,7 @@
         "prefix": "10.0.0.0/24",
         "routing": "batman",
         "settings": {
-          "range": "2000",
+          "range": "105",
           "bandwidth": "433000000",
           "delay": "3000",
           "jitter": "0",
@@ -163,7 +163,7 @@
         "prefix" : "10.1.0.0/24",
         "routing": "batman",
         "settings": {
-            "range": "2000",
+            "range": "100",
             "bandwidth": "433300000",
             "delay": "3000",
             "jitter": "0",
