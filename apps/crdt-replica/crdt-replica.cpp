@@ -26,10 +26,10 @@ using namespace std::chrono_literals;
 
 constexpr size_t MSG_MAX = 4096;
 
-std::mutex gc_mtx;
-std::queue<gcounter<int, std::string>> send_queue;
-std::mutex q_mutex;
-std::condition_variable q_cv;
+std::mutex _gc_mutex;
+std::queue<gcounter<int, std::string>> _send_queue;
+std::mutex _send_queue_mutex;
+std::condition_variable _send_queue_cond_var;
 
 struct node_config {
     std::string id;
@@ -120,13 +120,13 @@ void send_msg(int sockfd, const sockaddr_in& peer, const std::string& msg, stats
 
 void send_loop(int sockfd, const std::vector<sockaddr_in>& peers, stats& stats) {
     while (true) {
-        std::unique_lock<std::mutex> lock(q_mutex);
-        q_cv.wait(lock, []{
-            return !send_queue.empty();
+        std::unique_lock<std::mutex> lock(_send_queue_mutex);
+        _send_queue_cond_var.wait(lock, []{
+            return !_send_queue.empty();
         });
 
-        gcounter<int, std::string> next = send_queue.front();
-        send_queue.pop();
+        gcounter<int, std::string> next = _send_queue.front();
+        _send_queue.pop();
         lock.unlock();
 
         for (auto& p : peers) {
@@ -150,7 +150,7 @@ void recv_loop(int sockfd, gcounter<int, std::string>& gc, stats& stats) {
         try {
             auto sender_gcounter = gcounter<int, std::string>::deserialize(std::string(buffer, n));
             {
-                std::unique_lock<std::mutex> lock(gc_mtx);
+                std::unique_lock<std::mutex> lock(_gc_mutex);
                 gc.join(sender_gcounter);
             }
             stats.recv_msgs++;
@@ -185,13 +185,13 @@ void run_random_mode(const node_config& nc, gcounter<int, std::string>& gc, int 
         
         gcounter<int, std::string> delta_obj;
         {
-            std::unique_lock<std::mutex> gc_lock(gc_mtx);
+            std::unique_lock<std::mutex> gc_lock(_gc_mutex);
             delta_obj = gc.inc(val);
         }
 
-        std::unique_lock<std::mutex> op_lock(q_mutex);
-        send_queue.push(delta_obj);
-        q_cv.notify_one();
+        std::unique_lock<std::mutex> op_lock(_send_queue_mutex);
+        _send_queue.push(delta_obj);
+        _send_queue_cond_var.notify_one();
     }
 }
 
