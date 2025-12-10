@@ -188,7 +188,7 @@ std::mutex _neighbors_mutex;
 
 // network
 int _sockfd = -1;
-std::vector<sockaddr_in> _peer_addrs;
+sockaddr_in _broadcast_addr;
 int _listen_port = PORT_DEFAULT;
 
 // RNG
@@ -258,13 +258,11 @@ void build_heartbeat_packet(uint64_t peerid, std::vector<char>& out) {
 }
 
 // send helpers (to all peers)
-void send_to_all_peers(const std::vector<char>& pkt, stats &st) {
-    for (auto &addr : _peer_addrs) {
-        ssize_t s = sendto(_sockfd, pkt.data(), pkt.size(), 0, (sockaddr*)&addr, sizeof(addr));
-        if (s > 0) {
-            st.sent_msgs++;
-            st.sent_bytes += static_cast<int>(s);
-        }
+void send_broadcast(const std::vector<char>& pkt, stats &st) {
+    ssize_t sent = sendto(_sockfd, pkt.data(), pkt.size(), 0, (sockaddr*)&_broadcast_addr, sizeof(_broadcast_addr));
+    if (sent > 0) {
+        st.sent_msgs++;
+        st.sent_bytes += static_cast<int>(sent);
     }
 }
 
@@ -338,7 +336,7 @@ void cast_worker(stats &st) {
                 // send data to all peers
                 std::vector<char> pkt;
                 build_data_packet(e.msgid, e.payload, pkt);
-                send_to_all_peers(pkt, st);
+                send_broadcast(pkt, st);
             } else {
                 // schedule longer reattempt
                 e.when = std::chrono::steady_clock::now() + std::chrono::milliseconds(long_jitter(_rng));
@@ -372,7 +370,7 @@ void gossip_worker(stats &st) {
         if (!headers.empty()) {
             std::vector<char> pkt;
             build_gossip_packet(headers, pkt);
-            send_to_all_peers(pkt, st);
+            send_broadcast(pkt, st);
         }
     }
 }
@@ -382,7 +380,7 @@ void heartbeat_worker(uint64_t selfid, stats &st) {
     while (true) {
         std::vector<char> pkt;
         build_heartbeat_packet(selfid, pkt);
-        send_to_all_peers(pkt, st);
+        send_broadcast(pkt, st);
         std::this_thread::sleep_for(std::chrono::milliseconds(HEARTBEAT_INTERVAL_MS));
     }
 }
@@ -392,7 +390,7 @@ void heartbeat_worker(uint64_t selfid, stats &st) {
 void send_request_once(uint64_t msgid, stats &st) {
     std::vector<char> pkt;
     build_request_packet(msgid, pkt);
-    send_to_all_peers(pkt, st);
+    send_broadcast(pkt, st);
 }
 
 // recv loop: handle incoming packets
@@ -478,7 +476,7 @@ void recv_loop(int sockfd_local, gcounter<int, std::string>& gc, stats& st) {
             if (cache_get(hid, payload)) {
                 std::vector<char> pkt;
                 build_data_packet(hid, payload, pkt);
-                send_to_all_peers(pkt, st);
+                send_broadcast(pkt, st);
             }
         } else if (type == MT_HEARTBEAT) {
             if (n < 1 + 8) {
@@ -594,6 +592,9 @@ bool setup_socket_and_peers(const node_config& nc) {
     }
     int reuse = 1;
     setsockopt(_sockfd, SOL_SOCKET, SO_REUSEADDR, &reuse, sizeof(reuse));
+    
+    int bc = 1;
+    setsockopt(_sockfd, SOL_SOCKET, SO_BROADCAST, &bc, sizeof(bc));
     sockaddr_in addr{};
     addr.sin_family = AF_INET;
     addr.sin_addr.s_addr = INADDR_ANY;
@@ -604,21 +605,13 @@ bool setup_socket_and_peers(const node_config& nc) {
         return false;
     }
     
-    // fill _peer_addrs
-    _peer_addrs.clear();
-    for (auto &p : nc.peers) {
-        auto pos2 = p.find(':');
-        if (pos2 == std::string::npos) {
-            continue;
-        }
-        std::string ip = p.substr(0, pos2);
-        int port = std::stoi(p.substr(pos2 + 1));
-        sockaddr_in peer{};
-        peer.sin_family = AF_INET;
-        peer.sin_port = htons(port);
-        inet_pton(AF_INET, ip.c_str(), &peer.sin_addr);
-        _peer_addrs.push_back(peer);
-    }
+    // configure broadcast out socket
+    sockaddr_in broadcast{};
+    broadcast.sin_family = AF_INET;
+    broadcast.sin_port = htons(_listen_port);
+    broadcast.sin_addr.s_addr = INADDR_BROADCAST;
+    _broadcast_addr = broadcast;
+
     return true;
 }
 

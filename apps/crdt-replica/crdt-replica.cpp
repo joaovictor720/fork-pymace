@@ -51,6 +51,7 @@ struct stats {
 };
 
 void print_config(const node_config& nc) {
+    std::cout << "===== NO GOSSIP APPLICATION =====" << "\n";
     std::cout << nc.id << "\n";
     std::cout << nc.listen_addr << "\n";
     for (auto& p : nc.peers) {
