@@ -326,7 +326,6 @@ void neighbor_cleanup() {
 
 // cast worker: transmits DATA from _cast_queue according to prob rules
 void cast_worker(stats &st) {
-    std::uniform_int_distribution<int> short_jitter(SHORT_JITTER_MIN_MS, SHORT_JITTER_MAX_MS);
     std::uniform_int_distribution<int> long_jitter(LONG_JITTER_MIN_MS, LONG_JITTER_MAX_MS);
     while (true) {
         CastEntry e;
