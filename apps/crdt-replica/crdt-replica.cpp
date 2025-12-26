@@ -30,6 +30,7 @@ std::mutex _gc_mutex;
 std::queue<gcounter<int, std::string>> _send_queue;
 std::mutex _send_queue_mutex;
 std::condition_variable _send_queue_cond_var;
+std::mutex _delta_mutex;
 
 struct node_config {
     std::string id;
@@ -121,14 +122,25 @@ void send_msg(int sockfd, const sockaddr_in& peer, const std::string& msg, stats
     }
 }
 
-void dissemination_loop(int sockfd, const std::vector<sockaddr_in>& peers, gcounter<int, std::string>& gc, stats& stats, double interval){
+void dissemination_loop(
+    int sockfd,
+    const std::vector<sockaddr_in>& peers,
+    gcounter<int, std::string>& gc,
+    gcounter<int, std::string>& delta_buffer,
+    stats& stats,
+    double interval
+){
     while (true) {
         std::this_thread::sleep_for(std::chrono::duration<double>(interval));
 
         std::string payload;
         {
-            std::unique_lock<std::mutex> lock(_gc_mutex);
-            payload = gc.serialize();
+            std::unique_lock<std::mutex> lock(_delta_mutex);
+            if (delta_buffer == gcounter<int, std::string>()) {
+                continue;
+            }
+            payload = delta_buffer.serialize();
+            // delta_buffer = gcounter<int, std::string>(); // clearing the delta buffer
         }
 
         for (auto& p : peers) {
@@ -137,7 +149,7 @@ void dissemination_loop(int sockfd, const std::vector<sockaddr_in>& peers, gcoun
     }
 }
 
-void recv_loop(int sockfd, gcounter<int, std::string>& gc, stats& stats) {
+void recv_loop(int sockfd, gcounter<int, std::string>& gc, gcounter<int, std::string>& delta_buffer, stats& stats) {
     char buffer[MSG_MAX];
     sockaddr_in src;
     socklen_t srclen = sizeof(src);
@@ -151,9 +163,14 @@ void recv_loop(int sockfd, gcounter<int, std::string>& gc, stats& stats) {
         try {
             auto sender_gcounter = gcounter<int, std::string>::deserialize(std::string(buffer, n));
             {
-                std::unique_lock<std::mutex> lock(_gc_mutex);
-                gc.join(sender_gcounter);
-            }
+            std::lock_guard<std::mutex> lk(_gc_mutex);
+            gc.join(sender_gcounter);
+        }
+
+        {
+            std::lock_guard<std::mutex> lk(_delta_mutex);
+            delta_buffer.join(sender_gcounter);
+        }
             stats.recv_msgs++;
             stats.recv_bytes += n;
         } catch (...) {
@@ -164,7 +181,14 @@ void recv_loop(int sockfd, gcounter<int, std::string>& gc, stats& stats) {
 
 
 // operations order follow some given random distribution
-void run_random_mode(const node_config& nc, gcounter<int, std::string>& gc, int sockfd, const std::vector<sockaddr_in>& peers, stats& stats) {
+void run_random_mode(
+    const node_config& nc,
+    gcounter<int, std::string>& gc,
+    gcounter<int, std::string>& delta_buffer,
+    int sockfd,
+    const std::vector<sockaddr_in>& peers,
+    stats& stats
+) {
     double ops_per_sec = nc.ops_per_sec;
     double duration = nc.duration;
     unsigned seed = nc.seed;
@@ -184,9 +208,15 @@ void run_random_mode(const node_config& nc, gcounter<int, std::string>& gc, int 
         std::uniform_int_distribution<int> inc_dist(1, 10);
         int val = inc_dist(gen);
         
+        gcounter<int, std::string> d;
         {
-            std::unique_lock<std::mutex> gc_lock(_gc_mutex);
-            gc.inc(val);
+            std::unique_lock<std::mutex> lock(_gc_mutex);
+            d = gc.inc(val);
+        }
+
+        {
+            std::unique_lock<std::mutex> lock(_delta_mutex);
+            delta_buffer.join(d);
         }
     }
 }
@@ -281,18 +311,19 @@ int main(int argc, char* argv[]) {
     }
 
     gcounter<int, std::string> gc(nc.id);
+    gcounter<int, std::string> delta_buffer; // contains the union of all deltas generated in the last interval
     stats stats;
 
-    std::thread t_recv(recv_loop, sockfd, std::ref(gc), std::ref(stats));
+    std::thread t_recv(recv_loop, sockfd, std::ref(gc), std::ref(delta_buffer), std::ref(stats));
     t_recv.detach();
 
     std::thread t_mon(monitor_loop, std::ref(gc), std::ref(stats), nc.monitor_interval, nc.log_file);
     t_mon.detach();
 
-    std::thread t_diss(dissemination_loop, sockfd, peers, std::ref(gc), std::ref(stats), nc.dissemination_interval);
+    std::thread t_diss(dissemination_loop, sockfd, peers, std::ref(gc), std::ref(delta_buffer), std::ref(stats), nc.dissemination_interval);
     t_diss.detach();
 
-    run_random_mode(nc, gc, sockfd, peers, stats);
+    run_random_mode(nc, gc, delta_buffer, sockfd, peers, stats);
 
     std::this_thread::sleep_for(15s);
     std::cout << "FINAL local=" << gc.local()
