@@ -41,6 +41,7 @@ struct node_config {
     int seed;
     std::string log_file;
     double monitor_interval;
+    double dissemination_interval;
 };
 
 struct stats {
@@ -88,6 +89,7 @@ node_config load_config(const std::string& cfg_path, const std::string& id) {
     nc.ops_per_sec = cfg.value("ops_per_sec", 1.0);
     nc.duration = cfg.value("duration", 10);
     nc.distribution = cfg.value("distribution", "uniform");
+    nc.dissemination_interval = cfg.value("dissemination_interval", 0.5);
 
     // if not specified, the chosen seed will be truly random (operating system's entropy)
     std::random_device rd;
@@ -119,20 +121,18 @@ void send_msg(int sockfd, const sockaddr_in& peer, const std::string& msg, stats
     }
 }
 
-void send_loop(int sockfd, const std::vector<sockaddr_in>& peers, stats& stats) {
+void dissemination_loop(int sockfd, const std::vector<sockaddr_in>& peers, gcounter<int, std::string>& gc, stats& stats, double interval){
     while (true) {
-        std::unique_lock<std::mutex> lock(_send_queue_mutex);
-        _send_queue_cond_var.wait(lock, []{
-            return !_send_queue.empty();
-        });
+        std::this_thread::sleep_for(std::chrono::duration<double>(interval));
 
-        gcounter<int, std::string> next = _send_queue.front();
-        _send_queue.pop();
-        lock.unlock();
+        std::string payload;
+        {
+            std::unique_lock<std::mutex> lock(_gc_mutex);
+            payload = gc.serialize();
+        }
 
         for (auto& p : peers) {
-            send_msg(sockfd, p, next.serialize(), stats);
-            std::this_thread::sleep_for(20ms);
+            send_msg(sockfd, p, payload, stats);
         }
     }
 }
@@ -184,15 +184,10 @@ void run_random_mode(const node_config& nc, gcounter<int, std::string>& gc, int 
         std::uniform_int_distribution<int> inc_dist(1, 10);
         int val = inc_dist(gen);
         
-        gcounter<int, std::string> delta_obj;
         {
             std::unique_lock<std::mutex> gc_lock(_gc_mutex);
-            delta_obj = gc.inc(val);
+            gc.inc(val);
         }
-
-        std::unique_lock<std::mutex> op_lock(_send_queue_mutex);
-        _send_queue.push(delta_obj);
-        _send_queue_cond_var.notify_one();
     }
 }
 
@@ -294,8 +289,8 @@ int main(int argc, char* argv[]) {
     std::thread t_mon(monitor_loop, std::ref(gc), std::ref(stats), nc.monitor_interval, nc.log_file);
     t_mon.detach();
 
-    std::thread t_send(send_loop, sockfd, peers, std::ref(stats));
-    t_send.detach();
+    std::thread t_diss(dissemination_loop, sockfd, peers, std::ref(gc), std::ref(stats), nc.dissemination_interval);
+    t_diss.detach();
 
     run_random_mode(nc, gc, sockfd, peers, stats);
 

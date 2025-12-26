@@ -3,8 +3,8 @@
 # Chemin vers le répertoire de travail et le fichier de configuration
 WORKDIR="$HOME/git/fork-pymace"
 CONFIG_FILE="/home/mace/git/fork-pymace/apps/crdt-replica/node-config/crdt-config.json"
-# SCENARIO_FILE="./scenarios/swarm-crdt.json"
-SCENARIO_FILE="./scenarios/swarm-crdt-rapid.json"
+SCENARIO_FILE="./scenarios/swarm-crdt.json"
+# SCENARIO_FILE="./scenarios/swarm-crdt-rapid.json"
 
 # Liste des valeurs de Concurrency
 CONCURRENCY_VALUES=(10) #20 30 60 80 100 200 300 600 800 1000)
