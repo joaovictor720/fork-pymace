@@ -4,7 +4,7 @@
     "1.2": "10.0.0.2:5001",
     "1.3": "10.0.0.3:5001"
   },
-  "ops_per_sec": 10,
+  "ops_per_sec": 1,
   "duration": 10,
   "dissemination_interval": 1,
   "monitor_interval": 1,
