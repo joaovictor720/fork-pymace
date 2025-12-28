@@ -1,0 +1,4 @@
+{
+  "monitor_interval": 1,
+  "log_dir": "__RESULT_DIR__"
+}

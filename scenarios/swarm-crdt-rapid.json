@@ -43,7 +43,7 @@
                 ]
             },
             "function": [
-                "sleep 10 && cd /home/mace/git/fork-pymace/apps/crdt-replica/ && xterm -hold -e ./crdt-rapid -id 1.1 -config /home/mace/git/fork-pymace/apps/crdt-replica/node-config/crdt-config.json"
+                "sleep 10 && cd /home/mace/git/fork-pymace/apps/crdt/rapid/ && xterm -hold -e ./crdt_rapid -id 1.1 -config /home/mace/git/fork-pymace/apps/crdt/node-config/crdt-config.json"
             ]
         },
         {
@@ -89,7 +89,7 @@
                 ]
             },
             "function": [
-                "sleep 10 && cd /home/mace/git/fork-pymace/apps/crdt-replica/ && xterm -hold -e ./crdt-rapid -id 1.2 -config /home/mace/git/fork-pymace/apps/crdt-replica/node-config/crdt-config.json"
+                "sleep 10 && cd /home/mace/git/fork-pymace/apps/crdt/rapid/ && xterm -hold -e ./crdt_rapid -id 1.2 -config /home/mace/git/fork-pymace/apps/crdt/node-config/crdt-config.json"
             ]
         },
         {
@@ -135,7 +135,7 @@
                 ]
             },
             "function": [
-                "sleep 10 && cd /home/mace/git/fork-pymace/apps/crdt-replica/ && xterm -hold -e ./crdt-rapid -id 1.3 -config /home/mace/git/fork-pymace/apps/crdt-replica/node-config/crdt-config.json"
+                "sleep 10 && cd /home/mace/git/fork-pymace/apps/crdt/rapid/ && xterm -hold -e ./crdt_rapid -id 1.3 -config /home/mace/git/fork-pymace/apps/crdt/node-config/crdt-config.json"
             ]
         }
     ],
