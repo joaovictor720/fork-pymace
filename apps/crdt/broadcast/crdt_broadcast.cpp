@@ -31,6 +31,8 @@ std::queue<gcounter<int, std::string>> _send_queue;
 std::mutex _send_queue_mutex;
 std::condition_variable _send_queue_cond_var;
 std::mutex _delta_mutex;
+std::mutex _event_log_mutex;
+std::ofstream _event_log;
 
 struct node_config {
     std::string id;
@@ -103,6 +105,12 @@ node_config load_config(const std::string& cfg_path, const std::string& id) {
     return nc;
 }
 
+// helper for timestamp
+inline double now_ts() {
+    return std::chrono::duration<double>(
+        std::chrono::steady_clock::now().time_since_epoch()
+    ).count();
+}
 
 // networking
 void send_msg(int sockfd, const sockaddr_in& peer, const json& msg, stats& stats) {
@@ -149,7 +157,7 @@ void dissemination_loop(
     }
 }
 
-void recv_loop(int sockfd, gcounter<int, std::string>& gc, gcounter<int, std::string>& delta_buffer, stats& stats) {
+void recv_loop(int sockfd, gcounter<int, std::string>& gc, gcounter<int, std::string>& delta_buffer, stats& stats, std::string node_id) {
     char buffer[MSG_MAX];
     sockaddr_in src;
     socklen_t srclen = sizeof(src);
@@ -163,14 +171,23 @@ void recv_loop(int sockfd, gcounter<int, std::string>& gc, gcounter<int, std::st
         try {
             auto sender_gcounter = gcounter<int, std::string>::deserialize(std::string(buffer, n));
             {
-            std::lock_guard<std::mutex> lk(_gc_mutex);
-            gc.join(sender_gcounter);
-        }
+                std::lock_guard<std::mutex> lk(_gc_mutex);
+                gc.join(sender_gcounter);
+            }
 
-        {
-            std::lock_guard<std::mutex> lk(_delta_mutex);
-            delta_buffer.join(sender_gcounter);
-        }
+            {
+                std::lock_guard<std::mutex> lk(_event_log_mutex);
+                _event_log << std::fixed << now_ts()
+                        << ", event=op_apply"
+                        << ", node=" << node_id
+                        << ", delta_size=" << sender_gcounter.read()
+                        << "\n";
+            }
+
+            {
+                std::lock_guard<std::mutex> lk(_delta_mutex);
+                delta_buffer.join(sender_gcounter);
+            }
             stats.recv_msgs++;
             stats.recv_bytes += n;
         } catch (...) {
@@ -215,6 +232,15 @@ void run_random_mode(
         }
 
         {
+            std::lock_guard<std::mutex> lk(_event_log_mutex);
+            _event_log << std::fixed << now_ts()
+                    << ", event=op_create"
+                    << ", node=" << nc.id
+                    << ", delta_size=" << val
+                    << "\n";
+        }
+
+        {
             std::unique_lock<std::mutex> lock(_delta_mutex);
             delta_buffer.join(d);
         }
@@ -241,6 +267,10 @@ void monitor_loop(gcounter<int, std::string>& gc, stats& stats, double interval,
             << ", sent_bytes=" << stats.sent_bytes 
             << ", recv_bytes=" << stats.recv_bytes << "\n";
         log.flush();
+        {
+            std::unique_lock<std::mutex> lk(_event_log_mutex);
+            _event_log.flush();
+        }
     }
 }
 
@@ -273,6 +303,12 @@ int main(int argc, char* argv[]) {
 
     node_config nc = load_config(cfgfile, node_id);
     print_config(nc);
+
+    _event_log.open(nc.log_file + ".events", std::ios::trunc);
+    if (!_event_log.is_open()) {
+        std::cerr << "Failed to open event log file\n";
+        return 1;
+    }
 
     if (nc.listen_addr.empty()) {
         std::cerr << "Failed to load configuration for node " << node_id << ".\n";
@@ -314,7 +350,7 @@ int main(int argc, char* argv[]) {
     gcounter<int, std::string> delta_buffer; // contains the union of all deltas generated in the last interval
     stats stats;
 
-    std::thread t_recv(recv_loop, sockfd, std::ref(gc), std::ref(delta_buffer), std::ref(stats));
+    std::thread t_recv(recv_loop, sockfd, std::ref(gc), std::ref(delta_buffer), std::ref(stats), nc.id);
     t_recv.detach();
 
     std::thread t_mon(monitor_loop, std::ref(gc), std::ref(stats), nc.monitor_interval, nc.log_file);

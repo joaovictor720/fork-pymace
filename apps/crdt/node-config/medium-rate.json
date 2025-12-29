@@ -1,6 +1,5 @@
 {
-  "extends": "base.json",
-  "ops_per_sec": 0.2,
-  "duration": 300,
-  "dissemination_interval": 2
+    "extends": "base.json",
+    "ops_per_sec": 0.2,
+    "dissemination_interval": 2
 }

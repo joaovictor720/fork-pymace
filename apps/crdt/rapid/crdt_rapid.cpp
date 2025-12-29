@@ -52,6 +52,8 @@ bool _has_pending = false;
 std::mutex _pending_mutex;
 std::mutex _ops_queue_mutex;
 std::condition_variable _ops_q_cv;
+std::mutex _event_log_mutex;
+std::ofstream _event_log;
 
 struct node_config {
     std::string id;
@@ -119,6 +121,13 @@ node_config load_config(const std::string& cfg_path, const std::string& id) {
     }
     nc.log_file = log_dir + "node_" + id + ".log";
     return nc;
+}
+
+// helper for timestamp
+inline double now_ts() {
+    return std::chrono::duration<double>(
+        std::chrono::steady_clock::now().time_since_epoch()
+    ).count();
 }
 
 // ------------------ RAPID internal types ------------------
@@ -397,7 +406,7 @@ void send_request_once(uint64_t msgid, stats &st) {
 }
 
 // recv loop: handle incoming packets
-void recv_loop(int sockfd_local, gcounter<int, std::string>& gc, stats& st) {
+void recv_loop(int sockfd_local, gcounter<int, std::string>& gc, stats& st, std::string node_id) {
     char buf[MSG_MAX];
     sockaddr_in src;
     socklen_t srclen = sizeof(src);
@@ -429,6 +438,14 @@ void recv_loop(int sockfd_local, gcounter<int, std::string>& gc, stats& st) {
                     {
                         std::unique_lock<std::mutex> lg(_gc_mutex);
                         gc.join(recv_gc);
+                    }
+                    {
+                        std::lock_guard<std::mutex> lk(_event_log_mutex);
+                        _event_log << std::fixed << now_ts()
+                                << ", event=op_apply"
+                                << ", node=" << node_id
+                                << ", delta_size=" << recv_gc.read()
+                                << "\n";
                     }
                     st.recv_msgs++;
                     st.recv_bytes += static_cast<int>(len);
@@ -573,6 +590,14 @@ void run_random_mode(const node_config& nc, gcounter<int, std::string>& gc) {
             delta_obj = gc.inc(val);
         }
         {
+            std::lock_guard<std::mutex> lk(_event_log_mutex);
+            _event_log << std::fixed << now_ts()
+                    << ", event=op_create"
+                    << ", node=" << nc.id
+                    << ", delta_size=" << val
+                    << "\n";
+        }
+        {
             std::unique_lock<std::mutex> lg(_pending_mutex);
             if (!_has_pending) {
                 _pending_delta = delta_obj;
@@ -657,20 +682,29 @@ int main(int argc, char* argv[]) {
     }
     node_config nc = load_config(cfgfile, node_id);
     print_config(nc);
+    _event_log.open(nc.log_file + ".events", std::ios::trunc);
+    
+    if (!_event_log.is_open()) {
+        std::cerr << "Failed to open event log file\n";
+        return 1;
+    }
+    
     if (nc.listen_addr.empty()) {
         std::cerr << "Invalid configuration for node " << node_id << "\n";
         return 1;
     }
+    
     stats st;
     if (!setup_socket_and_peers(nc)) {
         std::cerr << "Failed to setup network\n";
         return 1;
     }
+    
     gcounter<int, std::string> gc(nc.id);
     // self id for heartbeat
     uint64_t selfid = gen_id();
     // start threads
-    std::thread t_recv(recv_loop, _sockfd, std::ref(gc), std::ref(st));
+    std::thread t_recv(recv_loop, _sockfd, std::ref(gc), std::ref(st), nc.id);
     t_recv.detach();
     std::thread t_cast(cast_worker, std::ref(st));
     t_cast.detach();

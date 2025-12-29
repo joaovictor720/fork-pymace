@@ -1,0 +1,30 @@
+{
+    "name": "mobile_chaos",
+    "simulation": {
+        "duration": 30,
+        "start_delay": 5,
+        "area": {
+            "x": 1000,
+            "y": 1000
+        }
+    },
+    "nodes": {
+        "count": 10,
+        "distribution": "random",
+        "seed": 42
+    },
+    "mobility": {
+        "model": "random_waypoint",
+        "speed_min": 2.0,
+        "speed_max": 15.0,
+        "pause": 0
+    },
+    "network": {
+        "routing": "batman",
+        "bandwidth": "11000000",
+        "range": 100,
+        "delay": 30,
+        "jitter": 0,
+        "error": 0
+    }
+}
