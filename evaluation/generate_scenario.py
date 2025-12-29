@@ -82,6 +82,17 @@ else:
 nodes = []
 
 for i, (x, y) in enumerate(positions):
+    mob = sc["mobility"]
+    mobility = {
+        "model": mob["model"],
+        "zone_x": area["x"],
+        "zone_y": area["y"],
+        "zone_z": 0,
+        "velocity_lower": mob.get("speed_min", 0),
+        "velocity_upper": mob.get("speed_max", 0),
+        "pause": mob.get("pause", 0)
+    }
+
     node = {
         "name": f"node{i}",
         "settings": {
@@ -93,11 +104,21 @@ for i, (x, y) in enumerate(positions):
         },
         "type": "UTM",
         "function": [
-            f"sleep 5 && $CRDT_BIN -id 1.{i} -config $CRDT_NODE_CONFIG"
+            f"/bin/bash -lc \"set -x; sleep {sc['simulation']['start_delay']}; "
+            f"__CRDT_BIN__ -id {i} -config __CRDT_NODE_CONFIG__\""
         ],
         "extra": {
+            # ---- REQUIRED by MACE ----
+            "disks": "False",
+
+            "dump": {
+                "start": "False",
+                "delay": 0,
+                "duration": 0
+            },
+
             "network": ["mesh"],
-            "mobility": sc["mobility"]
+            "mobility": mobility
         }
     }
     nodes.append(node)
@@ -107,13 +128,19 @@ for i, (x, y) in enumerate(positions):
 # ----------------------------
 mace = {
     "settings": {
+        # ---- REQUIRED by MACE ----
         "core": "True",
         "omnet": "False",
         "dump": "False",
         "number_of_nodes": node_count,
         "start_delay": sc["simulation"]["start_delay"],
         "runtime": sc["simulation"]["duration"],
-        "report_folder": "results/"
+
+        # ---- REQUIRED, even if EMANE is disabled ----
+        "username": "mace",
+        "disks_folder": "/mnt/pymace/",
+        "report_folder": "/home/mace/git/fork-pymace/reports/",
+        "emane_location": "/usr/share/emane"
     },
     "networks": [
         {
@@ -122,10 +149,10 @@ mace = {
             "routing": sc["network"]["routing"],
             "settings": {
                 "range": str(sc["network"]["range"]),
-                "bandwidth": sc["network"]["bandwidth"],
-                "delay": sc["network"]["delay"],
-                "jitter": sc["network"]["jitter"],
-                "error": sc["network"]["error"],
+                "bandwidth": str(sc["network"]["bandwidth"]),
+                "delay": str(sc["network"]["delay"]),
+                "jitter": str(sc["network"]["jitter"]),
+                "error": str(sc["network"]["error"]),
                 "emane": "False"
             }
         }

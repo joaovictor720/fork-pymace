@@ -13,7 +13,7 @@ SCENARIO_SPEC="$SCENARIO_DIR/scenario.json"
 MACE_JSON="$SCENARIO_DIR/mace.json"
 
 NODE_CFG_BASE="$ROOT_DIR/apps/crdt/node-config/$CONFIG.json"
-RESULT_DIR="$ROOT_DIR/results/$SCENARIO/$ALGO/$RUN_ID"
+RESULT_DIR="$ROOT_DIR/results/$SCENARIO/$ALGO/$RUN_ID/"
 TMP_CFG="$RESULT_DIR/node_config.json"
 
 mkdir -p "$RESULT_DIR"
@@ -69,6 +69,17 @@ export CRDT_NODE_CONFIG="$TMP_CFG"
 
 echo "[INFO] Using binary: $CRDT_BIN"
 echo "[INFO] Using node config: $CRDT_NODE_CONFIG"
+
+# -------------------------------
+# 4.1 Inject runtime paths into mace.json
+# -------------------------------
+echo "[INFO] Injecting binary and node config into mace.json"
+
+sed -i \
+  -e "s|__CRDT_BIN__|$BIN|g" \
+  -e "s|__CRDT_NODE_CONFIG__|$TMP_CFG|g" \
+  "$MACE_JSON"
+grep -q "__CRDT_" "$MACE_JSON" && echo "[ERROR] Unresolved placeholders!" && exit 1
 
 # -------------------------------
 # 5. Run scenario

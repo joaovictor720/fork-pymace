@@ -9,8 +9,8 @@
         }
     },
     "nodes": {
-        "count": 10,
-        "distribution": "random",
+        "count": 3,
+        "distribution": "grid",
         "seed": 42
     },
     "mobility": {
@@ -22,7 +22,7 @@
     "network": {
         "routing": "batman",
         "bandwidth": "11000000",
-        "range": 100,
+        "range": 10000,
         "delay": 30,
         "jitter": 0,
         "error": 0
