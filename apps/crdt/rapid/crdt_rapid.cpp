@@ -683,6 +683,7 @@ int main(int argc, char* argv[]) {
     node_config nc = load_config(cfgfile, node_id);
     print_config(nc);
     _event_log.open(nc.log_file + ".events", std::ios::trunc);
+    _event_log.setf(std::ios::unitbuf);
     
     if (!_event_log.is_open()) {
         std::cerr << "Failed to open event log file\n";

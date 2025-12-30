@@ -86,7 +86,7 @@ grep -q "__CRDT_" "$MACE_JSON" && echo "[ERROR] Unresolved placeholders!" && exi
 # -------------------------------
 echo "[INFO] Running MACE scenario: $SCENARIO"
 
-sudo "$ROOT_DIR/pymace.py" -s "$MACE_JSON"
+sudo "$ROOT_DIR/pymace.py" -s "$MACE_JSON" || true
 
 # -------------------------------
 # 6. Collect logs
