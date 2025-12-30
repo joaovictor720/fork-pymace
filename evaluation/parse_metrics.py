@@ -1,51 +1,25 @@
 import sys
 import csv
 import pathlib
+from parse_network import parse_network_overhead
+from parse_convergence import parse_convergence
 
 root = pathlib.Path(sys.argv[1])
 out_csv = root / "summary.csv"
 
 rows = []
 
-for run_dir in root.iterdir():
+for run_dir in sorted(root.iterdir()):
     if not run_dir.is_dir():
         continue
 
-    final_total = None
-    sent_msgs = 0
-    recv_msgs = 0
-    sent_bytes = 0
-    recv_bytes = 0
+    row = {"run": run_dir.name}
 
-    for log in run_dir.glob("node_*.log"):
-        with open(log) as f:
-            for line in f:
-                if "total=" not in line:
-                    continue
+    row.update(parse_network_overhead(run_dir))
+    row.update(parse_convergence(run_dir))
 
-                parts = [p.strip() for p in line.strip().split(",")]
-
-                for p in parts:
-                    if p.startswith("total="):
-                        final_total = int(p.split("=")[1])
-                    elif p.startswith("sent_msgs="):
-                        sent_msgs += int(p.split("=")[1])
-                    elif p.startswith("recv_msgs="):
-                        recv_msgs += int(p.split("=")[1])
-                    elif p.startswith("sent_bytes="):
-                        sent_bytes += int(p.split("=")[1])
-                    elif p.startswith("recv_bytes="):
-                        recv_bytes += int(p.split("=")[1])
-
-    if final_total is not None:
-        rows.append({
-            "run": run_dir.name,
-            "final_total": final_total,
-            "sent_msgs": sent_msgs,
-            "recv_msgs": recv_msgs,
-            "sent_bytes": sent_bytes,
-            "recv_bytes": recv_bytes,
-        })
+    if len(row) > 1:
+        rows.append(row)
 
 if not rows:
     print("No valid runs found.")

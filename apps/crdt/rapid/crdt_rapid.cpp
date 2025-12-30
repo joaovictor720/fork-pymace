@@ -560,7 +560,6 @@ void monitor_loop(gcounter<int, std::string>& gc, stats& stats_ref, double inter
             << ", sent_bytes=" << stats_ref.sent_bytes
             << ", recv_bytes=" << stats_ref.recv_bytes << "\n";
         std::string line = oss.str();
-        std::cout << line << std::flush;
         if (log.is_open()) {
             log << line << std::flush;
         }

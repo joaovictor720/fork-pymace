@@ -260,12 +260,6 @@ void monitor_loop(gcounter<int, std::string>& gc, stats& stats, double interval,
             << ", recv_msgs=" << stats.recv_msgs 
             << ", sent_bytes=" << stats.sent_bytes 
             << ", recv_bytes=" << stats.recv_bytes << "\n";
-        std::cout << std::fixed << std::chrono::duration<double>(std::chrono::steady_clock::now().time_since_epoch()).count()
-            << ", local=" << local << ", total=" << total
-            << ", sent_msgs=" << stats.sent_msgs
-            << ", recv_msgs=" << stats.recv_msgs
-            << ", sent_bytes=" << stats.sent_bytes 
-            << ", recv_bytes=" << stats.recv_bytes << "\n";
         log.flush();
         {
             std::unique_lock<std::mutex> lk(_event_log_mutex);
@@ -360,6 +354,14 @@ int main(int argc, char* argv[]) {
     t_diss.detach();
 
     run_random_mode(nc, gc, delta_buffer, sockfd, peers, stats);
+
+    {
+        std::lock_guard<std::mutex> lk(_event_log_mutex);
+        _event_log << std::fixed << now_ts()
+                << ", event=ops_finished"
+                << ", node=" << nc.id
+                << "\n";
+    }
 
     std::this_thread::sleep_for(15s);
     std::cout << "FINAL local=" << gc.local()
