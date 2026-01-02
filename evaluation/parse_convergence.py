@@ -19,29 +19,43 @@ def parse_convergence(run_dir: pathlib.Path):
         return {}
 
     # -----------------------------
-    # 2. Find final total value
+    # 2. Compute ground truth total
+    #    = sum of final local values
     # -----------------------------
-    final_total = None
     node_logs = list(run_dir.glob("node_*.log"))
+    final_locals = {}
 
     for log in node_logs:
+        node_id = log.stem.split("_")[1]
+        last_local = None
+
         with open(log) as f:
             for line in f:
-                if "total=" not in line:
+                if "local=" not in line:
                     continue
                 parts = dict(
                     p.split("=") for p in
                     (x.strip() for x in line.strip().split(",")[1:])
                 )
-                total = int(parts["total"])
-                final_total = max(final_total or total, total)
+                last_local = int(parts["local"])
+
+        if last_local is not None:
+            final_locals[node_id] = last_local
+
+    if not final_locals:
+        return {}
+
+    final_total = sum(final_locals.values())
 
     # -----------------------------
-    # 3. Find convergence time per node
+    # 3. Find convergence time
+    #    (all nodes reach final_total)
     # -----------------------------
-    node_conv_times = []
+    node_conv_times = {}
 
     for log in node_logs:
+        node_id = log.stem.split("_")[1]
+
         with open(log) as f:
             for line in f:
                 ts = float(line.split(",")[0])
@@ -54,13 +68,14 @@ def parse_convergence(run_dir: pathlib.Path):
                 )
 
                 if int(parts["total"]) == final_total:
-                    node_conv_times.append(ts)
+                    node_conv_times[node_id] = ts
                     break
 
-    if not node_conv_times:
-        return {}
+    # If at least one node never converged → no convergence
+    if len(node_conv_times) != len(node_logs):
+        return {"final_total": final_total}
 
-    t_conv = max(node_conv_times)
+    t_conv = max(node_conv_times.values())
 
     return {
         "last_op_create_s": t_last_create,

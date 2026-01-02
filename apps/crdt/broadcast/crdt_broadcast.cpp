@@ -96,7 +96,7 @@ node_config load_config(const std::string& cfg_path, const std::string& id) {
 
     // if not specified, the chosen seed will be truly random (operating system's entropy)
     std::random_device rd;
-    nc.seed = cfg.value("seed", rd());
+    nc.seed = cfg.value("seed", rd()) + std::atoi(id.c_str());
     nc.monitor_interval = cfg.value("monitor_interval", 1.0);
 
     std::string log_dir = cfg.value("log_dir", ".");
@@ -367,7 +367,7 @@ int main(int argc, char* argv[]) {
                 << "\n";
     }
 
-    std::this_thread::sleep_for(15s);
+    std::this_thread::sleep_for(10s);
     std::cout << "FINAL local=" << gc.local()
               << " total=" << gc.read()
               << " sent=" << stats.sent_msgs

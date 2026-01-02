@@ -1,26 +1,25 @@
 import json
 import sys
-import os
 
-base_cfg_path = sys.argv[1]
-result_dir = sys.argv[2]
-out_path = sys.argv[3]
+scenario_path = sys.argv[1]
+out_path = sys.argv[2]
+result_dir = sys.argv[3]
 
-def load_cfg(path):
-    with open(path) as f:
-        return json.load(f)
+with open(scenario_path) as f:
+    sc = json.load(f)
 
-cfg = load_cfg(base_cfg_path)
+node_cfg = sc["node_config"].copy()
+node_count = sc["nodes"]["count"]
 
-# Handle inheritance
-if "extends" in cfg:
-    parent_path = os.path.join(os.path.dirname(base_cfg_path), cfg["extends"])
-    parent = load_cfg(parent_path)
-    parent.update(cfg)
-    cfg = parent
-    cfg.pop("extends", None)
+# Auto-generate addresses
+node_cfg["address"] = {
+    str(i): f"10.0.0.{i+1}:5001"
+    for i in range(node_count)
+}
 
-cfg["log_dir"] = result_dir
+node_cfg["seed"] = sc["nodes"].get("seed", 0)
+
+node_cfg["log_dir"] = result_dir
 
 with open(out_path, "w") as f:
-    json.dump(cfg, f, indent=2)
+    json.dump(node_cfg, f, indent=2)

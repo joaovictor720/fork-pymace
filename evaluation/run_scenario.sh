@@ -3,8 +3,7 @@ set -e
 
 SCENARIO="$1"
 ALGO="$2"
-CONFIG="$3"
-RUN_ID="$4"
+RUN_ID="$3"
 
 ROOT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
 
@@ -12,85 +11,58 @@ SCENARIO_DIR="$ROOT_DIR/scenarios/$SCENARIO"
 SCENARIO_SPEC="$SCENARIO_DIR/scenario.json"
 MACE_JSON="$SCENARIO_DIR/mace.json"
 
-NODE_CFG_BASE="$ROOT_DIR/apps/crdt/node-config/$CONFIG.json"
 RESULT_DIR="$ROOT_DIR/results/$SCENARIO/$ALGO/$RUN_ID/"
-TMP_CFG="$RESULT_DIR/node_config.json"
+NODE_CFG="$RESULT_DIR/node_config.json"
 
 mkdir -p "$RESULT_DIR"
 
 # -------------------------------
-# 0. Sanity checks
+# Sanity check
 # -------------------------------
-if [[ ! -f "$SCENARIO_SPEC" ]]; then
-  echo "[ERROR] Scenario spec not found: $SCENARIO_SPEC"
+[[ -f "$SCENARIO_SPEC" ]] || {
+  echo "[ERROR] Missing scenario.json"
   exit 1
-fi
+}
 
 # -------------------------------
-# 1. Generate mace.json from scenario.json
+# Generate mace.json
 # -------------------------------
-echo "[INFO] Generating mace.json from scenario.json"
-
-python "$ROOT_DIR/evaluation/generate_scenario.py" \
-  "$SCENARIO_DIR"
-
-if [[ ! -f "$MACE_JSON" ]]; then
-  echo "[ERROR] mace.json was not generated"
-  exit 1
-fi
+python "$ROOT_DIR/evaluation/generate_scenario.py" "$SCENARIO_DIR"
 
 # -------------------------------
-# 2. Generate node-level config
+# Generate node_config.json
 # -------------------------------
-echo "[INFO] Generating node_config.json"
-
 python "$ROOT_DIR/evaluation/generate_node_config.py" \
-  "$NODE_CFG_BASE" \
-  "$RESULT_DIR" \
-  "$TMP_CFG"
+  "$SCENARIO_SPEC" \
+  "$NODE_CFG" \
+  "$RESULT_DIR"
 
 # -------------------------------
-# 3. Select CRDT binary
+# Select binary
 # -------------------------------
-if [[ "$ALGO" == "rapid" ]]; then
-  BIN="$ROOT_DIR/apps/crdt/rapid/crdt_rapid"
-elif [[ "$ALGO" == "broadcast" ]]; then
-  BIN="$ROOT_DIR/apps/crdt/broadcast/crdt_broadcast"
-else
-  echo "[ERROR] Unknown algorithm: $ALGO"
-  exit 1
-fi
+case "$ALGO" in
+  rapid) BIN="$ROOT_DIR/apps/crdt/rapid/crdt_rapid" ;;
+  broadcast) BIN="$ROOT_DIR/apps/crdt/broadcast/crdt_broadcast" ;;
+  *) echo "[ERROR] Unknown algorithm"; exit 1 ;;
+esac
 
-# -------------------------------
-# 4. Export environment for MACE
-# -------------------------------
 export CRDT_BIN="$BIN"
-export CRDT_NODE_CONFIG="$TMP_CFG"
-
-echo "[INFO] Using binary: $CRDT_BIN"
-echo "[INFO] Using node config: $CRDT_NODE_CONFIG"
+export CRDT_NODE_CONFIG="$NODE_CFG"
 
 # -------------------------------
-# 4.1 Inject runtime paths into mace.json
+# Inject paths
 # -------------------------------
-echo "[INFO] Injecting binary and node config into mace.json"
-
 sed -i \
   -e "s|__CRDT_BIN__|$BIN|g" \
-  -e "s|__CRDT_NODE_CONFIG__|$TMP_CFG|g" \
+  -e "s|__CRDT_NODE_CONFIG__|$NODE_CFG|g" \
   "$MACE_JSON"
-grep -q "__CRDT_" "$MACE_JSON" && echo "[ERROR] Unresolved placeholders!" && exit 1
 
 # -------------------------------
-# 5. Run scenario
+# Run
 # -------------------------------
-echo "[INFO] Running MACE scenario: $SCENARIO"
-
 sudo "$ROOT_DIR/pymace.py" -s "$MACE_JSON" || true
 
 # -------------------------------
-# 6. Collect logs
+# Collect logs
 # -------------------------------
-echo "[INFO] Collecting logs"
-
 python "$ROOT_DIR/evaluation/collect_logs.py" "$RESULT_DIR"

@@ -112,7 +112,7 @@ node_config load_config(const std::string& cfg_path, const std::string& id) {
     nc.duration = cfg.value("duration", 10);
     nc.distribution = cfg.value("distribution", "uniform");
     std::random_device rd;
-    nc.seed = cfg.value("seed", rd());
+    nc.seed = cfg.value("seed", rd()) + std::atoi(id.c_str());
     nc.monitor_interval = cfg.value("monitor_interval", 1.0);
     nc.dissemination_interval = cfg.value("dissemination_interval", 0.5);
     std::string log_dir = cfg.value("log_dir", ".");
@@ -735,7 +735,7 @@ int main(int argc, char* argv[]) {
     }
 
     // wait a bit to let dissemination finish
-    std::this_thread::sleep_for(15s);
+    std::this_thread::sleep_for(10s);
     std::cout << "FINAL local=" << gc.local()
               << " total=" << gc.read()
               << " sent=" << st.sent_msgs

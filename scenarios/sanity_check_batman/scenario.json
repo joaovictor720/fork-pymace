@@ -1,7 +1,7 @@
 {
-    "name": "mobile_chaos",
+    "name": "sanity_check_batman",
     "simulation": {
-        "duration": 30,
+        "duration": 35,
         "start_delay": 5,
         "area": {
             "x": 1000,
@@ -22,7 +22,7 @@
     "network": {
         "routing": "batman",
         "bandwidth": "11000000",
-        "range": 100,
+        "range": 1500,
         "delay": 5,
         "jitter": 0,
         "error": 0
@@ -30,7 +30,7 @@
     "node_config": {
         "ops_per_sec": 1,
         "duration": 10,
-        "dissemination_interval": 1,
+        "dissemination_interval": 0.1,
         "monitor_interval": 1
     }
 }
