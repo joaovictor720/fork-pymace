@@ -1,5 +1,5 @@
 {
     "extends": "base.json",
-    "ops_per_sec": 1.0,
-    "dissemination_interval": 1
+    "ops_per_sec": 10.0,
+    "dissemination_interval": 0.5
 }

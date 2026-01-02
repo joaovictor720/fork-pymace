@@ -548,20 +548,25 @@ void monitor_loop(gcounter<int, std::string>& gc, stats& stats_ref, double inter
     if (!log.is_open()) {
         std::cerr << "Warning: cannot open log file: " << logfile << "\n";
     }
+
+    int last_total = -1;
     while (true) {
         std::this_thread::sleep_for(std::chrono::duration<double>(interval));
         int local = gc.local();
         int total = gc.read();
-        std::ostringstream oss;
-        oss << std::fixed << std::chrono::duration<double>(std::chrono::steady_clock::now().time_since_epoch()).count()
-            << ", local=" << local << ", total=" << total
-            << ", sent_msgs=" << stats_ref.sent_msgs
-            << ", recv_msgs=" << stats_ref.recv_msgs
-            << ", sent_bytes=" << stats_ref.sent_bytes
-            << ", recv_bytes=" << stats_ref.recv_bytes << "\n";
-        std::string line = oss.str();
-        if (log.is_open()) {
-            log << line << std::flush;
+        if (total != last_total) {
+            std::ostringstream oss;
+            oss << std::fixed << std::chrono::duration<double>(std::chrono::steady_clock::now().time_since_epoch()).count()
+                << ", local=" << local << ", total=" << total
+                << ", sent_msgs=" << stats_ref.sent_msgs
+                << ", recv_msgs=" << stats_ref.recv_msgs
+                << ", sent_bytes=" << stats_ref.sent_bytes
+                << ", recv_bytes=" << stats_ref.recv_bytes << "\n";
+            std::string line = oss.str();
+            if (log.is_open()) {
+                log << line << std::flush;
+            }
+            last_total = total;
         }
     }
 }
@@ -718,8 +723,17 @@ int main(int argc, char* argv[]) {
     t_mon.detach();
     std::thread t_maint(periodic_maintenance);
     t_maint.detach();
+    
     // run workload: use same function but now it enqueues to _ops_send_queue
     run_random_mode(nc, gc);
+    {
+        std::lock_guard<std::mutex> lk(_event_log_mutex);
+        _event_log << std::fixed << now_ts()
+                << ", event=ops_finished"
+                << ", node=" << nc.id
+                << "\n";
+    }
+
     // wait a bit to let dissemination finish
     std::this_thread::sleep_for(15s);
     std::cout << "FINAL local=" << gc.local()

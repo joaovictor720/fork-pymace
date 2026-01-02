@@ -250,17 +250,21 @@ void run_random_mode(
 // monitor loop
 void monitor_loop(gcounter<int, std::string>& gc, stats& stats, double interval, const std::string& logfile) {
     std::ofstream log(logfile, std::ios::trunc);
+    int last_total = -1;
     while (true) {
         std::this_thread::sleep_for(std::chrono::duration<double>(interval));
         int local = gc.local();
         int total = gc.read();
-        log << std::fixed << std::chrono::duration<double>(std::chrono::steady_clock::now().time_since_epoch()).count()
-            << ", local=" << local << ", total=" << total
-            << ", sent_msgs=" << stats.sent_msgs
-            << ", recv_msgs=" << stats.recv_msgs 
-            << ", sent_bytes=" << stats.sent_bytes 
-            << ", recv_bytes=" << stats.recv_bytes << "\n";
-        log.flush();
+        if (total != last_total) {
+            log << std::fixed << std::chrono::duration<double>(std::chrono::steady_clock::now().time_since_epoch()).count()
+                << ", local=" << local << ", total=" << total
+                << ", sent_msgs=" << stats.sent_msgs
+                << ", recv_msgs=" << stats.recv_msgs 
+                << ", sent_bytes=" << stats.sent_bytes 
+                << ", recv_bytes=" << stats.recv_bytes << "\n";
+            log.flush();
+            last_total = total;
+        }
         {
             std::unique_lock<std::mutex> lk(_event_log_mutex);
             _event_log.flush();
