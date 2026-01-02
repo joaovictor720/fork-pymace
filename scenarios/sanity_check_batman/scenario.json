@@ -30,7 +30,7 @@
     "node_config": {
         "ops_per_sec": 1,
         "duration": 10,
-        "dissemination_interval": 0.1,
+        "dissemination_interval": 2,
         "monitor_interval": 2
     }
 }

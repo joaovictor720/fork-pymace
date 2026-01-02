@@ -431,16 +431,18 @@ void recv_loop(int sockfd_local, gcounter<int, std::string>& gc, stats& st, std:
                 try {
                     std::string s(payload.begin(), payload.end());
                     auto recv_gc = gcounter<int, std::string>::deserialize(s);
+                    int total = 0;
                     {
                         std::unique_lock<std::mutex> lg(_gc_mutex);
                         gc.join(recv_gc);
+                        total = gc.read();
                     }
                     {
                         std::lock_guard<std::mutex> lk(_event_log_mutex);
                         _event_log << std::fixed << now_ts()
                                 << ", event=op_apply"
                                 << ", node=" << node_id
-                                << ", delta_size=" << recv_gc.read()
+                                << ", total=" << total
                                 << "\n";
                     }
                     st.recv_msgs++;
@@ -584,16 +586,24 @@ void run_random_mode(const node_config& nc, gcounter<int, std::string>& gc) {
         std::uniform_int_distribution<int> inc_dist(1, 10);
         int val = inc_dist(gen);
         gcounter<int, std::string> delta_obj;
+        int total = 0;
         {
             std::unique_lock<std::mutex> lg(_gc_mutex);
             delta_obj = gc.inc(val);
+            total = gc.read();
         }
         {
             std::lock_guard<std::mutex> lk(_event_log_mutex);
-            _event_log << std::fixed << now_ts()
+            auto ts = now_ts();
+            _event_log << std::fixed << ts
                     << ", event=op_create"
                     << ", node=" << nc.id
                     << ", delta_size=" << val
+                    << "\n";
+            _event_log << std::fixed << ts
+                    << ", event=op_apply"
+                    << ", node=" << nc.id
+                    << ", total=" << total
                     << "\n";
         }
         {

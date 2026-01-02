@@ -33,6 +33,9 @@ std::condition_variable _send_queue_cond_var;
 std::mutex _delta_mutex;
 std::mutex _event_log_mutex;
 std::ofstream _event_log;
+std::condition_variable _diss_cond;
+std::mutex _diss_mutex;
+bool _diss_dirty = false;
 
 struct node_config {
     std::string id;
@@ -133,22 +136,31 @@ void send_msg(int sockfd, const sockaddr_in& peer, const std::string& msg, stats
 void dissemination_loop(
     int sockfd,
     const std::vector<sockaddr_in>& peers,
-    gcounter<int, std::string>& gc,
     gcounter<int, std::string>& delta_buffer,
     stats& stats,
     double interval
 ){
+    std::unique_lock<std::mutex> lk(_diss_mutex);
+
     while (true) {
-        std::this_thread::sleep_for(std::chrono::duration<double>(interval));
+        // Espera até:
+        // - chegar algo novo (notify)
+        // - ou expirar o timeout
+        _diss_cond.wait_for(
+            lk,
+            std::chrono::duration<double>(interval),
+            [] { return _diss_dirty; }
+        );
+
+        _diss_dirty = false;
 
         std::string payload;
         {
-            std::unique_lock<std::mutex> lock(_delta_mutex);
+            std::lock_guard<std::mutex> dlock(_delta_mutex);
             if (delta_buffer == gcounter<int, std::string>()) {
                 continue;
             }
             payload = delta_buffer.serialize();
-            // delta_buffer = gcounter<int, std::string>(); // clearing the delta buffer
         }
 
         for (auto& p : peers) {
@@ -170,9 +182,11 @@ void recv_loop(int sockfd, gcounter<int, std::string>& gc, gcounter<int, std::st
 
         try {
             auto sender_gcounter = gcounter<int, std::string>::deserialize(std::string(buffer, n));
+            int total = 0;
             {
                 std::lock_guard<std::mutex> lk(_gc_mutex);
                 gc.join(sender_gcounter);
+                total = gc.read();
             }
 
             {
@@ -180,7 +194,7 @@ void recv_loop(int sockfd, gcounter<int, std::string>& gc, gcounter<int, std::st
                 _event_log << std::fixed << now_ts()
                         << ", event=op_apply"
                         << ", node=" << node_id
-                        << ", delta_size=" << sender_gcounter.read()
+                        << ", total=" << total
                         << "\n";
             }
 
@@ -226,9 +240,11 @@ void run_random_mode(
         int val = inc_dist(gen);
         
         gcounter<int, std::string> d;
+        int total = 0;
         {
             std::unique_lock<std::mutex> lock(_gc_mutex);
             d = gc.inc(val);
+            total = gc.read();
         }
 
         {
@@ -239,11 +255,25 @@ void run_random_mode(
                     << ", delta_size=" << val
                     << "\n";
         }
+        {
+            std::lock_guard<std::mutex> lk(_event_log_mutex);
+            _event_log << std::fixed << now_ts()
+                    << ", event=op_apply"
+                    << ", node=" << nc.id
+                    << ", total=" << total
+                    << "\n";
+        }
 
         {
             std::unique_lock<std::mutex> lock(_delta_mutex);
             delta_buffer.join(d);
         }
+
+        {
+            std::lock_guard<std::mutex> lk(_diss_mutex);
+            _diss_dirty = true;
+        }
+        _diss_cond.notify_one();
     }
 }
 
@@ -354,7 +384,7 @@ int main(int argc, char* argv[]) {
     std::thread t_mon(monitor_loop, std::ref(gc), std::ref(stats), nc.monitor_interval, nc.log_file);
     t_mon.detach();
 
-    std::thread t_diss(dissemination_loop, sockfd, peers, std::ref(gc), std::ref(delta_buffer), std::ref(stats), nc.dissemination_interval);
+    std::thread t_diss(dissemination_loop, sockfd, peers, std::ref(delta_buffer), std::ref(stats), nc.dissemination_interval);
     t_diss.detach();
 
     run_random_mode(nc, gc, delta_buffer, sockfd, peers, stats);
