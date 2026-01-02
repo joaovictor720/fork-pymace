@@ -31,6 +31,6 @@
         "ops_per_sec": 1,
         "duration": 10,
         "dissemination_interval": 0.1,
-        "monitor_interval": 1
+        "monitor_interval": 2
     }
 }
