@@ -1,0 +1,2411 @@
+{
+  "settings": {
+    "core": "True",
+    "omnet": "False",
+    "dump": "False",
+    "number_of_nodes": 70,
+    "start_delay": 5,
+    "runtime": 50,
+    "username": "mace",
+    "disks_folder": "/mnt/pymace/",
+    "report_folder": "/home/mace/git/fork-pymace/reports/",
+    "emane_location": "/usr/share/emane"
+  },
+  "networks": [
+    {
+      "name": "mesh",
+      "prefix": "10.0.0.0/24",
+      "routing": "batman",
+      "settings": {
+        "range": "100",
+        "bandwidth": "11000000",
+        "delay": "5",
+        "jitter": "0",
+        "error": "0",
+        "emane": "False"
+      }
+    }
+  ],
+  "nodes": [
+    {
+      "name": "node0",
+      "settings": {
+        "_id": 0,
+        "x": 111.11,
+        "y": 111.11,
+        "type": "node",
+        "range": 100
+      },
+      "type": "UTM",
+      "function": [
+        "/bin/bash -lc \"set -x; sleep 5; /home/mace/git/fork-pymace/apps/crdt/rapid/crdt_rapid -id 0 -config /home/mace/git/fork-pymace/results/scale_storm_batman/rapid/run_001//node_config.json\""
+      ],
+      "extra": {
+        "disks": "False",
+        "dump": {
+          "start": "False",
+          "delay": 0,
+          "duration": 0
+        },
+        "network": [
+          "mesh"
+        ],
+        "mobility": {
+          "model": "random_waypoint",
+          "zone_x": 2000,
+          "zone_y": 2000,
+          "zone_z": 0,
+          "velocity_lower": 1.0,
+          "velocity_upper": 1.0,
+          "pause": 0
+        }
+      }
+    },
+    {
+      "name": "node1",
+      "settings": {
+        "_id": 1,
+        "x": 111.11,
+        "y": 333.33,
+        "type": "node",
+        "range": 100
+      },
+      "type": "UTM",
+      "function": [
+        "/bin/bash -lc \"set -x; sleep 5; /home/mace/git/fork-pymace/apps/crdt/rapid/crdt_rapid -id 1 -config /home/mace/git/fork-pymace/results/scale_storm_batman/rapid/run_001//node_config.json\""
+      ],
+      "extra": {
+        "disks": "False",
+        "dump": {
+          "start": "False",
+          "delay": 0,
+          "duration": 0
+        },
+        "network": [
+          "mesh"
+        ],
+        "mobility": {
+          "model": "random_waypoint",
+          "zone_x": 2000,
+          "zone_y": 2000,
+          "zone_z": 0,
+          "velocity_lower": 1.0,
+          "velocity_upper": 1.0,
+          "pause": 0
+        }
+      }
+    },
+    {
+      "name": "node2",
+      "settings": {
+        "_id": 2,
+        "x": 111.11,
+        "y": 555.56,
+        "type": "node",
+        "range": 100
+      },
+      "type": "UTM",
+      "function": [
+        "/bin/bash -lc \"set -x; sleep 5; /home/mace/git/fork-pymace/apps/crdt/rapid/crdt_rapid -id 2 -config /home/mace/git/fork-pymace/results/scale_storm_batman/rapid/run_001//node_config.json\""
+      ],
+      "extra": {
+        "disks": "False",
+        "dump": {
+          "start": "False",
+          "delay": 0,
+          "duration": 0
+        },
+        "network": [
+          "mesh"
+        ],
+        "mobility": {
+          "model": "random_waypoint",
+          "zone_x": 2000,
+          "zone_y": 2000,
+          "zone_z": 0,
+          "velocity_lower": 1.0,
+          "velocity_upper": 1.0,
+          "pause": 0
+        }
+      }
+    },
+    {
+      "name": "node3",
+      "settings": {
+        "_id": 3,
+        "x": 111.11,
+        "y": 777.78,
+        "type": "node",
+        "range": 100
+      },
+      "type": "UTM",
+      "function": [
+        "/bin/bash -lc \"set -x; sleep 5; /home/mace/git/fork-pymace/apps/crdt/rapid/crdt_rapid -id 3 -config /home/mace/git/fork-pymace/results/scale_storm_batman/rapid/run_001//node_config.json\""
+      ],
+      "extra": {
+        "disks": "False",
+        "dump": {
+          "start": "False",
+          "delay": 0,
+          "duration": 0
+        },
+        "network": [
+          "mesh"
+        ],
+        "mobility": {
+          "model": "random_waypoint",
+          "zone_x": 2000,
+          "zone_y": 2000,
+          "zone_z": 0,
+          "velocity_lower": 1.0,
+          "velocity_upper": 1.0,
+          "pause": 0
+        }
+      }
+    },
+    {
+      "name": "node4",
+      "settings": {
+        "_id": 4,
+        "x": 111.11,
+        "y": 1000.0,
+        "type": "node",
+        "range": 100
+      },
+      "type": "UTM",
+      "function": [
+        "/bin/bash -lc \"set -x; sleep 5; /home/mace/git/fork-pymace/apps/crdt/rapid/crdt_rapid -id 4 -config /home/mace/git/fork-pymace/results/scale_storm_batman/rapid/run_001//node_config.json\""
+      ],
+      "extra": {
+        "disks": "False",
+        "dump": {
+          "start": "False",
+          "delay": 0,
+          "duration": 0
+        },
+        "network": [
+          "mesh"
+        ],
+        "mobility": {
+          "model": "random_waypoint",
+          "zone_x": 2000,
+          "zone_y": 2000,
+          "zone_z": 0,
+          "velocity_lower": 1.0,
+          "velocity_upper": 1.0,
+          "pause": 0
+        }
+      }
+    },
+    {
+      "name": "node5",
+      "settings": {
+        "_id": 5,
+        "x": 111.11,
+        "y": 1222.22,
+        "type": "node",
+        "range": 100
+      },
+      "type": "UTM",
+      "function": [
+        "/bin/bash -lc \"set -x; sleep 5; /home/mace/git/fork-pymace/apps/crdt/rapid/crdt_rapid -id 5 -config /home/mace/git/fork-pymace/results/scale_storm_batman/rapid/run_001//node_config.json\""
+      ],
+      "extra": {
+        "disks": "False",
+        "dump": {
+          "start": "False",
+          "delay": 0,
+          "duration": 0
+        },
+        "network": [
+          "mesh"
+        ],
+        "mobility": {
+          "model": "random_waypoint",
+          "zone_x": 2000,
+          "zone_y": 2000,
+          "zone_z": 0,
+          "velocity_lower": 1.0,
+          "velocity_upper": 1.0,
+          "pause": 0
+        }
+      }
+    },
+    {
+      "name": "node6",
+      "settings": {
+        "_id": 6,
+        "x": 111.11,
+        "y": 1444.44,
+        "type": "node",
+        "range": 100
+      },
+      "type": "UTM",
+      "function": [
+        "/bin/bash -lc \"set -x; sleep 5; /home/mace/git/fork-pymace/apps/crdt/rapid/crdt_rapid -id 6 -config /home/mace/git/fork-pymace/results/scale_storm_batman/rapid/run_001//node_config.json\""
+      ],
+      "extra": {
+        "disks": "False",
+        "dump": {
+          "start": "False",
+          "delay": 0,
+          "duration": 0
+        },
+        "network": [
+          "mesh"
+        ],
+        "mobility": {
+          "model": "random_waypoint",
+          "zone_x": 2000,
+          "zone_y": 2000,
+          "zone_z": 0,
+          "velocity_lower": 1.0,
+          "velocity_upper": 1.0,
+          "pause": 0
+        }
+      }
+    },
+    {
+      "name": "node7",
+      "settings": {
+        "_id": 7,
+        "x": 111.11,
+        "y": 1666.67,
+        "type": "node",
+        "range": 100
+      },
+      "type": "UTM",
+      "function": [
+        "/bin/bash -lc \"set -x; sleep 5; /home/mace/git/fork-pymace/apps/crdt/rapid/crdt_rapid -id 7 -config /home/mace/git/fork-pymace/results/scale_storm_batman/rapid/run_001//node_config.json\""
+      ],
+      "extra": {
+        "disks": "False",
+        "dump": {
+          "start": "False",
+          "delay": 0,
+          "duration": 0
+        },
+        "network": [
+          "mesh"
+        ],
+        "mobility": {
+          "model": "random_waypoint",
+          "zone_x": 2000,
+          "zone_y": 2000,
+          "zone_z": 0,
+          "velocity_lower": 1.0,
+          "velocity_upper": 1.0,
+          "pause": 0
+        }
+      }
+    },
+    {
+      "name": "node8",
+      "settings": {
+        "_id": 8,
+        "x": 111.11,
+        "y": 1888.89,
+        "type": "node",
+        "range": 100
+      },
+      "type": "UTM",
+      "function": [
+        "/bin/bash -lc \"set -x; sleep 5; /home/mace/git/fork-pymace/apps/crdt/rapid/crdt_rapid -id 8 -config /home/mace/git/fork-pymace/results/scale_storm_batman/rapid/run_001//node_config.json\""
+      ],
+      "extra": {
+        "disks": "False",
+        "dump": {
+          "start": "False",
+          "delay": 0,
+          "duration": 0
+        },
+        "network": [
+          "mesh"
+        ],
+        "mobility": {
+          "model": "random_waypoint",
+          "zone_x": 2000,
+          "zone_y": 2000,
+          "zone_z": 0,
+          "velocity_lower": 1.0,
+          "velocity_upper": 1.0,
+          "pause": 0
+        }
+      }
+    },
+    {
+      "name": "node9",
+      "settings": {
+        "_id": 9,
+        "x": 333.33,
+        "y": 111.11,
+        "type": "node",
+        "range": 100
+      },
+      "type": "UTM",
+      "function": [
+        "/bin/bash -lc \"set -x; sleep 5; /home/mace/git/fork-pymace/apps/crdt/rapid/crdt_rapid -id 9 -config /home/mace/git/fork-pymace/results/scale_storm_batman/rapid/run_001//node_config.json\""
+      ],
+      "extra": {
+        "disks": "False",
+        "dump": {
+          "start": "False",
+          "delay": 0,
+          "duration": 0
+        },
+        "network": [
+          "mesh"
+        ],
+        "mobility": {
+          "model": "random_waypoint",
+          "zone_x": 2000,
+          "zone_y": 2000,
+          "zone_z": 0,
+          "velocity_lower": 1.0,
+          "velocity_upper": 1.0,
+          "pause": 0
+        }
+      }
+    },
+    {
+      "name": "node10",
+      "settings": {
+        "_id": 10,
+        "x": 333.33,
+        "y": 333.33,
+        "type": "node",
+        "range": 100
+      },
+      "type": "UTM",
+      "function": [
+        "/bin/bash -lc \"set -x; sleep 5; /home/mace/git/fork-pymace/apps/crdt/rapid/crdt_rapid -id 10 -config /home/mace/git/fork-pymace/results/scale_storm_batman/rapid/run_001//node_config.json\""
+      ],
+      "extra": {
+        "disks": "False",
+        "dump": {
+          "start": "False",
+          "delay": 0,
+          "duration": 0
+        },
+        "network": [
+          "mesh"
+        ],
+        "mobility": {
+          "model": "random_waypoint",
+          "zone_x": 2000,
+          "zone_y": 2000,
+          "zone_z": 0,
+          "velocity_lower": 1.0,
+          "velocity_upper": 1.0,
+          "pause": 0
+        }
+      }
+    },
+    {
+      "name": "node11",
+      "settings": {
+        "_id": 11,
+        "x": 333.33,
+        "y": 555.56,
+        "type": "node",
+        "range": 100
+      },
+      "type": "UTM",
+      "function": [
+        "/bin/bash -lc \"set -x; sleep 5; /home/mace/git/fork-pymace/apps/crdt/rapid/crdt_rapid -id 11 -config /home/mace/git/fork-pymace/results/scale_storm_batman/rapid/run_001//node_config.json\""
+      ],
+      "extra": {
+        "disks": "False",
+        "dump": {
+          "start": "False",
+          "delay": 0,
+          "duration": 0
+        },
+        "network": [
+          "mesh"
+        ],
+        "mobility": {
+          "model": "random_waypoint",
+          "zone_x": 2000,
+          "zone_y": 2000,
+          "zone_z": 0,
+          "velocity_lower": 1.0,
+          "velocity_upper": 1.0,
+          "pause": 0
+        }
+      }
+    },
+    {
+      "name": "node12",
+      "settings": {
+        "_id": 12,
+        "x": 333.33,
+        "y": 777.78,
+        "type": "node",
+        "range": 100
+      },
+      "type": "UTM",
+      "function": [
+        "/bin/bash -lc \"set -x; sleep 5; /home/mace/git/fork-pymace/apps/crdt/rapid/crdt_rapid -id 12 -config /home/mace/git/fork-pymace/results/scale_storm_batman/rapid/run_001//node_config.json\""
+      ],
+      "extra": {
+        "disks": "False",
+        "dump": {
+          "start": "False",
+          "delay": 0,
+          "duration": 0
+        },
+        "network": [
+          "mesh"
+        ],
+        "mobility": {
+          "model": "random_waypoint",
+          "zone_x": 2000,
+          "zone_y": 2000,
+          "zone_z": 0,
+          "velocity_lower": 1.0,
+          "velocity_upper": 1.0,
+          "pause": 0
+        }
+      }
+    },
+    {
+      "name": "node13",
+      "settings": {
+        "_id": 13,
+        "x": 333.33,
+        "y": 1000.0,
+        "type": "node",
+        "range": 100
+      },
+      "type": "UTM",
+      "function": [
+        "/bin/bash -lc \"set -x; sleep 5; /home/mace/git/fork-pymace/apps/crdt/rapid/crdt_rapid -id 13 -config /home/mace/git/fork-pymace/results/scale_storm_batman/rapid/run_001//node_config.json\""
+      ],
+      "extra": {
+        "disks": "False",
+        "dump": {
+          "start": "False",
+          "delay": 0,
+          "duration": 0
+        },
+        "network": [
+          "mesh"
+        ],
+        "mobility": {
+          "model": "random_waypoint",
+          "zone_x": 2000,
+          "zone_y": 2000,
+          "zone_z": 0,
+          "velocity_lower": 1.0,
+          "velocity_upper": 1.0,
+          "pause": 0
+        }
+      }
+    },
+    {
+      "name": "node14",
+      "settings": {
+        "_id": 14,
+        "x": 333.33,
+        "y": 1222.22,
+        "type": "node",
+        "range": 100
+      },
+      "type": "UTM",
+      "function": [
+        "/bin/bash -lc \"set -x; sleep 5; /home/mace/git/fork-pymace/apps/crdt/rapid/crdt_rapid -id 14 -config /home/mace/git/fork-pymace/results/scale_storm_batman/rapid/run_001//node_config.json\""
+      ],
+      "extra": {
+        "disks": "False",
+        "dump": {
+          "start": "False",
+          "delay": 0,
+          "duration": 0
+        },
+        "network": [
+          "mesh"
+        ],
+        "mobility": {
+          "model": "random_waypoint",
+          "zone_x": 2000,
+          "zone_y": 2000,
+          "zone_z": 0,
+          "velocity_lower": 1.0,
+          "velocity_upper": 1.0,
+          "pause": 0
+        }
+      }
+    },
+    {
+      "name": "node15",
+      "settings": {
+        "_id": 15,
+        "x": 333.33,
+        "y": 1444.44,
+        "type": "node",
+        "range": 100
+      },
+      "type": "UTM",
+      "function": [
+        "/bin/bash -lc \"set -x; sleep 5; /home/mace/git/fork-pymace/apps/crdt/rapid/crdt_rapid -id 15 -config /home/mace/git/fork-pymace/results/scale_storm_batman/rapid/run_001//node_config.json\""
+      ],
+      "extra": {
+        "disks": "False",
+        "dump": {
+          "start": "False",
+          "delay": 0,
+          "duration": 0
+        },
+        "network": [
+          "mesh"
+        ],
+        "mobility": {
+          "model": "random_waypoint",
+          "zone_x": 2000,
+          "zone_y": 2000,
+          "zone_z": 0,
+          "velocity_lower": 1.0,
+          "velocity_upper": 1.0,
+          "pause": 0
+        }
+      }
+    },
+    {
+      "name": "node16",
+      "settings": {
+        "_id": 16,
+        "x": 333.33,
+        "y": 1666.67,
+        "type": "node",
+        "range": 100
+      },
+      "type": "UTM",
+      "function": [
+        "/bin/bash -lc \"set -x; sleep 5; /home/mace/git/fork-pymace/apps/crdt/rapid/crdt_rapid -id 16 -config /home/mace/git/fork-pymace/results/scale_storm_batman/rapid/run_001//node_config.json\""
+      ],
+      "extra": {
+        "disks": "False",
+        "dump": {
+          "start": "False",
+          "delay": 0,
+          "duration": 0
+        },
+        "network": [
+          "mesh"
+        ],
+        "mobility": {
+          "model": "random_waypoint",
+          "zone_x": 2000,
+          "zone_y": 2000,
+          "zone_z": 0,
+          "velocity_lower": 1.0,
+          "velocity_upper": 1.0,
+          "pause": 0
+        }
+      }
+    },
+    {
+      "name": "node17",
+      "settings": {
+        "_id": 17,
+        "x": 333.33,
+        "y": 1888.89,
+        "type": "node",
+        "range": 100
+      },
+      "type": "UTM",
+      "function": [
+        "/bin/bash -lc \"set -x; sleep 5; /home/mace/git/fork-pymace/apps/crdt/rapid/crdt_rapid -id 17 -config /home/mace/git/fork-pymace/results/scale_storm_batman/rapid/run_001//node_config.json\""
+      ],
+      "extra": {
+        "disks": "False",
+        "dump": {
+          "start": "False",
+          "delay": 0,
+          "duration": 0
+        },
+        "network": [
+          "mesh"
+        ],
+        "mobility": {
+          "model": "random_waypoint",
+          "zone_x": 2000,
+          "zone_y": 2000,
+          "zone_z": 0,
+          "velocity_lower": 1.0,
+          "velocity_upper": 1.0,
+          "pause": 0
+        }
+      }
+    },
+    {
+      "name": "node18",
+      "settings": {
+        "_id": 18,
+        "x": 555.56,
+        "y": 111.11,
+        "type": "node",
+        "range": 100
+      },
+      "type": "UTM",
+      "function": [
+        "/bin/bash -lc \"set -x; sleep 5; /home/mace/git/fork-pymace/apps/crdt/rapid/crdt_rapid -id 18 -config /home/mace/git/fork-pymace/results/scale_storm_batman/rapid/run_001//node_config.json\""
+      ],
+      "extra": {
+        "disks": "False",
+        "dump": {
+          "start": "False",
+          "delay": 0,
+          "duration": 0
+        },
+        "network": [
+          "mesh"
+        ],
+        "mobility": {
+          "model": "random_waypoint",
+          "zone_x": 2000,
+          "zone_y": 2000,
+          "zone_z": 0,
+          "velocity_lower": 1.0,
+          "velocity_upper": 1.0,
+          "pause": 0
+        }
+      }
+    },
+    {
+      "name": "node19",
+      "settings": {
+        "_id": 19,
+        "x": 555.56,
+        "y": 333.33,
+        "type": "node",
+        "range": 100
+      },
+      "type": "UTM",
+      "function": [
+        "/bin/bash -lc \"set -x; sleep 5; /home/mace/git/fork-pymace/apps/crdt/rapid/crdt_rapid -id 19 -config /home/mace/git/fork-pymace/results/scale_storm_batman/rapid/run_001//node_config.json\""
+      ],
+      "extra": {
+        "disks": "False",
+        "dump": {
+          "start": "False",
+          "delay": 0,
+          "duration": 0
+        },
+        "network": [
+          "mesh"
+        ],
+        "mobility": {
+          "model": "random_waypoint",
+          "zone_x": 2000,
+          "zone_y": 2000,
+          "zone_z": 0,
+          "velocity_lower": 1.0,
+          "velocity_upper": 1.0,
+          "pause": 0
+        }
+      }
+    },
+    {
+      "name": "node20",
+      "settings": {
+        "_id": 20,
+        "x": 555.56,
+        "y": 555.56,
+        "type": "node",
+        "range": 100
+      },
+      "type": "UTM",
+      "function": [
+        "/bin/bash -lc \"set -x; sleep 5; /home/mace/git/fork-pymace/apps/crdt/rapid/crdt_rapid -id 20 -config /home/mace/git/fork-pymace/results/scale_storm_batman/rapid/run_001//node_config.json\""
+      ],
+      "extra": {
+        "disks": "False",
+        "dump": {
+          "start": "False",
+          "delay": 0,
+          "duration": 0
+        },
+        "network": [
+          "mesh"
+        ],
+        "mobility": {
+          "model": "random_waypoint",
+          "zone_x": 2000,
+          "zone_y": 2000,
+          "zone_z": 0,
+          "velocity_lower": 1.0,
+          "velocity_upper": 1.0,
+          "pause": 0
+        }
+      }
+    },
+    {
+      "name": "node21",
+      "settings": {
+        "_id": 21,
+        "x": 555.56,
+        "y": 777.78,
+        "type": "node",
+        "range": 100
+      },
+      "type": "UTM",
+      "function": [
+        "/bin/bash -lc \"set -x; sleep 5; /home/mace/git/fork-pymace/apps/crdt/rapid/crdt_rapid -id 21 -config /home/mace/git/fork-pymace/results/scale_storm_batman/rapid/run_001//node_config.json\""
+      ],
+      "extra": {
+        "disks": "False",
+        "dump": {
+          "start": "False",
+          "delay": 0,
+          "duration": 0
+        },
+        "network": [
+          "mesh"
+        ],
+        "mobility": {
+          "model": "random_waypoint",
+          "zone_x": 2000,
+          "zone_y": 2000,
+          "zone_z": 0,
+          "velocity_lower": 1.0,
+          "velocity_upper": 1.0,
+          "pause": 0
+        }
+      }
+    },
+    {
+      "name": "node22",
+      "settings": {
+        "_id": 22,
+        "x": 555.56,
+        "y": 1000.0,
+        "type": "node",
+        "range": 100
+      },
+      "type": "UTM",
+      "function": [
+        "/bin/bash -lc \"set -x; sleep 5; /home/mace/git/fork-pymace/apps/crdt/rapid/crdt_rapid -id 22 -config /home/mace/git/fork-pymace/results/scale_storm_batman/rapid/run_001//node_config.json\""
+      ],
+      "extra": {
+        "disks": "False",
+        "dump": {
+          "start": "False",
+          "delay": 0,
+          "duration": 0
+        },
+        "network": [
+          "mesh"
+        ],
+        "mobility": {
+          "model": "random_waypoint",
+          "zone_x": 2000,
+          "zone_y": 2000,
+          "zone_z": 0,
+          "velocity_lower": 1.0,
+          "velocity_upper": 1.0,
+          "pause": 0
+        }
+      }
+    },
+    {
+      "name": "node23",
+      "settings": {
+        "_id": 23,
+        "x": 555.56,
+        "y": 1222.22,
+        "type": "node",
+        "range": 100
+      },
+      "type": "UTM",
+      "function": [
+        "/bin/bash -lc \"set -x; sleep 5; /home/mace/git/fork-pymace/apps/crdt/rapid/crdt_rapid -id 23 -config /home/mace/git/fork-pymace/results/scale_storm_batman/rapid/run_001//node_config.json\""
+      ],
+      "extra": {
+        "disks": "False",
+        "dump": {
+          "start": "False",
+          "delay": 0,
+          "duration": 0
+        },
+        "network": [
+          "mesh"
+        ],
+        "mobility": {
+          "model": "random_waypoint",
+          "zone_x": 2000,
+          "zone_y": 2000,
+          "zone_z": 0,
+          "velocity_lower": 1.0,
+          "velocity_upper": 1.0,
+          "pause": 0
+        }
+      }
+    },
+    {
+      "name": "node24",
+      "settings": {
+        "_id": 24,
+        "x": 555.56,
+        "y": 1444.44,
+        "type": "node",
+        "range": 100
+      },
+      "type": "UTM",
+      "function": [
+        "/bin/bash -lc \"set -x; sleep 5; /home/mace/git/fork-pymace/apps/crdt/rapid/crdt_rapid -id 24 -config /home/mace/git/fork-pymace/results/scale_storm_batman/rapid/run_001//node_config.json\""
+      ],
+      "extra": {
+        "disks": "False",
+        "dump": {
+          "start": "False",
+          "delay": 0,
+          "duration": 0
+        },
+        "network": [
+          "mesh"
+        ],
+        "mobility": {
+          "model": "random_waypoint",
+          "zone_x": 2000,
+          "zone_y": 2000,
+          "zone_z": 0,
+          "velocity_lower": 1.0,
+          "velocity_upper": 1.0,
+          "pause": 0
+        }
+      }
+    },
+    {
+      "name": "node25",
+      "settings": {
+        "_id": 25,
+        "x": 555.56,
+        "y": 1666.67,
+        "type": "node",
+        "range": 100
+      },
+      "type": "UTM",
+      "function": [
+        "/bin/bash -lc \"set -x; sleep 5; /home/mace/git/fork-pymace/apps/crdt/rapid/crdt_rapid -id 25 -config /home/mace/git/fork-pymace/results/scale_storm_batman/rapid/run_001//node_config.json\""
+      ],
+      "extra": {
+        "disks": "False",
+        "dump": {
+          "start": "False",
+          "delay": 0,
+          "duration": 0
+        },
+        "network": [
+          "mesh"
+        ],
+        "mobility": {
+          "model": "random_waypoint",
+          "zone_x": 2000,
+          "zone_y": 2000,
+          "zone_z": 0,
+          "velocity_lower": 1.0,
+          "velocity_upper": 1.0,
+          "pause": 0
+        }
+      }
+    },
+    {
+      "name": "node26",
+      "settings": {
+        "_id": 26,
+        "x": 555.56,
+        "y": 1888.89,
+        "type": "node",
+        "range": 100
+      },
+      "type": "UTM",
+      "function": [
+        "/bin/bash -lc \"set -x; sleep 5; /home/mace/git/fork-pymace/apps/crdt/rapid/crdt_rapid -id 26 -config /home/mace/git/fork-pymace/results/scale_storm_batman/rapid/run_001//node_config.json\""
+      ],
+      "extra": {
+        "disks": "False",
+        "dump": {
+          "start": "False",
+          "delay": 0,
+          "duration": 0
+        },
+        "network": [
+          "mesh"
+        ],
+        "mobility": {
+          "model": "random_waypoint",
+          "zone_x": 2000,
+          "zone_y": 2000,
+          "zone_z": 0,
+          "velocity_lower": 1.0,
+          "velocity_upper": 1.0,
+          "pause": 0
+        }
+      }
+    },
+    {
+      "name": "node27",
+      "settings": {
+        "_id": 27,
+        "x": 777.78,
+        "y": 111.11,
+        "type": "node",
+        "range": 100
+      },
+      "type": "UTM",
+      "function": [
+        "/bin/bash -lc \"set -x; sleep 5; /home/mace/git/fork-pymace/apps/crdt/rapid/crdt_rapid -id 27 -config /home/mace/git/fork-pymace/results/scale_storm_batman/rapid/run_001//node_config.json\""
+      ],
+      "extra": {
+        "disks": "False",
+        "dump": {
+          "start": "False",
+          "delay": 0,
+          "duration": 0
+        },
+        "network": [
+          "mesh"
+        ],
+        "mobility": {
+          "model": "random_waypoint",
+          "zone_x": 2000,
+          "zone_y": 2000,
+          "zone_z": 0,
+          "velocity_lower": 1.0,
+          "velocity_upper": 1.0,
+          "pause": 0
+        }
+      }
+    },
+    {
+      "name": "node28",
+      "settings": {
+        "_id": 28,
+        "x": 777.78,
+        "y": 333.33,
+        "type": "node",
+        "range": 100
+      },
+      "type": "UTM",
+      "function": [
+        "/bin/bash -lc \"set -x; sleep 5; /home/mace/git/fork-pymace/apps/crdt/rapid/crdt_rapid -id 28 -config /home/mace/git/fork-pymace/results/scale_storm_batman/rapid/run_001//node_config.json\""
+      ],
+      "extra": {
+        "disks": "False",
+        "dump": {
+          "start": "False",
+          "delay": 0,
+          "duration": 0
+        },
+        "network": [
+          "mesh"
+        ],
+        "mobility": {
+          "model": "random_waypoint",
+          "zone_x": 2000,
+          "zone_y": 2000,
+          "zone_z": 0,
+          "velocity_lower": 1.0,
+          "velocity_upper": 1.0,
+          "pause": 0
+        }
+      }
+    },
+    {
+      "name": "node29",
+      "settings": {
+        "_id": 29,
+        "x": 777.78,
+        "y": 555.56,
+        "type": "node",
+        "range": 100
+      },
+      "type": "UTM",
+      "function": [
+        "/bin/bash -lc \"set -x; sleep 5; /home/mace/git/fork-pymace/apps/crdt/rapid/crdt_rapid -id 29 -config /home/mace/git/fork-pymace/results/scale_storm_batman/rapid/run_001//node_config.json\""
+      ],
+      "extra": {
+        "disks": "False",
+        "dump": {
+          "start": "False",
+          "delay": 0,
+          "duration": 0
+        },
+        "network": [
+          "mesh"
+        ],
+        "mobility": {
+          "model": "random_waypoint",
+          "zone_x": 2000,
+          "zone_y": 2000,
+          "zone_z": 0,
+          "velocity_lower": 1.0,
+          "velocity_upper": 1.0,
+          "pause": 0
+        }
+      }
+    },
+    {
+      "name": "node30",
+      "settings": {
+        "_id": 30,
+        "x": 777.78,
+        "y": 777.78,
+        "type": "node",
+        "range": 100
+      },
+      "type": "UTM",
+      "function": [
+        "/bin/bash -lc \"set -x; sleep 5; /home/mace/git/fork-pymace/apps/crdt/rapid/crdt_rapid -id 30 -config /home/mace/git/fork-pymace/results/scale_storm_batman/rapid/run_001//node_config.json\""
+      ],
+      "extra": {
+        "disks": "False",
+        "dump": {
+          "start": "False",
+          "delay": 0,
+          "duration": 0
+        },
+        "network": [
+          "mesh"
+        ],
+        "mobility": {
+          "model": "random_waypoint",
+          "zone_x": 2000,
+          "zone_y": 2000,
+          "zone_z": 0,
+          "velocity_lower": 1.0,
+          "velocity_upper": 1.0,
+          "pause": 0
+        }
+      }
+    },
+    {
+      "name": "node31",
+      "settings": {
+        "_id": 31,
+        "x": 777.78,
+        "y": 1000.0,
+        "type": "node",
+        "range": 100
+      },
+      "type": "UTM",
+      "function": [
+        "/bin/bash -lc \"set -x; sleep 5; /home/mace/git/fork-pymace/apps/crdt/rapid/crdt_rapid -id 31 -config /home/mace/git/fork-pymace/results/scale_storm_batman/rapid/run_001//node_config.json\""
+      ],
+      "extra": {
+        "disks": "False",
+        "dump": {
+          "start": "False",
+          "delay": 0,
+          "duration": 0
+        },
+        "network": [
+          "mesh"
+        ],
+        "mobility": {
+          "model": "random_waypoint",
+          "zone_x": 2000,
+          "zone_y": 2000,
+          "zone_z": 0,
+          "velocity_lower": 1.0,
+          "velocity_upper": 1.0,
+          "pause": 0
+        }
+      }
+    },
+    {
+      "name": "node32",
+      "settings": {
+        "_id": 32,
+        "x": 777.78,
+        "y": 1222.22,
+        "type": "node",
+        "range": 100
+      },
+      "type": "UTM",
+      "function": [
+        "/bin/bash -lc \"set -x; sleep 5; /home/mace/git/fork-pymace/apps/crdt/rapid/crdt_rapid -id 32 -config /home/mace/git/fork-pymace/results/scale_storm_batman/rapid/run_001//node_config.json\""
+      ],
+      "extra": {
+        "disks": "False",
+        "dump": {
+          "start": "False",
+          "delay": 0,
+          "duration": 0
+        },
+        "network": [
+          "mesh"
+        ],
+        "mobility": {
+          "model": "random_waypoint",
+          "zone_x": 2000,
+          "zone_y": 2000,
+          "zone_z": 0,
+          "velocity_lower": 1.0,
+          "velocity_upper": 1.0,
+          "pause": 0
+        }
+      }
+    },
+    {
+      "name": "node33",
+      "settings": {
+        "_id": 33,
+        "x": 777.78,
+        "y": 1444.44,
+        "type": "node",
+        "range": 100
+      },
+      "type": "UTM",
+      "function": [
+        "/bin/bash -lc \"set -x; sleep 5; /home/mace/git/fork-pymace/apps/crdt/rapid/crdt_rapid -id 33 -config /home/mace/git/fork-pymace/results/scale_storm_batman/rapid/run_001//node_config.json\""
+      ],
+      "extra": {
+        "disks": "False",
+        "dump": {
+          "start": "False",
+          "delay": 0,
+          "duration": 0
+        },
+        "network": [
+          "mesh"
+        ],
+        "mobility": {
+          "model": "random_waypoint",
+          "zone_x": 2000,
+          "zone_y": 2000,
+          "zone_z": 0,
+          "velocity_lower": 1.0,
+          "velocity_upper": 1.0,
+          "pause": 0
+        }
+      }
+    },
+    {
+      "name": "node34",
+      "settings": {
+        "_id": 34,
+        "x": 777.78,
+        "y": 1666.67,
+        "type": "node",
+        "range": 100
+      },
+      "type": "UTM",
+      "function": [
+        "/bin/bash -lc \"set -x; sleep 5; /home/mace/git/fork-pymace/apps/crdt/rapid/crdt_rapid -id 34 -config /home/mace/git/fork-pymace/results/scale_storm_batman/rapid/run_001//node_config.json\""
+      ],
+      "extra": {
+        "disks": "False",
+        "dump": {
+          "start": "False",
+          "delay": 0,
+          "duration": 0
+        },
+        "network": [
+          "mesh"
+        ],
+        "mobility": {
+          "model": "random_waypoint",
+          "zone_x": 2000,
+          "zone_y": 2000,
+          "zone_z": 0,
+          "velocity_lower": 1.0,
+          "velocity_upper": 1.0,
+          "pause": 0
+        }
+      }
+    },
+    {
+      "name": "node35",
+      "settings": {
+        "_id": 35,
+        "x": 777.78,
+        "y": 1888.89,
+        "type": "node",
+        "range": 100
+      },
+      "type": "UTM",
+      "function": [
+        "/bin/bash -lc \"set -x; sleep 5; /home/mace/git/fork-pymace/apps/crdt/rapid/crdt_rapid -id 35 -config /home/mace/git/fork-pymace/results/scale_storm_batman/rapid/run_001//node_config.json\""
+      ],
+      "extra": {
+        "disks": "False",
+        "dump": {
+          "start": "False",
+          "delay": 0,
+          "duration": 0
+        },
+        "network": [
+          "mesh"
+        ],
+        "mobility": {
+          "model": "random_waypoint",
+          "zone_x": 2000,
+          "zone_y": 2000,
+          "zone_z": 0,
+          "velocity_lower": 1.0,
+          "velocity_upper": 1.0,
+          "pause": 0
+        }
+      }
+    },
+    {
+      "name": "node36",
+      "settings": {
+        "_id": 36,
+        "x": 1000.0,
+        "y": 111.11,
+        "type": "node",
+        "range": 100
+      },
+      "type": "UTM",
+      "function": [
+        "/bin/bash -lc \"set -x; sleep 5; /home/mace/git/fork-pymace/apps/crdt/rapid/crdt_rapid -id 36 -config /home/mace/git/fork-pymace/results/scale_storm_batman/rapid/run_001//node_config.json\""
+      ],
+      "extra": {
+        "disks": "False",
+        "dump": {
+          "start": "False",
+          "delay": 0,
+          "duration": 0
+        },
+        "network": [
+          "mesh"
+        ],
+        "mobility": {
+          "model": "random_waypoint",
+          "zone_x": 2000,
+          "zone_y": 2000,
+          "zone_z": 0,
+          "velocity_lower": 1.0,
+          "velocity_upper": 1.0,
+          "pause": 0
+        }
+      }
+    },
+    {
+      "name": "node37",
+      "settings": {
+        "_id": 37,
+        "x": 1000.0,
+        "y": 333.33,
+        "type": "node",
+        "range": 100
+      },
+      "type": "UTM",
+      "function": [
+        "/bin/bash -lc \"set -x; sleep 5; /home/mace/git/fork-pymace/apps/crdt/rapid/crdt_rapid -id 37 -config /home/mace/git/fork-pymace/results/scale_storm_batman/rapid/run_001//node_config.json\""
+      ],
+      "extra": {
+        "disks": "False",
+        "dump": {
+          "start": "False",
+          "delay": 0,
+          "duration": 0
+        },
+        "network": [
+          "mesh"
+        ],
+        "mobility": {
+          "model": "random_waypoint",
+          "zone_x": 2000,
+          "zone_y": 2000,
+          "zone_z": 0,
+          "velocity_lower": 1.0,
+          "velocity_upper": 1.0,
+          "pause": 0
+        }
+      }
+    },
+    {
+      "name": "node38",
+      "settings": {
+        "_id": 38,
+        "x": 1000.0,
+        "y": 555.56,
+        "type": "node",
+        "range": 100
+      },
+      "type": "UTM",
+      "function": [
+        "/bin/bash -lc \"set -x; sleep 5; /home/mace/git/fork-pymace/apps/crdt/rapid/crdt_rapid -id 38 -config /home/mace/git/fork-pymace/results/scale_storm_batman/rapid/run_001//node_config.json\""
+      ],
+      "extra": {
+        "disks": "False",
+        "dump": {
+          "start": "False",
+          "delay": 0,
+          "duration": 0
+        },
+        "network": [
+          "mesh"
+        ],
+        "mobility": {
+          "model": "random_waypoint",
+          "zone_x": 2000,
+          "zone_y": 2000,
+          "zone_z": 0,
+          "velocity_lower": 1.0,
+          "velocity_upper": 1.0,
+          "pause": 0
+        }
+      }
+    },
+    {
+      "name": "node39",
+      "settings": {
+        "_id": 39,
+        "x": 1000.0,
+        "y": 777.78,
+        "type": "node",
+        "range": 100
+      },
+      "type": "UTM",
+      "function": [
+        "/bin/bash -lc \"set -x; sleep 5; /home/mace/git/fork-pymace/apps/crdt/rapid/crdt_rapid -id 39 -config /home/mace/git/fork-pymace/results/scale_storm_batman/rapid/run_001//node_config.json\""
+      ],
+      "extra": {
+        "disks": "False",
+        "dump": {
+          "start": "False",
+          "delay": 0,
+          "duration": 0
+        },
+        "network": [
+          "mesh"
+        ],
+        "mobility": {
+          "model": "random_waypoint",
+          "zone_x": 2000,
+          "zone_y": 2000,
+          "zone_z": 0,
+          "velocity_lower": 1.0,
+          "velocity_upper": 1.0,
+          "pause": 0
+        }
+      }
+    },
+    {
+      "name": "node40",
+      "settings": {
+        "_id": 40,
+        "x": 1000.0,
+        "y": 1000.0,
+        "type": "node",
+        "range": 100
+      },
+      "type": "UTM",
+      "function": [
+        "/bin/bash -lc \"set -x; sleep 5; /home/mace/git/fork-pymace/apps/crdt/rapid/crdt_rapid -id 40 -config /home/mace/git/fork-pymace/results/scale_storm_batman/rapid/run_001//node_config.json\""
+      ],
+      "extra": {
+        "disks": "False",
+        "dump": {
+          "start": "False",
+          "delay": 0,
+          "duration": 0
+        },
+        "network": [
+          "mesh"
+        ],
+        "mobility": {
+          "model": "random_waypoint",
+          "zone_x": 2000,
+          "zone_y": 2000,
+          "zone_z": 0,
+          "velocity_lower": 1.0,
+          "velocity_upper": 1.0,
+          "pause": 0
+        }
+      }
+    },
+    {
+      "name": "node41",
+      "settings": {
+        "_id": 41,
+        "x": 1000.0,
+        "y": 1222.22,
+        "type": "node",
+        "range": 100
+      },
+      "type": "UTM",
+      "function": [
+        "/bin/bash -lc \"set -x; sleep 5; /home/mace/git/fork-pymace/apps/crdt/rapid/crdt_rapid -id 41 -config /home/mace/git/fork-pymace/results/scale_storm_batman/rapid/run_001//node_config.json\""
+      ],
+      "extra": {
+        "disks": "False",
+        "dump": {
+          "start": "False",
+          "delay": 0,
+          "duration": 0
+        },
+        "network": [
+          "mesh"
+        ],
+        "mobility": {
+          "model": "random_waypoint",
+          "zone_x": 2000,
+          "zone_y": 2000,
+          "zone_z": 0,
+          "velocity_lower": 1.0,
+          "velocity_upper": 1.0,
+          "pause": 0
+        }
+      }
+    },
+    {
+      "name": "node42",
+      "settings": {
+        "_id": 42,
+        "x": 1000.0,
+        "y": 1444.44,
+        "type": "node",
+        "range": 100
+      },
+      "type": "UTM",
+      "function": [
+        "/bin/bash -lc \"set -x; sleep 5; /home/mace/git/fork-pymace/apps/crdt/rapid/crdt_rapid -id 42 -config /home/mace/git/fork-pymace/results/scale_storm_batman/rapid/run_001//node_config.json\""
+      ],
+      "extra": {
+        "disks": "False",
+        "dump": {
+          "start": "False",
+          "delay": 0,
+          "duration": 0
+        },
+        "network": [
+          "mesh"
+        ],
+        "mobility": {
+          "model": "random_waypoint",
+          "zone_x": 2000,
+          "zone_y": 2000,
+          "zone_z": 0,
+          "velocity_lower": 1.0,
+          "velocity_upper": 1.0,
+          "pause": 0
+        }
+      }
+    },
+    {
+      "name": "node43",
+      "settings": {
+        "_id": 43,
+        "x": 1000.0,
+        "y": 1666.67,
+        "type": "node",
+        "range": 100
+      },
+      "type": "UTM",
+      "function": [
+        "/bin/bash -lc \"set -x; sleep 5; /home/mace/git/fork-pymace/apps/crdt/rapid/crdt_rapid -id 43 -config /home/mace/git/fork-pymace/results/scale_storm_batman/rapid/run_001//node_config.json\""
+      ],
+      "extra": {
+        "disks": "False",
+        "dump": {
+          "start": "False",
+          "delay": 0,
+          "duration": 0
+        },
+        "network": [
+          "mesh"
+        ],
+        "mobility": {
+          "model": "random_waypoint",
+          "zone_x": 2000,
+          "zone_y": 2000,
+          "zone_z": 0,
+          "velocity_lower": 1.0,
+          "velocity_upper": 1.0,
+          "pause": 0
+        }
+      }
+    },
+    {
+      "name": "node44",
+      "settings": {
+        "_id": 44,
+        "x": 1000.0,
+        "y": 1888.89,
+        "type": "node",
+        "range": 100
+      },
+      "type": "UTM",
+      "function": [
+        "/bin/bash -lc \"set -x; sleep 5; /home/mace/git/fork-pymace/apps/crdt/rapid/crdt_rapid -id 44 -config /home/mace/git/fork-pymace/results/scale_storm_batman/rapid/run_001//node_config.json\""
+      ],
+      "extra": {
+        "disks": "False",
+        "dump": {
+          "start": "False",
+          "delay": 0,
+          "duration": 0
+        },
+        "network": [
+          "mesh"
+        ],
+        "mobility": {
+          "model": "random_waypoint",
+          "zone_x": 2000,
+          "zone_y": 2000,
+          "zone_z": 0,
+          "velocity_lower": 1.0,
+          "velocity_upper": 1.0,
+          "pause": 0
+        }
+      }
+    },
+    {
+      "name": "node45",
+      "settings": {
+        "_id": 45,
+        "x": 1222.22,
+        "y": 111.11,
+        "type": "node",
+        "range": 100
+      },
+      "type": "UTM",
+      "function": [
+        "/bin/bash -lc \"set -x; sleep 5; /home/mace/git/fork-pymace/apps/crdt/rapid/crdt_rapid -id 45 -config /home/mace/git/fork-pymace/results/scale_storm_batman/rapid/run_001//node_config.json\""
+      ],
+      "extra": {
+        "disks": "False",
+        "dump": {
+          "start": "False",
+          "delay": 0,
+          "duration": 0
+        },
+        "network": [
+          "mesh"
+        ],
+        "mobility": {
+          "model": "random_waypoint",
+          "zone_x": 2000,
+          "zone_y": 2000,
+          "zone_z": 0,
+          "velocity_lower": 1.0,
+          "velocity_upper": 1.0,
+          "pause": 0
+        }
+      }
+    },
+    {
+      "name": "node46",
+      "settings": {
+        "_id": 46,
+        "x": 1222.22,
+        "y": 333.33,
+        "type": "node",
+        "range": 100
+      },
+      "type": "UTM",
+      "function": [
+        "/bin/bash -lc \"set -x; sleep 5; /home/mace/git/fork-pymace/apps/crdt/rapid/crdt_rapid -id 46 -config /home/mace/git/fork-pymace/results/scale_storm_batman/rapid/run_001//node_config.json\""
+      ],
+      "extra": {
+        "disks": "False",
+        "dump": {
+          "start": "False",
+          "delay": 0,
+          "duration": 0
+        },
+        "network": [
+          "mesh"
+        ],
+        "mobility": {
+          "model": "random_waypoint",
+          "zone_x": 2000,
+          "zone_y": 2000,
+          "zone_z": 0,
+          "velocity_lower": 1.0,
+          "velocity_upper": 1.0,
+          "pause": 0
+        }
+      }
+    },
+    {
+      "name": "node47",
+      "settings": {
+        "_id": 47,
+        "x": 1222.22,
+        "y": 555.56,
+        "type": "node",
+        "range": 100
+      },
+      "type": "UTM",
+      "function": [
+        "/bin/bash -lc \"set -x; sleep 5; /home/mace/git/fork-pymace/apps/crdt/rapid/crdt_rapid -id 47 -config /home/mace/git/fork-pymace/results/scale_storm_batman/rapid/run_001//node_config.json\""
+      ],
+      "extra": {
+        "disks": "False",
+        "dump": {
+          "start": "False",
+          "delay": 0,
+          "duration": 0
+        },
+        "network": [
+          "mesh"
+        ],
+        "mobility": {
+          "model": "random_waypoint",
+          "zone_x": 2000,
+          "zone_y": 2000,
+          "zone_z": 0,
+          "velocity_lower": 1.0,
+          "velocity_upper": 1.0,
+          "pause": 0
+        }
+      }
+    },
+    {
+      "name": "node48",
+      "settings": {
+        "_id": 48,
+        "x": 1222.22,
+        "y": 777.78,
+        "type": "node",
+        "range": 100
+      },
+      "type": "UTM",
+      "function": [
+        "/bin/bash -lc \"set -x; sleep 5; /home/mace/git/fork-pymace/apps/crdt/rapid/crdt_rapid -id 48 -config /home/mace/git/fork-pymace/results/scale_storm_batman/rapid/run_001//node_config.json\""
+      ],
+      "extra": {
+        "disks": "False",
+        "dump": {
+          "start": "False",
+          "delay": 0,
+          "duration": 0
+        },
+        "network": [
+          "mesh"
+        ],
+        "mobility": {
+          "model": "random_waypoint",
+          "zone_x": 2000,
+          "zone_y": 2000,
+          "zone_z": 0,
+          "velocity_lower": 1.0,
+          "velocity_upper": 1.0,
+          "pause": 0
+        }
+      }
+    },
+    {
+      "name": "node49",
+      "settings": {
+        "_id": 49,
+        "x": 1222.22,
+        "y": 1000.0,
+        "type": "node",
+        "range": 100
+      },
+      "type": "UTM",
+      "function": [
+        "/bin/bash -lc \"set -x; sleep 5; /home/mace/git/fork-pymace/apps/crdt/rapid/crdt_rapid -id 49 -config /home/mace/git/fork-pymace/results/scale_storm_batman/rapid/run_001//node_config.json\""
+      ],
+      "extra": {
+        "disks": "False",
+        "dump": {
+          "start": "False",
+          "delay": 0,
+          "duration": 0
+        },
+        "network": [
+          "mesh"
+        ],
+        "mobility": {
+          "model": "random_waypoint",
+          "zone_x": 2000,
+          "zone_y": 2000,
+          "zone_z": 0,
+          "velocity_lower": 1.0,
+          "velocity_upper": 1.0,
+          "pause": 0
+        }
+      }
+    },
+    {
+      "name": "node50",
+      "settings": {
+        "_id": 50,
+        "x": 1222.22,
+        "y": 1222.22,
+        "type": "node",
+        "range": 100
+      },
+      "type": "UTM",
+      "function": [
+        "/bin/bash -lc \"set -x; sleep 5; /home/mace/git/fork-pymace/apps/crdt/rapid/crdt_rapid -id 50 -config /home/mace/git/fork-pymace/results/scale_storm_batman/rapid/run_001//node_config.json\""
+      ],
+      "extra": {
+        "disks": "False",
+        "dump": {
+          "start": "False",
+          "delay": 0,
+          "duration": 0
+        },
+        "network": [
+          "mesh"
+        ],
+        "mobility": {
+          "model": "random_waypoint",
+          "zone_x": 2000,
+          "zone_y": 2000,
+          "zone_z": 0,
+          "velocity_lower": 1.0,
+          "velocity_upper": 1.0,
+          "pause": 0
+        }
+      }
+    },
+    {
+      "name": "node51",
+      "settings": {
+        "_id": 51,
+        "x": 1222.22,
+        "y": 1444.44,
+        "type": "node",
+        "range": 100
+      },
+      "type": "UTM",
+      "function": [
+        "/bin/bash -lc \"set -x; sleep 5; /home/mace/git/fork-pymace/apps/crdt/rapid/crdt_rapid -id 51 -config /home/mace/git/fork-pymace/results/scale_storm_batman/rapid/run_001//node_config.json\""
+      ],
+      "extra": {
+        "disks": "False",
+        "dump": {
+          "start": "False",
+          "delay": 0,
+          "duration": 0
+        },
+        "network": [
+          "mesh"
+        ],
+        "mobility": {
+          "model": "random_waypoint",
+          "zone_x": 2000,
+          "zone_y": 2000,
+          "zone_z": 0,
+          "velocity_lower": 1.0,
+          "velocity_upper": 1.0,
+          "pause": 0
+        }
+      }
+    },
+    {
+      "name": "node52",
+      "settings": {
+        "_id": 52,
+        "x": 1222.22,
+        "y": 1666.67,
+        "type": "node",
+        "range": 100
+      },
+      "type": "UTM",
+      "function": [
+        "/bin/bash -lc \"set -x; sleep 5; /home/mace/git/fork-pymace/apps/crdt/rapid/crdt_rapid -id 52 -config /home/mace/git/fork-pymace/results/scale_storm_batman/rapid/run_001//node_config.json\""
+      ],
+      "extra": {
+        "disks": "False",
+        "dump": {
+          "start": "False",
+          "delay": 0,
+          "duration": 0
+        },
+        "network": [
+          "mesh"
+        ],
+        "mobility": {
+          "model": "random_waypoint",
+          "zone_x": 2000,
+          "zone_y": 2000,
+          "zone_z": 0,
+          "velocity_lower": 1.0,
+          "velocity_upper": 1.0,
+          "pause": 0
+        }
+      }
+    },
+    {
+      "name": "node53",
+      "settings": {
+        "_id": 53,
+        "x": 1222.22,
+        "y": 1888.89,
+        "type": "node",
+        "range": 100
+      },
+      "type": "UTM",
+      "function": [
+        "/bin/bash -lc \"set -x; sleep 5; /home/mace/git/fork-pymace/apps/crdt/rapid/crdt_rapid -id 53 -config /home/mace/git/fork-pymace/results/scale_storm_batman/rapid/run_001//node_config.json\""
+      ],
+      "extra": {
+        "disks": "False",
+        "dump": {
+          "start": "False",
+          "delay": 0,
+          "duration": 0
+        },
+        "network": [
+          "mesh"
+        ],
+        "mobility": {
+          "model": "random_waypoint",
+          "zone_x": 2000,
+          "zone_y": 2000,
+          "zone_z": 0,
+          "velocity_lower": 1.0,
+          "velocity_upper": 1.0,
+          "pause": 0
+        }
+      }
+    },
+    {
+      "name": "node54",
+      "settings": {
+        "_id": 54,
+        "x": 1444.44,
+        "y": 111.11,
+        "type": "node",
+        "range": 100
+      },
+      "type": "UTM",
+      "function": [
+        "/bin/bash -lc \"set -x; sleep 5; /home/mace/git/fork-pymace/apps/crdt/rapid/crdt_rapid -id 54 -config /home/mace/git/fork-pymace/results/scale_storm_batman/rapid/run_001//node_config.json\""
+      ],
+      "extra": {
+        "disks": "False",
+        "dump": {
+          "start": "False",
+          "delay": 0,
+          "duration": 0
+        },
+        "network": [
+          "mesh"
+        ],
+        "mobility": {
+          "model": "random_waypoint",
+          "zone_x": 2000,
+          "zone_y": 2000,
+          "zone_z": 0,
+          "velocity_lower": 1.0,
+          "velocity_upper": 1.0,
+          "pause": 0
+        }
+      }
+    },
+    {
+      "name": "node55",
+      "settings": {
+        "_id": 55,
+        "x": 1444.44,
+        "y": 333.33,
+        "type": "node",
+        "range": 100
+      },
+      "type": "UTM",
+      "function": [
+        "/bin/bash -lc \"set -x; sleep 5; /home/mace/git/fork-pymace/apps/crdt/rapid/crdt_rapid -id 55 -config /home/mace/git/fork-pymace/results/scale_storm_batman/rapid/run_001//node_config.json\""
+      ],
+      "extra": {
+        "disks": "False",
+        "dump": {
+          "start": "False",
+          "delay": 0,
+          "duration": 0
+        },
+        "network": [
+          "mesh"
+        ],
+        "mobility": {
+          "model": "random_waypoint",
+          "zone_x": 2000,
+          "zone_y": 2000,
+          "zone_z": 0,
+          "velocity_lower": 1.0,
+          "velocity_upper": 1.0,
+          "pause": 0
+        }
+      }
+    },
+    {
+      "name": "node56",
+      "settings": {
+        "_id": 56,
+        "x": 1444.44,
+        "y": 555.56,
+        "type": "node",
+        "range": 100
+      },
+      "type": "UTM",
+      "function": [
+        "/bin/bash -lc \"set -x; sleep 5; /home/mace/git/fork-pymace/apps/crdt/rapid/crdt_rapid -id 56 -config /home/mace/git/fork-pymace/results/scale_storm_batman/rapid/run_001//node_config.json\""
+      ],
+      "extra": {
+        "disks": "False",
+        "dump": {
+          "start": "False",
+          "delay": 0,
+          "duration": 0
+        },
+        "network": [
+          "mesh"
+        ],
+        "mobility": {
+          "model": "random_waypoint",
+          "zone_x": 2000,
+          "zone_y": 2000,
+          "zone_z": 0,
+          "velocity_lower": 1.0,
+          "velocity_upper": 1.0,
+          "pause": 0
+        }
+      }
+    },
+    {
+      "name": "node57",
+      "settings": {
+        "_id": 57,
+        "x": 1444.44,
+        "y": 777.78,
+        "type": "node",
+        "range": 100
+      },
+      "type": "UTM",
+      "function": [
+        "/bin/bash -lc \"set -x; sleep 5; /home/mace/git/fork-pymace/apps/crdt/rapid/crdt_rapid -id 57 -config /home/mace/git/fork-pymace/results/scale_storm_batman/rapid/run_001//node_config.json\""
+      ],
+      "extra": {
+        "disks": "False",
+        "dump": {
+          "start": "False",
+          "delay": 0,
+          "duration": 0
+        },
+        "network": [
+          "mesh"
+        ],
+        "mobility": {
+          "model": "random_waypoint",
+          "zone_x": 2000,
+          "zone_y": 2000,
+          "zone_z": 0,
+          "velocity_lower": 1.0,
+          "velocity_upper": 1.0,
+          "pause": 0
+        }
+      }
+    },
+    {
+      "name": "node58",
+      "settings": {
+        "_id": 58,
+        "x": 1444.44,
+        "y": 1000.0,
+        "type": "node",
+        "range": 100
+      },
+      "type": "UTM",
+      "function": [
+        "/bin/bash -lc \"set -x; sleep 5; /home/mace/git/fork-pymace/apps/crdt/rapid/crdt_rapid -id 58 -config /home/mace/git/fork-pymace/results/scale_storm_batman/rapid/run_001//node_config.json\""
+      ],
+      "extra": {
+        "disks": "False",
+        "dump": {
+          "start": "False",
+          "delay": 0,
+          "duration": 0
+        },
+        "network": [
+          "mesh"
+        ],
+        "mobility": {
+          "model": "random_waypoint",
+          "zone_x": 2000,
+          "zone_y": 2000,
+          "zone_z": 0,
+          "velocity_lower": 1.0,
+          "velocity_upper": 1.0,
+          "pause": 0
+        }
+      }
+    },
+    {
+      "name": "node59",
+      "settings": {
+        "_id": 59,
+        "x": 1444.44,
+        "y": 1222.22,
+        "type": "node",
+        "range": 100
+      },
+      "type": "UTM",
+      "function": [
+        "/bin/bash -lc \"set -x; sleep 5; /home/mace/git/fork-pymace/apps/crdt/rapid/crdt_rapid -id 59 -config /home/mace/git/fork-pymace/results/scale_storm_batman/rapid/run_001//node_config.json\""
+      ],
+      "extra": {
+        "disks": "False",
+        "dump": {
+          "start": "False",
+          "delay": 0,
+          "duration": 0
+        },
+        "network": [
+          "mesh"
+        ],
+        "mobility": {
+          "model": "random_waypoint",
+          "zone_x": 2000,
+          "zone_y": 2000,
+          "zone_z": 0,
+          "velocity_lower": 1.0,
+          "velocity_upper": 1.0,
+          "pause": 0
+        }
+      }
+    },
+    {
+      "name": "node60",
+      "settings": {
+        "_id": 60,
+        "x": 1444.44,
+        "y": 1444.44,
+        "type": "node",
+        "range": 100
+      },
+      "type": "UTM",
+      "function": [
+        "/bin/bash -lc \"set -x; sleep 5; /home/mace/git/fork-pymace/apps/crdt/rapid/crdt_rapid -id 60 -config /home/mace/git/fork-pymace/results/scale_storm_batman/rapid/run_001//node_config.json\""
+      ],
+      "extra": {
+        "disks": "False",
+        "dump": {
+          "start": "False",
+          "delay": 0,
+          "duration": 0
+        },
+        "network": [
+          "mesh"
+        ],
+        "mobility": {
+          "model": "random_waypoint",
+          "zone_x": 2000,
+          "zone_y": 2000,
+          "zone_z": 0,
+          "velocity_lower": 1.0,
+          "velocity_upper": 1.0,
+          "pause": 0
+        }
+      }
+    },
+    {
+      "name": "node61",
+      "settings": {
+        "_id": 61,
+        "x": 1444.44,
+        "y": 1666.67,
+        "type": "node",
+        "range": 100
+      },
+      "type": "UTM",
+      "function": [
+        "/bin/bash -lc \"set -x; sleep 5; /home/mace/git/fork-pymace/apps/crdt/rapid/crdt_rapid -id 61 -config /home/mace/git/fork-pymace/results/scale_storm_batman/rapid/run_001//node_config.json\""
+      ],
+      "extra": {
+        "disks": "False",
+        "dump": {
+          "start": "False",
+          "delay": 0,
+          "duration": 0
+        },
+        "network": [
+          "mesh"
+        ],
+        "mobility": {
+          "model": "random_waypoint",
+          "zone_x": 2000,
+          "zone_y": 2000,
+          "zone_z": 0,
+          "velocity_lower": 1.0,
+          "velocity_upper": 1.0,
+          "pause": 0
+        }
+      }
+    },
+    {
+      "name": "node62",
+      "settings": {
+        "_id": 62,
+        "x": 1444.44,
+        "y": 1888.89,
+        "type": "node",
+        "range": 100
+      },
+      "type": "UTM",
+      "function": [
+        "/bin/bash -lc \"set -x; sleep 5; /home/mace/git/fork-pymace/apps/crdt/rapid/crdt_rapid -id 62 -config /home/mace/git/fork-pymace/results/scale_storm_batman/rapid/run_001//node_config.json\""
+      ],
+      "extra": {
+        "disks": "False",
+        "dump": {
+          "start": "False",
+          "delay": 0,
+          "duration": 0
+        },
+        "network": [
+          "mesh"
+        ],
+        "mobility": {
+          "model": "random_waypoint",
+          "zone_x": 2000,
+          "zone_y": 2000,
+          "zone_z": 0,
+          "velocity_lower": 1.0,
+          "velocity_upper": 1.0,
+          "pause": 0
+        }
+      }
+    },
+    {
+      "name": "node63",
+      "settings": {
+        "_id": 63,
+        "x": 1666.67,
+        "y": 111.11,
+        "type": "node",
+        "range": 100
+      },
+      "type": "UTM",
+      "function": [
+        "/bin/bash -lc \"set -x; sleep 5; /home/mace/git/fork-pymace/apps/crdt/rapid/crdt_rapid -id 63 -config /home/mace/git/fork-pymace/results/scale_storm_batman/rapid/run_001//node_config.json\""
+      ],
+      "extra": {
+        "disks": "False",
+        "dump": {
+          "start": "False",
+          "delay": 0,
+          "duration": 0
+        },
+        "network": [
+          "mesh"
+        ],
+        "mobility": {
+          "model": "random_waypoint",
+          "zone_x": 2000,
+          "zone_y": 2000,
+          "zone_z": 0,
+          "velocity_lower": 1.0,
+          "velocity_upper": 1.0,
+          "pause": 0
+        }
+      }
+    },
+    {
+      "name": "node64",
+      "settings": {
+        "_id": 64,
+        "x": 1666.67,
+        "y": 333.33,
+        "type": "node",
+        "range": 100
+      },
+      "type": "UTM",
+      "function": [
+        "/bin/bash -lc \"set -x; sleep 5; /home/mace/git/fork-pymace/apps/crdt/rapid/crdt_rapid -id 64 -config /home/mace/git/fork-pymace/results/scale_storm_batman/rapid/run_001//node_config.json\""
+      ],
+      "extra": {
+        "disks": "False",
+        "dump": {
+          "start": "False",
+          "delay": 0,
+          "duration": 0
+        },
+        "network": [
+          "mesh"
+        ],
+        "mobility": {
+          "model": "random_waypoint",
+          "zone_x": 2000,
+          "zone_y": 2000,
+          "zone_z": 0,
+          "velocity_lower": 1.0,
+          "velocity_upper": 1.0,
+          "pause": 0
+        }
+      }
+    },
+    {
+      "name": "node65",
+      "settings": {
+        "_id": 65,
+        "x": 1666.67,
+        "y": 555.56,
+        "type": "node",
+        "range": 100
+      },
+      "type": "UTM",
+      "function": [
+        "/bin/bash -lc \"set -x; sleep 5; /home/mace/git/fork-pymace/apps/crdt/rapid/crdt_rapid -id 65 -config /home/mace/git/fork-pymace/results/scale_storm_batman/rapid/run_001//node_config.json\""
+      ],
+      "extra": {
+        "disks": "False",
+        "dump": {
+          "start": "False",
+          "delay": 0,
+          "duration": 0
+        },
+        "network": [
+          "mesh"
+        ],
+        "mobility": {
+          "model": "random_waypoint",
+          "zone_x": 2000,
+          "zone_y": 2000,
+          "zone_z": 0,
+          "velocity_lower": 1.0,
+          "velocity_upper": 1.0,
+          "pause": 0
+        }
+      }
+    },
+    {
+      "name": "node66",
+      "settings": {
+        "_id": 66,
+        "x": 1666.67,
+        "y": 777.78,
+        "type": "node",
+        "range": 100
+      },
+      "type": "UTM",
+      "function": [
+        "/bin/bash -lc \"set -x; sleep 5; /home/mace/git/fork-pymace/apps/crdt/rapid/crdt_rapid -id 66 -config /home/mace/git/fork-pymace/results/scale_storm_batman/rapid/run_001//node_config.json\""
+      ],
+      "extra": {
+        "disks": "False",
+        "dump": {
+          "start": "False",
+          "delay": 0,
+          "duration": 0
+        },
+        "network": [
+          "mesh"
+        ],
+        "mobility": {
+          "model": "random_waypoint",
+          "zone_x": 2000,
+          "zone_y": 2000,
+          "zone_z": 0,
+          "velocity_lower": 1.0,
+          "velocity_upper": 1.0,
+          "pause": 0
+        }
+      }
+    },
+    {
+      "name": "node67",
+      "settings": {
+        "_id": 67,
+        "x": 1666.67,
+        "y": 1000.0,
+        "type": "node",
+        "range": 100
+      },
+      "type": "UTM",
+      "function": [
+        "/bin/bash -lc \"set -x; sleep 5; /home/mace/git/fork-pymace/apps/crdt/rapid/crdt_rapid -id 67 -config /home/mace/git/fork-pymace/results/scale_storm_batman/rapid/run_001//node_config.json\""
+      ],
+      "extra": {
+        "disks": "False",
+        "dump": {
+          "start": "False",
+          "delay": 0,
+          "duration": 0
+        },
+        "network": [
+          "mesh"
+        ],
+        "mobility": {
+          "model": "random_waypoint",
+          "zone_x": 2000,
+          "zone_y": 2000,
+          "zone_z": 0,
+          "velocity_lower": 1.0,
+          "velocity_upper": 1.0,
+          "pause": 0
+        }
+      }
+    },
+    {
+      "name": "node68",
+      "settings": {
+        "_id": 68,
+        "x": 1666.67,
+        "y": 1222.22,
+        "type": "node",
+        "range": 100
+      },
+      "type": "UTM",
+      "function": [
+        "/bin/bash -lc \"set -x; sleep 5; /home/mace/git/fork-pymace/apps/crdt/rapid/crdt_rapid -id 68 -config /home/mace/git/fork-pymace/results/scale_storm_batman/rapid/run_001//node_config.json\""
+      ],
+      "extra": {
+        "disks": "False",
+        "dump": {
+          "start": "False",
+          "delay": 0,
+          "duration": 0
+        },
+        "network": [
+          "mesh"
+        ],
+        "mobility": {
+          "model": "random_waypoint",
+          "zone_x": 2000,
+          "zone_y": 2000,
+          "zone_z": 0,
+          "velocity_lower": 1.0,
+          "velocity_upper": 1.0,
+          "pause": 0
+        }
+      }
+    },
+    {
+      "name": "node69",
+      "settings": {
+        "_id": 69,
+        "x": 1666.67,
+        "y": 1444.44,
+        "type": "node",
+        "range": 100
+      },
+      "type": "UTM",
+      "function": [
+        "/bin/bash -lc \"set -x; sleep 5; /home/mace/git/fork-pymace/apps/crdt/rapid/crdt_rapid -id 69 -config /home/mace/git/fork-pymace/results/scale_storm_batman/rapid/run_001//node_config.json\""
+      ],
+      "extra": {
+        "disks": "False",
+        "dump": {
+          "start": "False",
+          "delay": 0,
+          "duration": 0
+        },
+        "network": [
+          "mesh"
+        ],
+        "mobility": {
+          "model": "random_waypoint",
+          "zone_x": 2000,
+          "zone_y": 2000,
+          "zone_z": 0,
+          "velocity_lower": 1.0,
+          "velocity_upper": 1.0,
+          "pause": 0
+        }
+      }
+    }
+  ]
+}

@@ -169,7 +169,7 @@ void dissemination_loop(
     }
 }
 
-void recv_loop(int sockfd, gcounter<int, std::string>& gc, gcounter<int, std::string>& delta_buffer, stats& stats, std::string node_id) {
+void recv_loop(int sockfd, gcounter<int, std::string>& gc, stats& stats, std::string node_id) {
     char buffer[MSG_MAX];
     sockaddr_in src;
     socklen_t srclen = sizeof(src);
@@ -197,11 +197,7 @@ void recv_loop(int sockfd, gcounter<int, std::string>& gc, gcounter<int, std::st
                         << ", total=" << total
                         << "\n";
             }
-
-            {
-                std::lock_guard<std::mutex> lk(_delta_mutex);
-                delta_buffer.join(sender_gcounter);
-            }
+            
             stats.recv_msgs++;
             stats.recv_bytes += n;
         } catch (...) {
@@ -378,7 +374,7 @@ int main(int argc, char* argv[]) {
     gcounter<int, std::string> delta_buffer; // contains the union of all deltas generated in the last interval
     stats stats;
 
-    std::thread t_recv(recv_loop, sockfd, std::ref(gc), std::ref(delta_buffer), std::ref(stats), nc.id);
+    std::thread t_recv(recv_loop, sockfd, std::ref(gc), std::ref(stats), nc.id);
     t_recv.detach();
 
     std::thread t_mon(monitor_loop, std::ref(gc), std::ref(stats), nc.monitor_interval, nc.log_file);
@@ -397,7 +393,10 @@ int main(int argc, char* argv[]) {
                 << "\n";
     }
 
-    std::this_thread::sleep_for(10s);
+    // SLEEP BASICALLY FOREVER
+    // LET THE NODES EXCHANGE THEIR LAST MESSAGES AFTER THE PERIOD OF CRDT OPS GENERATION STOPS
+    std::this_thread::sleep_for(9999999s);
+
     std::cout << "FINAL local=" << gc.local()
               << " total=" << gc.read()
               << " sent=" << stats.sent_msgs

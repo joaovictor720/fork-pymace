@@ -15,7 +15,7 @@
     {
       "name": "mesh",
       "prefix": "10.0.0.0/24",
-      "routing": "batman",
+      "routing": "none",
       "settings": {
         "range": "1500",
         "bandwidth": "11000000",
@@ -38,7 +38,7 @@
       },
       "type": "UTM",
       "function": [
-        "/bin/bash -lc \"set -x; sleep 5; /home/mace/git/fork-pymace/apps/crdt/rapid/crdt_rapid -id 0 -config /home/mace/git/fork-pymace/results/sanity_check_batman/rapid/run_001//node_config.json\""
+        "/bin/bash -lc \"set -x; sleep 5; /home/mace/git/fork-pymace/apps/crdt/broadcast/crdt_broadcast -id 0 -config /home/mace/git/fork-pymace/results/sanity_check_ip/broadcast/run_002//node_config.json\""
       ],
       "extra": {
         "disks": "False",
@@ -72,7 +72,7 @@
       },
       "type": "UTM",
       "function": [
-        "/bin/bash -lc \"set -x; sleep 5; /home/mace/git/fork-pymace/apps/crdt/rapid/crdt_rapid -id 1 -config /home/mace/git/fork-pymace/results/sanity_check_batman/rapid/run_001//node_config.json\""
+        "/bin/bash -lc \"set -x; sleep 5; /home/mace/git/fork-pymace/apps/crdt/broadcast/crdt_broadcast -id 1 -config /home/mace/git/fork-pymace/results/sanity_check_ip/broadcast/run_002//node_config.json\""
       ],
       "extra": {
         "disks": "False",
@@ -106,7 +106,7 @@
       },
       "type": "UTM",
       "function": [
-        "/bin/bash -lc \"set -x; sleep 5; /home/mace/git/fork-pymace/apps/crdt/rapid/crdt_rapid -id 2 -config /home/mace/git/fork-pymace/results/sanity_check_batman/rapid/run_001//node_config.json\""
+        "/bin/bash -lc \"set -x; sleep 5; /home/mace/git/fork-pymace/apps/crdt/broadcast/crdt_broadcast -id 2 -config /home/mace/git/fork-pymace/results/sanity_check_ip/broadcast/run_002//node_config.json\""
       ],
       "extra": {
         "disks": "False",
@@ -140,7 +140,7 @@
       },
       "type": "UTM",
       "function": [
-        "/bin/bash -lc \"set -x; sleep 5; /home/mace/git/fork-pymace/apps/crdt/rapid/crdt_rapid -id 3 -config /home/mace/git/fork-pymace/results/sanity_check_batman/rapid/run_001//node_config.json\""
+        "/bin/bash -lc \"set -x; sleep 5; /home/mace/git/fork-pymace/apps/crdt/broadcast/crdt_broadcast -id 3 -config /home/mace/git/fork-pymace/results/sanity_check_ip/broadcast/run_002//node_config.json\""
       ],
       "extra": {
         "disks": "False",
@@ -174,7 +174,7 @@
       },
       "type": "UTM",
       "function": [
-        "/bin/bash -lc \"set -x; sleep 5; /home/mace/git/fork-pymace/apps/crdt/rapid/crdt_rapid -id 4 -config /home/mace/git/fork-pymace/results/sanity_check_batman/rapid/run_001//node_config.json\""
+        "/bin/bash -lc \"set -x; sleep 5; /home/mace/git/fork-pymace/apps/crdt/broadcast/crdt_broadcast -id 4 -config /home/mace/git/fork-pymace/results/sanity_check_ip/broadcast/run_002//node_config.json\""
       ],
       "extra": {
         "disks": "False",
@@ -208,7 +208,7 @@
       },
       "type": "UTM",
       "function": [
-        "/bin/bash -lc \"set -x; sleep 5; /home/mace/git/fork-pymace/apps/crdt/rapid/crdt_rapid -id 5 -config /home/mace/git/fork-pymace/results/sanity_check_batman/rapid/run_001//node_config.json\""
+        "/bin/bash -lc \"set -x; sleep 5; /home/mace/git/fork-pymace/apps/crdt/broadcast/crdt_broadcast -id 5 -config /home/mace/git/fork-pymace/results/sanity_check_ip/broadcast/run_002//node_config.json\""
       ],
       "extra": {
         "disks": "False",
@@ -242,7 +242,7 @@
       },
       "type": "UTM",
       "function": [
-        "/bin/bash -lc \"set -x; sleep 5; /home/mace/git/fork-pymace/apps/crdt/rapid/crdt_rapid -id 6 -config /home/mace/git/fork-pymace/results/sanity_check_batman/rapid/run_001//node_config.json\""
+        "/bin/bash -lc \"set -x; sleep 5; /home/mace/git/fork-pymace/apps/crdt/broadcast/crdt_broadcast -id 6 -config /home/mace/git/fork-pymace/results/sanity_check_ip/broadcast/run_002//node_config.json\""
       ],
       "extra": {
         "disks": "False",
@@ -276,7 +276,7 @@
       },
       "type": "UTM",
       "function": [
-        "/bin/bash -lc \"set -x; sleep 5; /home/mace/git/fork-pymace/apps/crdt/rapid/crdt_rapid -id 7 -config /home/mace/git/fork-pymace/results/sanity_check_batman/rapid/run_001//node_config.json\""
+        "/bin/bash -lc \"set -x; sleep 5; /home/mace/git/fork-pymace/apps/crdt/broadcast/crdt_broadcast -id 7 -config /home/mace/git/fork-pymace/results/sanity_check_ip/broadcast/run_002//node_config.json\""
       ],
       "extra": {
         "disks": "False",
@@ -310,7 +310,7 @@
       },
       "type": "UTM",
       "function": [
-        "/bin/bash -lc \"set -x; sleep 5; /home/mace/git/fork-pymace/apps/crdt/rapid/crdt_rapid -id 8 -config /home/mace/git/fork-pymace/results/sanity_check_batman/rapid/run_001//node_config.json\""
+        "/bin/bash -lc \"set -x; sleep 5; /home/mace/git/fork-pymace/apps/crdt/broadcast/crdt_broadcast -id 8 -config /home/mace/git/fork-pymace/results/sanity_check_ip/broadcast/run_002//node_config.json\""
       ],
       "extra": {
         "disks": "False",
@@ -344,7 +344,7 @@
       },
       "type": "UTM",
       "function": [
-        "/bin/bash -lc \"set -x; sleep 5; /home/mace/git/fork-pymace/apps/crdt/rapid/crdt_rapid -id 9 -config /home/mace/git/fork-pymace/results/sanity_check_batman/rapid/run_001//node_config.json\""
+        "/bin/bash -lc \"set -x; sleep 5; /home/mace/git/fork-pymace/apps/crdt/broadcast/crdt_broadcast -id 9 -config /home/mace/git/fork-pymace/results/sanity_check_ip/broadcast/run_002//node_config.json\""
       ],
       "extra": {
         "disks": "False",

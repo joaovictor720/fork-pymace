@@ -1,0 +1,36 @@
+{
+    "name": "sanity_check_ip",
+    "simulation": {
+        "duration": 35,
+        "start_delay": 5,
+        "area": {
+            "x": 1000,
+            "y": 1000
+        }
+    },
+    "nodes": {
+        "count": 10,
+        "distribution": "grid",
+        "seed": 42
+    },
+    "mobility": {
+        "model": "random_waypoint",
+        "speed_min": 0.0,
+        "speed_max": 0.0,
+        "pause": 0
+    },
+    "network": {
+        "routing": "none",
+        "bandwidth": "11000000",
+        "range": 1500,
+        "delay": 5,
+        "jitter": 0,
+        "error": 0
+    },
+    "node_config": {
+        "ops_per_sec": 1,
+        "duration": 10,
+        "dissemination_interval": 2,
+        "monitor_interval": 2
+    }
+}
