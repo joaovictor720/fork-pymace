@@ -1,22 +1,22 @@
 {
-    "name": "scale_storm_batman",
+    "name": "storm_sanity_batman",
     "simulation": {
         "duration": 100,
         "start_delay": 5,
         "area": {
-            "x": 500,
-            "y": 500
+            "x": 600,
+            "y": 600
         }
     },
     "nodes": {
-        "count": 70,
+        "count": 20,
         "distribution": "grid",
         "seed": 42
     },
     "mobility": {
         "model": "random_waypoint",
-        "speed_min": 2.0,
-        "speed_max": 2.1,
+        "speed_min": 10.0,
+        "speed_max": 10.1,
         "pause": 0
     },
     "network": {
