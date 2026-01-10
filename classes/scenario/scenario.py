@@ -339,7 +339,7 @@ class Scenario():
     network_prefix = '.'.join(network_prefix)
     ###TODO Change this to do only on fixed nodes
     shell = session.get_node(id, CoreNode).termcmdstring(sh="/bin/bash")
-    command = "modprobe batman-adv && batctl ra BATMAN_IV && batctl if add eth0 && ip link set up bat0 && ip addr add " + ip + "/255.255.255.0 broadcast " + broadcast + " dev bat0"
+    command = "modprobe batman-adv && batctl ra BATMAN_V && batctl if add eth0 && ip link set up bat0 && ip addr add " + ip + "/255.255.255.0 broadcast " + broadcast + " dev bat0"
     shell += " -c '" + command + "'"
     node = subprocess.Popen([
                   "bash",
