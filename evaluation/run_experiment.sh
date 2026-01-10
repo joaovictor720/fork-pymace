@@ -22,6 +22,11 @@ fi
 ROOT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
 RESULTS_DIR="$ROOT_DIR/results/$SCENARIO/$ALGO"
 
+if [[ -d "$RESULTS_DIR" ]]; then
+  echo "[INFO] Cleaning previous results in $RESULTS_DIR"
+  rm -rf "$RESULTS_DIR"
+fi
+
 mkdir -p "$RESULTS_DIR"
 
 echo "=== Experiment ==="
