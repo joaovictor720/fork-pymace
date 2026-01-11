@@ -79,7 +79,8 @@ def parse_convergence(run_dir: pathlib.Path):
         return {
             "last_op_create_s": t_last_create,
             "final_total": ground_truth,
-            "converged": False
+            "converged": False,
+            "convergence_time_s": "N/A",
         }
 
     t_conv = max(node_conv_times.values())
