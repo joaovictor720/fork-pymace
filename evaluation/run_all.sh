@@ -13,7 +13,7 @@ SCENARIOS=(
 )
 
 # Caminho para o script original que você forneceu
-RUN_SCRIPT="./run_experiment.sh"
+RUN_SCRIPT="/home/mace/git/fork-pymace/evaluation/run_experiment.sh"
 
 echo "=================================================="
 echo "INICIANDO BATERIA COMPLETA DE TESTES PARA O ARTIGO"
