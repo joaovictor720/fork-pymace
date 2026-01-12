@@ -104,7 +104,7 @@ for i, (x, y) in enumerate(positions):
         },
         "type": "UTM",
         "function": [
-            f"/bin/bash -lc \"set -x; sleep {sc['simulation']['start_delay']}; "
+            f"/bin/bash -lc \"set -x; sleep {sc['simulation']['start_delay']}; sudo ip addr flush dev eth0; sudo ip link set up dev eth0; sudo batctl if add eth0; sudo ip link set up dev bat0; sudo ip addr add 10.0.0.{i+1}/24 dev bat0; "
             f"__CRDT_BIN__ -id {i} -config __CRDT_NODE_CONFIG__\""
         ],
         "extra": {

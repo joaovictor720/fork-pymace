@@ -26,7 +26,7 @@
 #include <algorithm>
 #include <unordered_map>
 
-#include "/home/mace/git/delta-enabled-crdts/delta-crdts.cc"
+#include "/home/mace/git/fork-pymace/apps/crdt/common/delta-crdts.cc"
 
 using json = nlohmann::json;
 using namespace std::chrono_literals;
@@ -568,24 +568,20 @@ void monitor_loop(gcounter<int, std::string>& gc, stats& stats_ref, double inter
         std::cerr << "Warning: cannot open log file: " << logfile << "\n";
     }
 
-    int last_total = -1;
     while (true) {
         std::this_thread::sleep_for(std::chrono::duration<double>(interval));
         int local = gc.local();
         int total = gc.read();
-        if (total != last_total) {
-            std::ostringstream oss;
-            oss << std::fixed << std::chrono::duration<double>(std::chrono::steady_clock::now().time_since_epoch()).count()
-                << ", local=" << local << ", total=" << total
-                << ", sent_msgs=" << stats_ref.sent_msgs
-                << ", recv_msgs=" << stats_ref.recv_msgs
-                << ", sent_bytes=" << stats_ref.sent_bytes
-                << ", recv_bytes=" << stats_ref.recv_bytes << "\n";
-            std::string line = oss.str();
-            if (log.is_open()) {
-                log << line << std::flush;
-            }
-            last_total = total;
+        std::ostringstream oss;
+        oss << std::fixed << std::chrono::duration<double>(std::chrono::steady_clock::now().time_since_epoch()).count()
+            << ", local=" << local << ", total=" << total
+            << ", sent_msgs=" << stats_ref.sent_msgs
+            << ", recv_msgs=" << stats_ref.recv_msgs
+            << ", sent_bytes=" << stats_ref.sent_bytes
+            << ", recv_bytes=" << stats_ref.recv_bytes << "\n";
+        std::string line = oss.str();
+        if (log.is_open()) {
+            log << line << std::flush;
         }
     }
 }
