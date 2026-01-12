@@ -1,31 +1,31 @@
 {
-    "name": "artigo_exp1_scalability",
+    "name": "article_scenario_1_density",
     "simulation": {
-        "duration": 80,
+        "duration": 90,
         "start_delay": 5,
-        "area": [300, 300]
+        "area": [500, 500]
     },
     "nodes": {
-        "count": 10, 
-        "distribution": "grid", 
+        "count": 10,
+        "distribution": "grid",
         "seed": 22
     },
     "mobility": {
-        "model": "random_waypoint", 
+        "model": "random_waypoint",
         "speed": [0.0, 0.0],
         "pause": 0
     },
     "network": {
         "routing": "batman",
         "bandwidth": "11000000",
-        "range": 120,
+        "range": 160,
         "delay": 1,
         "jitter": 0,
         "error": 0
     },
     "node_config": {
         "ops_per_sec": 2,
-        "duration": 20,
+        "duration": 30,
         "dissemination_interval": 0.5,
         "monitor_interval": 1
     },

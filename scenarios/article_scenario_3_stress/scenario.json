@@ -1,37 +1,37 @@
 {
-    "name": "artigo_exp1_scalability",
+    "name": "article_scenario_3_stress",
     "simulation": {
-        "duration": 80,
+        "duration": 60,
         "start_delay": 5,
         "area": [300, 300]
     },
     "nodes": {
-        "count": 10, 
-        "distribution": "grid", 
+        "count": 20,
+        "distribution": "grid",
         "seed": 22
     },
     "mobility": {
-        "model": "random_waypoint", 
+        "model": "random_waypoint",
         "speed": [0.0, 0.0],
         "pause": 0
     },
     "network": {
         "routing": "batman",
         "bandwidth": "11000000",
-        "range": 120,
+        "range": 160,
         "delay": 1,
         "jitter": 0,
         "error": 0
     },
     "node_config": {
-        "ops_per_sec": 2,
+        "ops_per_sec": 1,
         "duration": 20,
-        "dissemination_interval": 0.5,
+        "dissemination_interval": 0.2,
         "monitor_interval": 1
     },
     "experiment": {
         "vary": {
-            "nodes.count": [10, 20, 30, 40, 50, 60]
+            "node_config.ops_per_sec": [1, 10, 25, 50, 75, 100]
         }
     }
 }

@@ -62,7 +62,15 @@ random.seed(seed)
 # ----------------------------
 node_count = sc["nodes"]["count"]
 distribution = sc["nodes"].get("distribution", "random")
-area = sc["simulation"]["area"]
+raw_area = sc["simulation"]["area"]
+
+if isinstance(raw_area, list) or isinstance(raw_area, tuple):
+    area = {
+        "x": raw_area[0],
+        "y": raw_area[1]
+    }
+else:
+    area = raw_area
 
 # ----------------------------
 # Generate node positions
