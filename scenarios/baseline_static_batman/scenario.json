@@ -1,11 +1,11 @@
 {
-    "name": "mobile_chaos",
+    "name": "baseline_static_batman",
     "simulation": {
-        "duration": 30,
+        "duration": 20,
         "start_delay": 5,
         "area": {
-            "x": 1000,
-            "y": 1000
+            "x": 150,
+            "y": 150
         }
     },
     "nodes": {
@@ -15,14 +15,13 @@
     },
     "mobility": {
         "model": "random_waypoint",
-        "speed_min": 0.0,
-        "speed_max": 0.0,
-        "pause": 0
+        "speed": [0.1, 0.1],
+        "pause": 1000
     },
     "network": {
         "routing": "batman",
         "bandwidth": "11000000",
-        "range": 100,
+        "range": 160,
         "delay": 5,
         "jitter": 0,
         "error": 0
@@ -32,5 +31,16 @@
         "duration": 10,
         "dissemination_interval": 1,
         "monitor_interval": 1
+    },
+    "experiment": {
+        "vary": {
+            "node_config.dissemination_interval": [
+                0.1,
+                0.2,
+                0.5,
+                1,
+                2
+            ]
+        }
     }
 }

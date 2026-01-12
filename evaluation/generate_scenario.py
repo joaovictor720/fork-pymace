@@ -83,13 +83,20 @@ nodes = []
 
 for i, (x, y) in enumerate(positions):
     mob = sc["mobility"]
+
+    if "speed" in mob:
+        vmin, vmax = mob["speed"]
+    else:
+        vmin = mob.get("speed_min", 0)
+        vmax = mob.get("speed_max", 0)
+
     mobility = {
         "model": mob["model"],
         "zone_x": area["x"],
         "zone_y": area["y"],
         "zone_z": 0,
-        "velocity_lower": mob.get("speed_min", 0),
-        "velocity_upper": mob.get("speed_max", 0),
+        "velocity_lower": vmin,
+        "velocity_upper": vmax,
         "pause": mob.get("pause", 0)
     }
 

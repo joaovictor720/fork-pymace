@@ -1,7 +1,7 @@
 {
     "name": "storm_sanity_batman",
     "simulation": {
-        "duration": 100,
+        "duration": 20,
         "start_delay": 5,
         "area": {
             "x": 600,
@@ -15,8 +15,6 @@
     },
     "mobility": {
         "model": "random_waypoint",
-        "speed_min": 10.0,
-        "speed_max": 10.1,
         "pause": 0
     },
     "network": {
@@ -32,5 +30,15 @@
         "duration": 10,
         "dissemination_interval": 2,
         "monitor_interval": 2
+    },
+    "experiment": {
+        "vary": {
+            "nodes.count": [10],
+            "mobility.speed": [
+                [5.0, 5.0],
+                [10.0, 10.0],
+                [15.0, 15.0]
+            ]
+        }
     }
 }

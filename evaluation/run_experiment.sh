@@ -21,6 +21,13 @@ fi
 
 ROOT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
 RESULTS_DIR="$ROOT_DIR/results/$SCENARIO/$ALGO"
+SCENARIO_JSON_PATH="$ROOT_DIR/scenarios/$SCENARIO/scenario.json"
+
+# Verifica se o arquivo de cenário existe antes de começar
+if [[ ! -f "$SCENARIO_JSON_PATH" ]]; then
+    echo "[ERROR] Scenario file not found: $SCENARIO_JSON_PATH"
+    exit 1
+fi
 
 if [[ -d "$RESULTS_DIR" ]]; then
   echo "[INFO] Cleaning previous results in $RESULTS_DIR"
@@ -35,14 +42,24 @@ echo "Algorithm: $ALGO"
 echo "Runs     : $RUNS"
 echo "==============="
 
-for RUN in $(seq 1 "$RUNS"); do
-  RUN_ID=$(printf "run_%03d" "$RUN")
-  echo "--- Running $RUN_ID ---"
+VARIANTS=$(python evaluation/expand_experiments.py "$SCENARIO")
 
-  "$ROOT_DIR/evaluation/run_scenario.sh" \
-    "$SCENARIO" \
-    "$ALGO" \
-    "$RUN_ID"
+for VARIANT in $VARIANTS; do
+  VARIANT_RESULTS_DIR="$ROOT_DIR/results/$VARIANT/$ALGO"
+
+  if [[ -d "$VARIANT_RESULTS_DIR" ]]; then
+    echo "[INFO] Cleaning previous results in $VARIANT_RESULTS_DIR"
+    rm -rf "$VARIANT_RESULTS_DIR"
+  fi
+
+  mkdir -p "$VARIANT_RESULTS_DIR"
+
+  for RUN in $(seq 1 "$RUNS"); do
+    RUN_ID=$(printf "run_%03d" "$RUN")
+    echo "--- Running $VARIANT | $RUN_ID ---"
+
+    "$ROOT_DIR/evaluation/run_scenario.sh" "$VARIANT" "$ALGO" "$RUN_ID"
+  done
+
+  python "$ROOT_DIR/evaluation/parse_metrics.py" "$VARIANT_RESULTS_DIR"
 done
-
-python "$ROOT_DIR/evaluation/parse_metrics.py" "$RESULTS_DIR"
