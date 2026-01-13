@@ -44,8 +44,7 @@ static const int PORT_DEFAULT = 9000;
 
 std::mutex _gc_mutex;
 
-// --- MODIFICADO: Conflation Buffer (Buffer Único) ---
-// Substituimos a queue por um único estado pendente para evitar bufferbloat
+// --- Conflation Buffer (Buffer Único) ---
 gcounter<int, std::string> _pending_state;
 bool _has_pending = false;
 
@@ -89,7 +88,7 @@ void print_config(const node_config& nc) {
     std::cout << std::endl;
 }
 
-// load config (same as before)
+// load config
 node_config load_config(const std::string& cfg_path, const std::string& id) {
     std::ifstream f(cfg_path);
     json cfg = json::parse(f);
@@ -161,7 +160,6 @@ class CastQueue {
             q_.push_back(e);
             cv_.notify_one();
         }
-        // pop the next due entry; returns true if something popped
         bool pop_due(CastEntry &out) {
             std::unique_lock<std::mutex> lk(mu_);
             if (q_.empty()) {
@@ -205,12 +203,11 @@ int _listen_port = PORT_DEFAULT;
 std::mt19937_64 _rng((uint64_t)std::chrono::steady_clock::now().time_since_epoch().count());
 std::uniform_real_distribution<double> _uniform_01(0.0, 1.0);
 
-// helpers to generate msgid
 uint64_t gen_id() {
     return _rng();
 }
 
-// build packets (simple binary)
+// build packets
 void append_uint64(std::vector<char>& v, uint64_t x) {
     for (int i = 0; i < 8; ++i) {
         v.push_back(static_cast<char>((x >> (i*8)) & 0xFF));
@@ -267,7 +264,7 @@ void build_heartbeat_packet(uint64_t peerid, std::vector<char>& out) {
     append_uint64(out, peerid);
 }
 
-// send helpers (to all peers)
+// send helpers
 void send_broadcast(const std::vector<char>& pkt, stats &st) {
     ssize_t sent = sendto(_sockfd, pkt.data(), pkt.size(), 0, (sockaddr*)&_broadcast_addr, sizeof(_broadcast_addr));
     if (sent > 0) {
@@ -334,7 +331,6 @@ void neighbor_cleanup() {
 
 // ---------- Main threads for RAPID ----------
 
-// cast worker: transmits DATA from _cast_queue according to prob rules
 void cast_worker(stats &st) {
     std::uniform_int_distribution<int> long_jitter(LONG_JITTER_MIN_MS, LONG_JITTER_MAX_MS);
     while (true) {
@@ -342,28 +338,23 @@ void cast_worker(stats &st) {
         if (_cast_queue.pop_due(e)) {
             double r = _uniform_01(_rng);
             if (r <= e.prob) {
-                // send data to all peers
                 std::vector<char> pkt;
                 build_data_packet(e.msgid, e.payload, pkt);
                 send_broadcast(pkt, st);
             } else {
-                // schedule longer reattempt
                 e.when = std::chrono::steady_clock::now() + std::chrono::milliseconds(long_jitter(_rng));
-                e.prob = 1.0; // escalate to certain forward after delay as RAPID suggests
+                e.prob = 1.0;
                 _cast_queue.push(e);
             }
         } else {
-            // no due entry, tiny sleep
             std::this_thread::sleep_for(5ms);
         }
     }
 }
 
-// gossip worker: periodically gossip headers of recent messages
 void gossip_worker(stats &st) {
     while (true) {
         std::this_thread::sleep_for(std::chrono::milliseconds(GOSSIP_INTERVAL_MS));
-        // collect up to N headers from cache
         std::vector<uint64_t> headers;
         {
             std::lock_guard<std::mutex> lg(_cache_mutex);
@@ -384,7 +375,6 @@ void gossip_worker(stats &st) {
     }
 }
 
-// heartbeat worker: periodically send heartbeat
 void heartbeat_worker(uint64_t selfid, stats &st) {
     while (true) {
         std::vector<char> pkt;
@@ -394,15 +384,12 @@ void heartbeat_worker(uint64_t selfid, stats &st) {
     }
 }
 
-// request worker not strictly necessary in some flows (requests are sent when gossip headers indicate missing DATA).
-// Here we just let recv_loop schedule requests into _cast_queue with small jitter and prob=1 (we'll use cast queue to send requests? better keep separate).
 void send_request_once(uint64_t msgid, stats &st) {
     std::vector<char> pkt;
     build_request_packet(msgid, pkt);
     send_broadcast(pkt, st);
 }
 
-// recv loop: handle incoming packets
 void recv_loop(int sockfd_local, gcounter<int, std::string>& gc, stats& st, std::string node_id) {
     char buf[MSG_MAX];
     sockaddr_in src;
@@ -415,20 +402,14 @@ void recv_loop(int sockfd_local, gcounter<int, std::string>& gc, stats& st, std:
         }
         uint8_t type = static_cast<uint8_t>(buf[0]);
         if (type == MT_DATA) {
-            if (n < 1 + 8 + 4) {
-                continue;
-            }
+            if (n < 1 + 8 + 4) continue;
             uint64_t msgid = read_uint64(buf + 1);
             uint32_t len = read_uint32(buf + 1 + 8);
-            if (1 + 8 + 4 + (ssize_t)len > n) {
-                continue;
-            }
+            if (1 + 8 + 4 + (ssize_t)len > n) continue;
             const char* payload_ptr = buf + 1 + 8 + 4;
             std::vector<char> payload(payload_ptr, payload_ptr + len);
-            // If not seen, deliver and schedule forwarding
             if (!cache_exists(msgid)) {
                 cache_insert(msgid, payload);
-                // deliver to CRDT
                 try {
                     std::string s(payload.begin(), payload.end());
                     auto recv_gc = gcounter<int, std::string>::deserialize(s);
@@ -441,56 +422,42 @@ void recv_loop(int sockfd_local, gcounter<int, std::string>& gc, stats& st, std:
                     {
                         std::lock_guard<std::mutex> lk(_event_log_mutex);
                         _event_log << std::fixed << now_ts()
-                                << ", event=op_apply"
-                                << ", node=" << node_id
-                                << ", total=" << total
-                                << "\n";
+                                   << ", event=op_apply"
+                                   << ", node=" << node_id
+                                   << ", total=" << total
+                                   << "\n";
                     }
                     st.recv_msgs++;
                     st.recv_bytes += static_cast<int>(len);
-                } catch (...) {
-                    // parse error: ignore
-                }
-                // compute prob
+                } catch (...) {}
                 int ncount = neighbor_count();
                 double pr = BETA / std::max(1, ncount);
-                if (pr > 1.0) {
-                    pr = 1.0;
-                }
+                if (pr > 1.0) pr = 1.0;
                 CastEntry e;
                 e.msgid = msgid;
                 e.prob = pr;
-                e.when = std::chrono::steady_clock::now() + std::chrono::milliseconds((int)(_uniform_01(_rng)*(SHORT_JITTER_MAX_MS-SHORT_JITTER_MIN_MS) + SHORT_JITTER_MIN_MS));
+                e.when = std::chrono::steady_clock::now() +
+                         std::chrono::milliseconds((int)(_uniform_01(_rng)*(SHORT_JITTER_MAX_MS-SHORT_JITTER_MIN_MS) + SHORT_JITTER_MIN_MS));
                 e.payload = payload;
                 _cast_queue.push(e);
-            } else {
-                // already seen: ignore but can update cache timestamp
             }
         } else if (type == MT_GOSSIP) {
-            if (n < 1 + 2) {
-                continue;
-            }
+            if (n < 1 + 2) continue;
             uint16_t nn = static_cast<uint16_t>(static_cast<unsigned char>(buf[1]) | (static_cast<unsigned char>(buf[2])<<8));
             const char* p = buf + 3;
             for (int i = 0; i < (int)nn; ++i) {
-                if (p + 8 > buf + n) {
-                    break;
-                }
+                if (p + 8 > buf + n) break;
                 uint64_t hid = read_uint64(p);
                 p += 8;
                 if (!cache_exists(hid)) {
-                    // schedule request with short jitter
                     int jitter = SHORT_JITTER_MIN_MS + (_rng() % (SHORT_JITTER_MAX_MS - SHORT_JITTER_MIN_MS + 1));
-                    std::this_thread::sleep_for(std::chrono::milliseconds(jitter)); // small backoff
+                    std::this_thread::sleep_for(std::chrono::milliseconds(jitter));
                     send_request_once(hid, st);
                 }
             }
         } else if (type == MT_REQUEST) {
-            if (n < 1 + 8) {
-                continue;
-            }
+            if (n < 1 + 8) continue;
             uint64_t hid = read_uint64(buf + 1);
-            // if we have it, reply with data immediately
             std::vector<char> payload;
             if (cache_get(hid, payload)) {
                 std::vector<char> pkt;
@@ -498,35 +465,26 @@ void recv_loop(int sockfd_local, gcounter<int, std::string>& gc, stats& st, std:
                 send_broadcast(pkt, st);
             }
         } else if (type == MT_HEARTBEAT) {
-            if (n < 1 + 8) {
-                continue;
-            }
+            if (n < 1 + 8) continue;
             uint64_t pid = read_uint64(buf + 1);
             neighbor_seen(pid);
-        } else {
-            // unknown type: ignore
         }
     }
 }
 
-// application-to-rapid: when app generates a delta, we insert into cache and schedule an immediate cast with prob=1
-// MODIFICADO: Usa Buffer Único + Remoção de Obsolescência
+// ---------- CORRIGIDO: app_sender_thread (RAPID CANÔNICO + CRDT) ----------
 void app_sender_thread(stats &st) {
     uint64_t _last_local_msgid = 0; 
     bool _has_last_msg = false;
 
     while (true) {
         gcounter<int, std::string> to_send;
-
         {
             std::unique_lock<std::mutex> lk(_ops_queue_mutex);
-            // Espera até ter algo no buffer único
             _ops_q_cv.wait(lk, []{
                 return _has_pending;
             });
-            // Copia o estado atual do buffer
             to_send = _pending_state;
-            // Marca como consumido (o próximo produtor irá sobrescrever ou fazer join)
             _has_pending = false; 
         }
 
@@ -536,38 +494,38 @@ void app_sender_thread(stats &st) {
 
         cache_insert(msgid, payload);
 
-        // --- OBSOLESCENCE KILL SWITCH ---
-        // Se a mensagem anterior ainda estiver na fila de retransmissão, remova-a.
-        // A nova mensagem 'msgid' já contém o acumulado atualizado.
+        // --- SOFT DEPRECATION (NÃO REMOVE MENSAGENS ANTIGAS) ---
         if (_has_last_msg) {
-             _cast_queue.remove_if(_last_local_msgid);
+            CastEntry old;
+            old.msgid = _last_local_msgid;
+            old.prob = 0.05;
+            old.when = std::chrono::steady_clock::now() + std::chrono::seconds(10);
+            std::vector<char> old_payload;
+            if (cache_get(_last_local_msgid, old_payload)) {
+                old.payload = old_payload;
+                _cast_queue.push(old);
+            }
         }
         _last_local_msgid = msgid;
         _has_last_msg = true;
-        // --------------------------------
+        // ------------------------------------------------------
 
         CastEntry e;
         e.msgid = msgid;
         e.prob = 1.0;
-        e.when = std::chrono::steady_clock::now(); // só o primeiro agendamento
+        e.when = std::chrono::steady_clock::now();
         e.payload = payload;
-
-        // also gossip header quickly (piggyback will do later)
         _cast_queue.push(e);
 
-        // stats
-        st.sent_msgs++;
-        st.sent_bytes += static_cast<int>(payload.size());
+        // NOTA: não contabilizamos envio aqui (apenas no send_broadcast)
     }
 }
 
-// monitor loop (unchanged)
 void monitor_loop(gcounter<int, std::string>& gc, stats& stats_ref, double interval, const std::string& logfile) {
     std::ofstream log(logfile, std::ios::trunc);
     if (!log.is_open()) {
         std::cerr << "Warning: cannot open log file: " << logfile << "\n";
     }
-
     while (true) {
         std::this_thread::sleep_for(std::chrono::duration<double>(interval));
         int local = gc.local();
@@ -579,15 +537,12 @@ void monitor_loop(gcounter<int, std::string>& gc, stats& stats_ref, double inter
             << ", recv_msgs=" << stats_ref.recv_msgs
             << ", sent_bytes=" << stats_ref.sent_bytes
             << ", recv_bytes=" << stats_ref.recv_bytes << "\n";
-        std::string line = oss.str();
         if (log.is_open()) {
-            log << line << std::flush;
+            log << oss.str() << std::flush;
         }
     }
 }
 
-// run_random_mode: push generated deltas to _ops_send_queue
-// MODIFICADO: Usa Conflation (Buffer Único com Join) em vez de Fila Infinita
 void run_random_mode(const node_config& nc, gcounter<int, std::string>& gc) {
     double ops_per_sec = nc.ops_per_sec;
     double duration = nc.duration;
@@ -595,15 +550,13 @@ void run_random_mode(const node_config& nc, gcounter<int, std::string>& gc) {
     std::default_random_engine gen(seed);
     std::exponential_distribution<double> expd(ops_per_sec);
     
-    // Buffer local acumulativo para garantir que enviamos sempre a união total
     gcounter<int, std::string> local_cumulative;
 
     auto start = std::chrono::steady_clock::now();
     while (true) {
         double elapsed = std::chrono::duration<double>(std::chrono::steady_clock::now() - start).count();
-        if (elapsed > duration) {
-            break;
-        }
+        if (elapsed > duration) break;
+
         double wait = expd(gen);
         std::this_thread::sleep_for(std::chrono::duration<double>(wait));
         std::uniform_int_distribution<int> inc_dist(1, 10);
@@ -620,29 +573,24 @@ void run_random_mode(const node_config& nc, gcounter<int, std::string>& gc) {
             std::lock_guard<std::mutex> lk(_event_log_mutex);
             auto ts = now_ts();
             _event_log << std::fixed << ts
-                    << ", event=op_create"
-                    << ", node=" << nc.id
-                    << ", delta_size=" << val
-                    << "\n";
+                       << ", event=op_create"
+                       << ", node=" << nc.id
+                       << ", delta_size=" << val
+                       << "\n";
             _event_log << std::fixed << ts
-                    << ", event=op_apply"
-                    << ", node=" << nc.id
-                    << ", total=" << total
-                    << "\n";
+                       << ", event=op_apply"
+                       << ", node=" << nc.id
+                       << ", total=" << total
+                       << "\n";
         }
         
-        // --- LOGICA DE CONFLATION ---
-        // 1. Acumula no histórico local
         local_cumulative.join(delta_obj);
 
-        // 2. Tenta atualizar o buffer compartilhado
         {
             std::unique_lock<std::mutex> lk(_ops_queue_mutex);
             if (_has_pending) {
-                // Se já tem algo esperando envio, funde com o novo (Conflation)
                 _pending_state.join(local_cumulative);
             } else {
-                // Se estava livre, define o novo estado
                 _pending_state = local_cumulative;
                 _has_pending = true;
             }
@@ -651,19 +599,14 @@ void run_random_mode(const node_config& nc, gcounter<int, std::string>& gc) {
     }
 }
 
-// setup socket and peers
 bool setup_socket_and_peers(const node_config& nc) {
-    // ... (rest of code identical) ...
-    // parse listen addr
     auto pos = nc.listen_addr.find(':');
     if (pos == std::string::npos) {
         std::cerr << "Invalid listen_addr\n";
         return false;
     }
-    std::string self_ip = nc.listen_addr.substr(0, pos);
     _listen_port = std::stoi(nc.listen_addr.substr(pos + 1));
 
-    // create udp socket
     _sockfd = socket(AF_INET, SOCK_DGRAM, 0);
     if (_sockfd < 0) {
         perror("socket");
@@ -671,9 +614,9 @@ bool setup_socket_and_peers(const node_config& nc) {
     }
     int reuse = 1;
     setsockopt(_sockfd, SOL_SOCKET, SO_REUSEADDR, &reuse, sizeof(reuse));
-    
     int bc = 1;
     setsockopt(_sockfd, SOL_SOCKET, SO_BROADCAST, &bc, sizeof(bc));
+
     sockaddr_in addr{};
     addr.sin_family = AF_INET;
     addr.sin_addr.s_addr = INADDR_ANY;
@@ -684,17 +627,14 @@ bool setup_socket_and_peers(const node_config& nc) {
         return false;
     }
     
-    // configure broadcast out socket
     sockaddr_in broadcast{};
     broadcast.sin_family = AF_INET;
     broadcast.sin_port = htons(_listen_port);
     broadcast.sin_addr.s_addr = INADDR_BROADCAST;
     _broadcast_addr = broadcast;
-
     return true;
 }
 
-// cleanup threads: cache+neighbors
 void periodic_maintenance() {
     while (true) {
         cache_cleanup();
@@ -703,7 +643,6 @@ void periodic_maintenance() {
     }
 }
 
-// main
 int main(int argc, char* argv[]) {
     if (argc < 3) {
         std::cerr << "Usage: " << argv[0] << " -id <ID> -config <config.json>\n";
@@ -723,21 +662,21 @@ int main(int argc, char* argv[]) {
         std::cerr << "Missing node ID or config file.\n";
         return 1;
     }
+
     node_config nc = load_config(cfgfile, node_id);
     print_config(nc);
+
     _event_log.open(nc.log_file + ".events", std::ios::trunc);
     _event_log.setf(std::ios::unitbuf);
-    
     if (!_event_log.is_open()) {
         std::cerr << "Failed to open event log file\n";
         return 1;
     }
-    
     if (nc.listen_addr.empty()) {
         std::cerr << "Invalid configuration for node " << node_id << "\n";
         return 1;
     }
-    
+
     stats st;
     if (!setup_socket_and_peers(nc)) {
         std::cerr << "Failed to setup network\n";
@@ -745,9 +684,8 @@ int main(int argc, char* argv[]) {
     }
     
     gcounter<int, std::string> gc(nc.id);
-    // self id for heartbeat
     uint64_t selfid = gen_id();
-    // start threads
+
     std::thread t_recv(recv_loop, _sockfd, std::ref(gc), std::ref(st), nc.id);
     t_recv.detach();
     std::thread t_cast(cast_worker, std::ref(st));
@@ -763,20 +701,17 @@ int main(int argc, char* argv[]) {
     std::thread t_maint(periodic_maintenance);
     t_maint.detach();
     
-    // run workload: use same function but now it enqueues to _ops_send_queue
     run_random_mode(nc, gc);
     {
         std::lock_guard<std::mutex> lk(_event_log_mutex);
         _event_log << std::fixed << now_ts()
-                << ", event=ops_finished"
-                << ", node=" << nc.id
-                << "\n";
+                   << ", event=ops_finished"
+                   << ", node=" << nc.id
+                   << "\n";
     }
 
-    // SLEEP BASICALLY FOREVER
-    // LET THE NODES EXCHANGE THEIR LAST MESSAGES AFTER THE PERIOD OF CRDT OPS GENERATION STOPS
     std::this_thread::sleep_for(9999999s);
-    
+
     std::cout << "FINAL local=" << gc.local()
               << " total=" << gc.read()
               << " sent=" << st.sent_msgs
