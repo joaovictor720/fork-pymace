@@ -2,14 +2,14 @@
 set -e
 
 # Configurações Globais
-RUNS_PER_EXPERIMENT=5
+RUNS_PER_EXPERIMENT=10
 ALGORITHMS=("broadcast" "rapid")
 
 # Lista exata dos nomes dos cenários que criamos (devem bater com o nome da pasta/json em scenarios/)
 SCENARIOS=(
-    "article_scenario_1_density"
-    "article_scenario_2_mobility"
-    "article_scenario_3_stress"
+    "scenario_A_baseline"
+    "scenario_B_mobility"
+    "scenario_C_stress"
 )
 
 # Caminho para o script original que você forneceu
