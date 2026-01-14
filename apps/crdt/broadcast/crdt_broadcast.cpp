@@ -151,7 +151,7 @@ void run_random_mode(const node_config& nc, gcounter<int, std::string>& gc, gcou
     double duration = nc.duration;
     std::default_random_engine gen(nc.seed);
     std::exponential_distribution<double> expd(ops_per_sec);
-    std::uniform_int_distribution<int> inc_dist(1, 10);
+    std::uniform_int_distribution<int> inc_dist(1, 1);
 
     auto start = std::chrono::steady_clock::now();
     while (true) {

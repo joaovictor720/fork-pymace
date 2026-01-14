@@ -396,12 +396,20 @@ void recv_loop(int sockfd_local, gcounter<int, std::string>& gc, stats& st, std:
     char buf[MSG_MAX];
     sockaddr_in src;
     socklen_t srclen = sizeof(src);
+
     while (true) {
         ssize_t n = recvfrom(sockfd_local, buf, MSG_MAX, 0, (sockaddr*)&src, &srclen);
         if (n <= 0) {
             std::this_thread::sleep_for(1ms);
             continue;
         }
+
+        // --------------------------------------------------
+        // CONTABILIZAÇÃO GLOBAL (QUALQUER PACOTE RECEBIDO)
+        // --------------------------------------------------
+        st.recv_msgs++;
+        st.recv_bytes += static_cast<int>(n);
+
         uint8_t type = static_cast<uint8_t>(buf[0]);
         if (type == MT_DATA) {
             if (n < 1 + 8 + 4) continue;
@@ -429,8 +437,6 @@ void recv_loop(int sockfd_local, gcounter<int, std::string>& gc, stats& st, std:
                                    << ", total=" << total
                                    << "\n";
                     }
-                    st.recv_msgs++;
-                    st.recv_bytes += static_cast<int>(len);
                 } catch (...) {}
                 int ncount = neighbor_count();
                 double pr = BETA / std::max(1, ncount);
@@ -439,26 +445,38 @@ void recv_loop(int sockfd_local, gcounter<int, std::string>& gc, stats& st, std:
                 e.msgid = msgid;
                 e.prob = pr;
                 e.when = std::chrono::steady_clock::now() +
-                         std::chrono::milliseconds((int)(_uniform_01(_rng)*(SHORT_JITTER_MAX_MS-SHORT_JITTER_MIN_MS) + SHORT_JITTER_MIN_MS));
+                         std::chrono::milliseconds(
+                             (int)(_uniform_01(_rng) * (SHORT_JITTER_MAX_MS - SHORT_JITTER_MIN_MS) + SHORT_JITTER_MIN_MS)
+                         );
                 e.payload = payload;
                 _cast_queue.push(e);
             }
+
         } else if (type == MT_GOSSIP) {
             if (n < 1 + 2) continue;
-            uint16_t nn = static_cast<uint16_t>(static_cast<unsigned char>(buf[1]) | (static_cast<unsigned char>(buf[2])<<8));
+
+            uint16_t nn = static_cast<uint16_t>(
+                static_cast<unsigned char>(buf[1]) |
+                (static_cast<unsigned char>(buf[2]) << 8)
+            );
+
             const char* p = buf + 3;
             for (int i = 0; i < (int)nn; ++i) {
                 if (p + 8 > buf + n) break;
                 uint64_t hid = read_uint64(p);
                 p += 8;
+
                 if (!cache_exists(hid)) {
-                    int jitter = SHORT_JITTER_MIN_MS + (_rng() % (SHORT_JITTER_MAX_MS - SHORT_JITTER_MIN_MS + 1));
+                    int jitter = SHORT_JITTER_MIN_MS +
+                                 (_rng() % (SHORT_JITTER_MAX_MS - SHORT_JITTER_MIN_MS + 1));
                     std::this_thread::sleep_for(std::chrono::milliseconds(jitter));
                     send_request_once(hid, st);
                 }
             }
+
         } else if (type == MT_REQUEST) {
             if (n < 1 + 8) continue;
+
             uint64_t hid = read_uint64(buf + 1);
             std::vector<char> payload;
             if (cache_get(hid, payload)) {
@@ -466,6 +484,7 @@ void recv_loop(int sockfd_local, gcounter<int, std::string>& gc, stats& st, std:
                 build_data_packet(hid, payload, pkt);
                 send_broadcast(pkt, st);
             }
+
         } else if (type == MT_HEARTBEAT) {
             if (n < 1 + 8) continue;
             uint64_t pid = read_uint64(buf + 1);
@@ -473,6 +492,7 @@ void recv_loop(int sockfd_local, gcounter<int, std::string>& gc, stats& st, std:
         }
     }
 }
+
 
 // ---------- CORRIGIDO: app_sender_thread (RAPID CANÔNICO + CRDT) ----------
 void app_sender_thread(stats &st) {
@@ -561,7 +581,7 @@ void run_random_mode(const node_config& nc, gcounter<int, std::string>& gc) {
 
         double wait = expd(gen);
         std::this_thread::sleep_for(std::chrono::duration<double>(wait));
-        std::uniform_int_distribution<int> inc_dist(1, 10);
+        std::uniform_int_distribution<int> inc_dist(1, 1);
         int val = inc_dist(gen);
         
         gcounter<int, std::string> delta_obj;

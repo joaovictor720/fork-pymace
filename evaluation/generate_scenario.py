@@ -118,7 +118,7 @@ for i, (x, y) in enumerate(positions):
 			f"RESULT_DIR=\\$(grep '\\\"log_dir\\\"' __CRDT_NODE_CONFIG__ | "
 			f"sed -E 's/.*\\\"log_dir\\\"[[:space:]]*:[[:space:]]*\\\"([^\\\"]+)\\\".*/\\1/'); "
 
-			f"LOG_FILE=\\\"\\$RESULT_DIR/node_{i}.batman_net.log\\\"; "
+			f"LOG_FILE=\\\"\\$RESULT_DIR/node_{i}.net.log\\\"; "
 
 			# Measurement start
 			f"TX_START=\\$(cat /sys/class/net/bat0/statistics/tx_packets); "
@@ -152,7 +152,7 @@ for i, (x, y) in enumerate(positions):
             # Discover result dir
             f"RESULT_DIR=\\$(grep '\\\"log_dir\\\"' __CRDT_NODE_CONFIG__ | "
             f"sed -E 's/.*\\\"log_dir\\\"[[:space:]]*:[[:space:]]*\\\"([^\\\"]+)\\\".*/\\1/'); "
-            f"LOG_FILE=\\\"\\$RESULT_DIR/node_{i}.rapid_net.log\\\"; "
+            f"LOG_FILE=\\\"\\$RESULT_DIR/node_{i}.net.log\\\"; "
 
             # Measurement start
             f"TX_START=\\$(sudo iptables -nvx -L OUTPUT | awk '/udp spt:5001/ {{print \\$1}}'); "
