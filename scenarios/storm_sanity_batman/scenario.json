@@ -34,7 +34,26 @@
     },
     "experiment": {
         "vary": {
-            "mobility.speed": [[0.0, 0.0]]
-        }
+            "mobility.speed": [
+                [
+                    0.0,
+                    0.0
+                ],
+                [
+                    1.0,
+                    2.0
+                ]
+            ]
+        },
+        "vary_tuples": [
+            {
+                "nodes.count": 10,
+                "node_config.ops_per_sec": 2
+            },
+            {
+                "nodes.count": 20,
+                "node_config.ops_per_sec": 1
+            }
+        ]
     }
 }
