@@ -27,14 +27,7 @@ mkdir -p "$RESULT_DIR"
 # -------------------------------
 # Generate mace.json
 # -------------------------------
-if [[ "$ALGO" == "rapid" ]]; then
-  python "$ROOT_DIR/evaluation/generate_scenario_rapid.py" "$SCENARIO_DIR"
-elif [[ "$ALGO" == "broadcast" ]]; then
-  python "$ROOT_DIR/evaluation/generate_scenario_broadcast.py" "$SCENARIO_DIR"
-else
-  echo "[ERROR] Unknown algorithm"
-  exit 1
-fi
+python "$ROOT_DIR/evaluation/generate_scenario.py" "$SCENARIO_DIR" "$ALGO"
 
 # -------------------------------
 # Generate node_config.json

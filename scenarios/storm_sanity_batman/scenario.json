@@ -1,7 +1,7 @@
 {
     "name": "storm_sanity_batman",
     "simulation": {
-        "duration": 20,
+        "duration": 50,
         "start_delay": 5,
         "area": {
             "x": 600,
@@ -9,7 +9,7 @@
         }
     },
     "nodes": {
-        "count": 20,
+        "count": 10,
         "distribution": "grid",
         "seed": 42
     },
@@ -26,19 +26,15 @@
         "error": 0
     },
     "node_config": {
-        "ops_per_sec": 1,
-        "duration": 10,
+        "ops_per_sec": 100,
+        "duration": 5,
         "dissemination_interval": 2,
-        "monitor_interval": 2
+        "monitor_interval": 2,
+        "cooldown": 5
     },
     "experiment": {
         "vary": {
-            "nodes.count": [10],
-            "mobility.speed": [
-                [5.0, 5.0],
-                [10.0, 10.0],
-                [15.0, 15.0]
-            ]
+            "mobility.speed": [[0.1, 0.2]]
         }
     }
 }

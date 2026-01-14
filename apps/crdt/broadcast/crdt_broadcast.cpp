@@ -46,6 +46,7 @@ struct node_config {
     std::string log_file;
     double monitor_interval;
     double dissemination_interval;
+    double cooldown;
 };
 
 struct stats {
@@ -72,6 +73,7 @@ node_config load_config(const std::string& cfg_path, const std::string& id) {
     nc.monitor_interval = cfg.value("monitor_interval", 1.0);
     std::string log_dir = cfg.value("log_dir", ".");
     nc.log_file = log_dir + "node_" + id + ".log";
+    nc.cooldown = cfg.value("cooldown", 10);
     return nc;
 }
 
@@ -264,7 +266,7 @@ int main(int argc, char* argv[]) {
 
     { std::lock_guard<std::mutex> lk(_event_log_mutex); _event_log << std::fixed << now_ts() << ", event=ops_finished, node=" << nc.id << "\n"; }
 
-    std::this_thread::sleep_for(9999999s);
+    std::this_thread::sleep_for(std::chrono::duration<double>(nc.cooldown));
     close(sockfd);
     return 0;
 }

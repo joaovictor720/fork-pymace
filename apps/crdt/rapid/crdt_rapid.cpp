@@ -63,6 +63,7 @@ struct node_config {
     int seed;
     std::string log_file;
     double monitor_interval;
+    double cooldown;
 };
 
 struct stats {
@@ -116,6 +117,7 @@ node_config load_config(const std::string& cfg_path, const std::string& id) {
         log_dir.push_back('/');
     }
     nc.log_file = log_dir + "node_" + id + ".log";
+    nc.cooldown = cfg.value("cooldown", 10);
     return nc;
 }
 
@@ -710,7 +712,7 @@ int main(int argc, char* argv[]) {
                    << "\n";
     }
 
-    std::this_thread::sleep_for(9999999s);
+    std::this_thread::sleep_for(std::chrono::duration<double>(nc.cooldown));
 
     std::cout << "FINAL local=" << gc.local()
               << " total=" << gc.read()
