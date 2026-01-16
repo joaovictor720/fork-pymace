@@ -26,7 +26,7 @@
   "node_config": {
     "ops_per_sec": 2.0,
     "duration": 20,
-    "dissemination_interval": 2,
+    "dissemination_interval": 0.5,
     "monitor_interval": 2,
     "cooldown": 30
   },
@@ -36,7 +36,8 @@
       { "nodes.count": 20, "node_config.ops_per_sec": 1.0 },
       { "nodes.count": 30, "node_config.ops_per_sec": 0.66 },
       { "nodes.count": 40, "node_config.ops_per_sec": 0.5 },
-      { "nodes.count": 50, "node_config.ops_per_sec": 0.4 }
+      { "nodes.count": 50, "node_config.ops_per_sec": 0.4 },
+      { "nodes.count": 60, "node_config.ops_per_sec": 0.33 }
     ]
   }
 }
