@@ -63,3 +63,5 @@ for VARIANT in $VARIANTS; do
 
   python "$ROOT_DIR/evaluation/parse_metrics.py" "$VARIANT_RESULTS_DIR"
 done
+
+echo "run_experiment.sh - EXPERIMENT FINISHED!"

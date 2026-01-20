@@ -3,22 +3,22 @@ set -e
 
 # Configurações Globais
 RUNS_PER_EXPERIMENT=10
-ALGORITHMS=("broadcast" "rapid")
 
 # Lista exata dos nomes dos cenários que criamos (devem bater com o nome da pasta/json em scenarios/)
 SCENARIOS=(
-    "scenario_A_baseline"
-    "scenario_B_mobility"
-    "scenario_C_stress"
+    "scenario_A_baseline_batman"
+    "scenario_A_baseline_ip"
+    "scenario_B_mobility_batman"
+    "scenario_B_mobility_ip"
+    "scenario_C_stress_batman"
+    "scenario_C_stress_ip"
 )
 
-# Caminho para o script original que você forneceu
+# Caminho para o script original que executa os experimentos
 RUN_SCRIPT="/home/mace/git/fork-pymace/evaluation/run_experiment.sh"
 
 echo "=================================================="
 echo "INICIANDO BATERIA COMPLETA DE TESTES PARA O ARTIGO"
-echo "Algoritmos: ${ALGORITHMS[*]}"
-echo "Cenários  : ${SCENARIOS[*]}"
 echo "Runs/Cada : $RUNS_PER_EXPERIMENT"
 echo "=================================================="
 echo ""
@@ -29,19 +29,26 @@ for SCENARIO in "${SCENARIOS[@]}"; do
     echo "### INICIANDO CENÁRIO: $SCENARIO"
     echo "##################################################"
 
-    for ALGO in "${ALGORITHMS[@]}"; do
-        echo ">>> Executando Algoritmo: $ALGO"
-        
-        # Chama o seu script original
-        # O set -e no topo garante que se o run_experiment.sh falhar, este script para.
-        $RUN_SCRIPT --scenario "$SCENARIO" --algorithm "$ALGO" --runs "$RUNS_PER_EXPERIMENT"
-        
-        echo ">>> Concluído: $ALGO em $SCENARIO"
-        echo "--------------------------------------------------"
-        
-        # Opcional: Pausa pequena para o SO limpar sockets/buffers se necessário
-        sleep 2 
-    done
+    # Escolha do algoritmo baseada no nome do cenário
+    if [[ "$SCENARIO" == *"_batman" ]]; then
+        ALGO="broadcast"
+    elif [[ "$SCENARIO" == *"_ip" ]]; then
+        ALGO="rapid"
+    else
+        echo "ERRO: cenário desconhecido (não termina em _batman ou _ip): $SCENARIO" >&2
+        exit 1
+    fi
+
+    echo ">>> Executando Algoritmo: $ALGO"
+
+    # Chama o script original
+    $RUN_SCRIPT --scenario "$SCENARIO" --algorithm "$ALGO" --runs "$RUNS_PER_EXPERIMENT"
+
+    echo ">>> Concluído: $ALGO em $SCENARIO"
+    echo "--------------------------------------------------"
+
+    # Opcional: Pausa pequena para o SO limpar sockets/buffers se necessário
+    sleep 2
     echo ""
 done
 

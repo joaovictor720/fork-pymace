@@ -1,5 +1,5 @@
 {
-  "name": "scenario_B_mobility",
+  "name": "scenario_B_mobility_batman",
   "simulation": {
     "duration": 100,
     "start_delay": 5,
