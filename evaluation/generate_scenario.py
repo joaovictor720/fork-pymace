@@ -100,41 +100,60 @@ for i, (x, y) in enumerate(positions):
 
     # ----------------------------
     # Function: depende do algoritmo
+    # - Mantém medições "na mão" (/sys e iptables)
+    # - Adiciona medição "certa" estilo MACE: PCAP via tcpdump em eth0
+    # - Loga START/END e também DELTAS (para facilitar análise)
+    # ----------------------------
+
+    TIME_LIMIT = sc["node_config"]["duration"] + sc["node_config"]["cooldown"] + 5
+
+    # ----------------------------
+    # Function: depende do algoritmo
     # ----------------------------
     if algo == "broadcast":
         function = [
-			f"/bin/bash -lc \""
-			f"set -x; "
-			f"sleep {APPLICATION_START_DELAY}; "
+            f"/bin/bash -lc \""
+            f"set -x; "
+            f"sleep {APPLICATION_START_DELAY}; "
 
-			# Setup BATMAN
-			f"sudo ip addr flush dev eth0; "
-			f"sudo ip link set up dev eth0; "
-			f"sudo batctl if add eth0; "
-			f"sudo ip link set up dev bat0; "
-			f"sudo ip addr add 10.0.0.{i+1}/24 dev bat0; "
+            # Setup BATMAN
+            f"sudo ip addr flush dev eth0; "
+            f"sudo ip link set up dev eth0; "
+            f"sudo batctl if add eth0; "
+            f"sudo ip link set up dev bat0; "
+            f"sudo ip addr add 10.0.0.{i+1}/24 dev bat0; "
 
-			# Discover result dir safely
-			f"RESULT_DIR=\\$(grep '\\\"log_dir\\\"' __CRDT_NODE_CONFIG__ | "
-			f"sed -E 's/.*\\\"log_dir\\\"[[:space:]]*:[[:space:]]*\\\"([^\\\"]+)\\\".*/\\1/'); "
+            # Discover result dir safely
+            f"RESULT_DIR=\\$(grep '\\\"log_dir\\\"' __CRDT_NODE_CONFIG__ | "
+            f"sed -E 's/.*\\\"log_dir\\\"[[:space:]]*:[[:space:]]*\\\"([^\\\"]+)\\\".*/\\1/'); "
+            f"LOG_FILE=\\\"\\$RESULT_DIR/node_{i}.net.log\\\"; "
 
-			f"LOG_FILE=\\\"\\$RESULT_DIR/node_{i}.net.log\\\"; "
+            # Measurement start (/sys)
+            f"TX_START=\\$(cat /sys/class/net/bat0/statistics/tx_packets); "
+            f"RX_START=\\$(cat /sys/class/net/bat0/statistics/rx_packets); "
+            f"echo \\\"BATMAN_TX_START=\\$TX_START\\\" > \\\"\\$LOG_FILE\\\"; "
+            f"echo \\\"BATMAN_RX_START=\\$RX_START\\\" >> \\\"\\$LOG_FILE\\\"; "
 
-			# Measurement start
-			f"TX_START=\\$(cat /sys/class/net/bat0/statistics/tx_packets); "
-			f"RX_START=\\$(cat /sys/class/net/bat0/statistics/rx_packets); "
-			f"echo \\\"BATMAN_TX_START=\\$TX_START\\\" > \\\"\\$LOG_FILE\\\"; "
-			f"echo \\\"BATMAN_RX_START=\\$RX_START\\\" >> \\\"\\$LOG_FILE\\\"; "
+            # PCAP capture (MACE default style: eth0)
+            f"PCAP_FILE=\\\"\\$RESULT_DIR/node_{i}.pcap\\\"; "
+            f"timeout {TIME_LIMIT} tcpdump -i eth0 -w \\\"\\$PCAP_FILE\\\" >/dev/null 2>&1 & "
+            f"TCPDUMP_PID=\\$!; "
+            f"echo \\\"TCPDUMP_PID=\\$TCPDUMP_PID\\\" >> \\\"\\$LOG_FILE\\\"; "
 
-			# Run application
-			f"__CRDT_BIN__ -id {i} -config __CRDT_NODE_CONFIG__; "
+            # Run application
+            f"__CRDT_BIN__ -id {i} -config __CRDT_NODE_CONFIG__; "
 
-			# Measurement end
-			f"TX_END=\\$(cat /sys/class/net/bat0/statistics/tx_packets); "
-			f"RX_END=\\$(cat /sys/class/net/bat0/statistics/rx_packets); "
-			f"echo \\\"BATMAN_TX_END=\\$TX_END\\\" >> \\\"\\$LOG_FILE\\\"; "
-			f"echo \\\"BATMAN_RX_END=\\$RX_END\\\" >> \\\"\\$LOG_FILE\\\"\""
-		]
+            # Ensure pcap is flushed/closed
+            f"wait \\$TCPDUMP_PID 2>/dev/null; "
+            f"echo \\\"PCAP_SAVED=\\$PCAP_FILE\\\" >> \\\"\\$LOG_FILE\\\"; "
+
+            # Measurement end (/sys)
+            f"TX_END=\\$(cat /sys/class/net/bat0/statistics/tx_packets); "
+            f"RX_END=\\$(cat /sys/class/net/bat0/statistics/rx_packets); "
+            f"echo \\\"BATMAN_TX_END=\\$TX_END\\\" >> \\\"\\$LOG_FILE\\\"; "
+            f"echo \\\"BATMAN_RX_END=\\$RX_END\\\" >> \\\"\\$LOG_FILE\\\"\""
+        ]
+
     elif algo == "rapid":
         function = [
             f"/bin/bash -lc \""
@@ -149,23 +168,33 @@ for i, (x, y) in enumerate(positions):
             f"sudo iptables -I INPUT  -p udp --dport 5001 -j ACCEPT; "
             f"sudo iptables -Z; "
 
-            # Discover result dir
+            # Discover result dir safely
             f"RESULT_DIR=\\$(grep '\\\"log_dir\\\"' __CRDT_NODE_CONFIG__ | "
             f"sed -E 's/.*\\\"log_dir\\\"[[:space:]]*:[[:space:]]*\\\"([^\\\"]+)\\\".*/\\1/'); "
             f"LOG_FILE=\\\"\\$RESULT_DIR/node_{i}.net.log\\\"; "
 
-            # Measurement start
-            f"TX_START=\\$(sudo iptables -nvx -L OUTPUT | awk '/udp spt:5001/ {{print \\$1}}'); "
-            f"RX_START=\\$(sudo iptables -nvx -L INPUT  | awk '/udp dpt:5001/ {{print \\$1}}'); "
+            # Measurement start (iptables; keep nomenclature)
+            f"TX_START=\\$(sudo iptables -nvx -L OUTPUT | awk '/udp spt:5001/ {{print \\$1; exit}}'); "
+            f"RX_START=\\$(sudo iptables -nvx -L INPUT  | awk '/udp dpt:5001/ {{print \\$1; exit}}'); "
             f"echo \\\"RAPID_TX_START=\\$TX_START\\\" >  \\\"\\$LOG_FILE\\\"; "
             f"echo \\\"RAPID_RX_START=\\$RX_START\\\" >> \\\"\\$LOG_FILE\\\"; "
+
+            # PCAP capture (MACE default style: eth0)
+            f"PCAP_FILE=\\\"\\$RESULT_DIR/node_{i}.pcap\\\"; "
+            f"timeout {TIME_LIMIT} tcpdump -i eth0 -w \\\"\\$PCAP_FILE\\\" >/dev/null 2>&1 & "
+            f"TCPDUMP_PID=\\$!; "
+            f"echo \\\"TCPDUMP_PID=\\$TCPDUMP_PID\\\" >> \\\"\\$LOG_FILE\\\"; "
 
             # Run application
             f"__CRDT_BIN__ -id {i} -config __CRDT_NODE_CONFIG__; "
 
-            # Measurement end
-            f"TX_END=\\$(sudo iptables -nvx -L OUTPUT | awk '/udp spt:5001/ {{print \\$1}}'); "
-            f"RX_END=\\$(sudo iptables -nvx -L INPUT  | awk '/udp dpt:5001/ {{print \\$1}}'); "
+            # Ensure pcap is flushed/closed
+            f"wait \\$TCPDUMP_PID 2>/dev/null; "
+            f"echo \\\"PCAP_SAVED=\\$PCAP_FILE\\\" >> \\\"\\$LOG_FILE\\\"; "
+
+            # Measurement end (iptables; keep nomenclature)
+            f"TX_END=\\$(sudo iptables -nvx -L OUTPUT | awk '/udp spt:5001/ {{print \\$1; exit}}'); "
+            f"RX_END=\\$(sudo iptables -nvx -L INPUT  | awk '/udp dpt:5001/ {{print \\$1; exit}}'); "
             f"echo \\\"RAPID_TX_END=\\$TX_END\\\" >> \\\"\\$LOG_FILE\\\"; "
             f"echo \\\"RAPID_RX_END=\\$RX_END\\\" >> \\\"\\$LOG_FILE\\\"\""
         ]
