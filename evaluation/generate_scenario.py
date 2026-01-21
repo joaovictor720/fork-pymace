@@ -134,9 +134,9 @@ for i, (x, y) in enumerate(positions):
             f"echo \\\"BATMAN_TX_START=\\$TX_START\\\" > \\\"\\$LOG_FILE\\\"; "
             f"echo \\\"BATMAN_RX_START=\\$RX_START\\\" >> \\\"\\$LOG_FILE\\\"; "
 
-            # PCAP capture (MACE default style: eth0)
+            # PCAP capture (filtered: BATMAN-adv only)
             f"PCAP_FILE=\\\"\\$RESULT_DIR/node_{i}.pcap\\\"; "
-            f"timeout {TIME_LIMIT} tcpdump -i eth0 -w \\\"\\$PCAP_FILE\\\" >/dev/null 2>&1 & "
+            f"timeout {TIME_LIMIT} tcpdump -i eth0 -w \\\"\\$PCAP_FILE\\\" 'ether proto 0x4305' >/dev/null 2>&1 & "
             f"TCPDUMP_PID=\\$!; "
             f"echo \\\"TCPDUMP_PID=\\$TCPDUMP_PID\\\" >> \\\"\\$LOG_FILE\\\"; "
 
@@ -145,7 +145,17 @@ for i, (x, y) in enumerate(positions):
 
             # Ensure pcap is flushed/closed
             f"wait \\$TCPDUMP_PID 2>/dev/null; "
-            f"echo \\\"PCAP_SAVED=\\$PCAP_FILE\\\" >> \\\"\\$LOG_FILE\\\"; "
+
+            # Extract metrics from PCAP and purge (frames/bytes/duration)
+            f"PCAP_FRAMES=\\$(tshark -r \\\"\\$PCAP_FILE\\\" -T fields -e frame.len 2>/dev/null | wc -l | tr -d ' '); "
+            f"PCAP_BYTES=\\$(tshark -r \\\"\\$PCAP_FILE\\\" -T fields -e frame.len 2>/dev/null | "
+            f"awk '{{s+=\\$1}} END{{print s+0}}'); "
+            f"PCAP_DUR=\\$(tshark -r \\\"\\$PCAP_FILE\\\" -T fields -e frame.time_epoch 2>/dev/null | "
+            f"awk 'NR==1{{first=\\$1}} {{last=\\$1}} END{{if(NR>0) printf \\\"%.6f\\\", last-first; else print 0}}'); "
+            f"echo \\\"PCAP_FRAMES=\\$PCAP_FRAMES\\\" >> \\\"\\$LOG_FILE\\\"; "
+            f"echo \\\"PCAP_BYTES=\\$PCAP_BYTES\\\" >> \\\"\\$LOG_FILE\\\"; "
+            f"echo \\\"PCAP_DURATION=\\$PCAP_DUR\\\" >> \\\"\\$LOG_FILE\\\"; "
+            f"rm -f \\\"\\$PCAP_FILE\\\"; "
 
             # Measurement end (/sys)
             f"TX_END=\\$(cat /sys/class/net/bat0/statistics/tx_packets); "
@@ -153,7 +163,6 @@ for i, (x, y) in enumerate(positions):
             f"echo \\\"BATMAN_TX_END=\\$TX_END\\\" >> \\\"\\$LOG_FILE\\\"; "
             f"echo \\\"BATMAN_RX_END=\\$RX_END\\\" >> \\\"\\$LOG_FILE\\\"\""
         ]
-
     elif algo == "rapid":
         function = [
             f"/bin/bash -lc \""
@@ -179,9 +188,9 @@ for i, (x, y) in enumerate(positions):
             f"echo \\\"RAPID_TX_START=\\$TX_START\\\" >  \\\"\\$LOG_FILE\\\"; "
             f"echo \\\"RAPID_RX_START=\\$RX_START\\\" >> \\\"\\$LOG_FILE\\\"; "
 
-            # PCAP capture (MACE default style: eth0)
+            # PCAP capture (filtered: RAPID only)
             f"PCAP_FILE=\\\"\\$RESULT_DIR/node_{i}.pcap\\\"; "
-            f"timeout {TIME_LIMIT} tcpdump -i eth0 -w \\\"\\$PCAP_FILE\\\" >/dev/null 2>&1 & "
+            f"timeout {TIME_LIMIT} tcpdump -i eth0 -w \\\"\\$PCAP_FILE\\\" 'udp port 5001' >/dev/null 2>&1 & "
             f"TCPDUMP_PID=\\$!; "
             f"echo \\\"TCPDUMP_PID=\\$TCPDUMP_PID\\\" >> \\\"\\$LOG_FILE\\\"; "
 
@@ -190,7 +199,17 @@ for i, (x, y) in enumerate(positions):
 
             # Ensure pcap is flushed/closed
             f"wait \\$TCPDUMP_PID 2>/dev/null; "
-            f"echo \\\"PCAP_SAVED=\\$PCAP_FILE\\\" >> \\\"\\$LOG_FILE\\\"; "
+
+            # Extract metrics from PCAP and purge (frames/bytes/duration)
+            f"PCAP_FRAMES=\\$(tshark -r \\\"\\$PCAP_FILE\\\" -T fields -e frame.len 2>/dev/null | wc -l | tr -d ' '); "
+            f"PCAP_BYTES=\\$(tshark -r \\\"\\$PCAP_FILE\\\" -T fields -e frame.len 2>/dev/null | "
+            f"awk '{{s+=\\$1}} END{{print s+0}}'); "
+            f"PCAP_DUR=\\$(tshark -r \\\"\\$PCAP_FILE\\\" -T fields -e frame.time_epoch 2>/dev/null | "
+            f"awk 'NR==1{{first=\\$1}} {{last=\\$1}} END{{if(NR>0) printf \\\"%.6f\\\", last-first; else print 0}}'); "
+            f"echo \\\"PCAP_FRAMES=\\$PCAP_FRAMES\\\" >> \\\"\\$LOG_FILE\\\"; "
+            f"echo \\\"PCAP_BYTES=\\$PCAP_BYTES\\\" >> \\\"\\$LOG_FILE\\\"; "
+            f"echo \\\"PCAP_DURATION=\\$PCAP_DUR\\\" >> \\\"\\$LOG_FILE\\\"; "
+            f"rm -f \\\"\\$PCAP_FILE\\\"; "
 
             # Measurement end (iptables; keep nomenclature)
             f"TX_END=\\$(sudo iptables -nvx -L OUTPUT | awk '/udp spt:5001/ {{print \\$1; exit}}'); "
