@@ -2,16 +2,14 @@
 set -e
 
 # Configurações Globais
-RUNS_PER_EXPERIMENT=10
+RUNS_PER_EXPERIMENT=5
 
 # Lista exata dos nomes dos cenários que criamos (devem bater com o nome da pasta/json em scenarios/)
 SCENARIOS=(
-    "scenario_A_baseline_batman"
-    "scenario_A_baseline_ip"
-    "scenario_B_mobility_batman"
-    "scenario_B_mobility_ip"
-    "scenario_C_stress_batman"
-    "scenario_C_stress_ip"
+    "scenario_A_baseline_batman_guts"
+    "scenario_A_baseline_ip_guts"
+    "scenario_B_mobility_batman_guts"
+    "scenario_B_mobility_ip_guts"
 )
 
 # Caminho para o script original que executa os experimentos
@@ -30,9 +28,9 @@ for SCENARIO in "${SCENARIOS[@]}"; do
     echo "##################################################"
 
     # Escolha do algoritmo baseada no nome do cenário
-    if [[ "$SCENARIO" == *"_batman" ]]; then
+    if [[ "$SCENARIO" == *"_batman"* ]]; then
         ALGO="broadcast"
-    elif [[ "$SCENARIO" == *"_ip" ]]; then
+    elif [[ "$SCENARIO" == *"_ip"* ]]; then
         ALGO="rapid"
     else
         echo "ERRO: cenário desconhecido (não termina em _batman ou _ip): $SCENARIO" >&2

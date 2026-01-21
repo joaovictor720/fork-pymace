@@ -105,7 +105,7 @@ for i, (x, y) in enumerate(positions):
     # - Loga START/END e também DELTAS (para facilitar análise)
     # ----------------------------
 
-    TIME_LIMIT = sc["node_config"]["duration"] + sc["node_config"]["cooldown"] + 5
+    TIME_LIMIT = sc["node_config"]["duration"] + sc["node_config"]["cooldown"] + 1
 
     # ----------------------------
     # Function: depende do algoritmo
