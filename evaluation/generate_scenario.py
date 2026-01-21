@@ -113,6 +113,7 @@ for i, (x, y) in enumerate(positions):
     if algo == "broadcast":
         function = [
             f"/bin/bash -lc \""
+            f"ulimit -c 0; "
             f"set -x; "
             f"sleep {APPLICATION_START_DELAY}; "
 
@@ -136,26 +137,20 @@ for i, (x, y) in enumerate(positions):
 
             # PCAP capture (filtered: BATMAN-adv only)
             f"PCAP_FILE=\\\"\\$RESULT_DIR/node_{i}.pcap\\\"; "
-            f"timeout {TIME_LIMIT} tcpdump -i eth0 -w \\\"\\$PCAP_FILE\\\" 'ether proto 0x4305' >/dev/null 2>&1 & "
+            f"sudo tcpdump -i eth0 -w \\\"\\$PCAP_FILE\\\" 'ether proto 0x4305' >/dev/null 2>&1 & "
             f"TCPDUMP_PID=\\$!; "
             f"echo \\\"TCPDUMP_PID=\\$TCPDUMP_PID\\\" >> \\\"\\$LOG_FILE\\\"; "
 
             # Run application
             f"__CRDT_BIN__ -id {i} -config __CRDT_NODE_CONFIG__; "
+            f"APP_RC=\\$?; "
+            f"echo \\\"APP_RC=\\$APP_RC\\\" >> \\\"\\$LOG_FILE\\\"; "
 
-            # Ensure pcap is flushed/closed
-            f"wait \\$TCPDUMP_PID 2>/dev/null; "
-
-            # Extract metrics from PCAP and purge (frames/bytes/duration)
-            f"PCAP_FRAMES=\\$(tshark -r \\\"\\$PCAP_FILE\\\" -T fields -e frame.len 2>/dev/null | wc -l | tr -d ' '); "
-            f"PCAP_BYTES=\\$(tshark -r \\\"\\$PCAP_FILE\\\" -T fields -e frame.len 2>/dev/null | "
-            f"awk '{{s+=\\$1}} END{{print s+0}}'); "
-            f"PCAP_DUR=\\$(tshark -r \\\"\\$PCAP_FILE\\\" -T fields -e frame.time_epoch 2>/dev/null | "
-            f"awk 'NR==1{{first=\\$1}} {{last=\\$1}} END{{if(NR>0) printf \\\"%.6f\\\", last-first; else print 0}}'); "
-            f"echo \\\"PCAP_FRAMES=\\$PCAP_FRAMES\\\" >> \\\"\\$LOG_FILE\\\"; "
-            f"echo \\\"PCAP_BYTES=\\$PCAP_BYTES\\\" >> \\\"\\$LOG_FILE\\\"; "
-            f"echo \\\"PCAP_DURATION=\\$PCAP_DUR\\\" >> \\\"\\$LOG_FILE\\\"; "
-            f"rm -f \\\"\\$PCAP_FILE\\\"; "
+            # Stop tcpdump cleanly + flush
+            f"sudo kill -INT \\$TCPDUMP_PID 2>/dev/null || true; "
+            f"wait \\$TCPDUMP_PID 2>/dev/null || true; "
+            f"sync; "
+            f"echo \\\"PCAP_SAVED=\\$PCAP_FILE\\\" >> \\\"\\$LOG_FILE\\\"; "
 
             # Measurement end (/sys)
             f"TX_END=\\$(cat /sys/class/net/bat0/statistics/tx_packets); "
@@ -166,6 +161,7 @@ for i, (x, y) in enumerate(positions):
     elif algo == "rapid":
         function = [
             f"/bin/bash -lc \""
+            f"ulimit -c 0; "
             f"set -x; "
             f"sleep {APPLICATION_START_DELAY}; "
 
@@ -190,26 +186,20 @@ for i, (x, y) in enumerate(positions):
 
             # PCAP capture (filtered: RAPID only)
             f"PCAP_FILE=\\\"\\$RESULT_DIR/node_{i}.pcap\\\"; "
-            f"timeout {TIME_LIMIT} tcpdump -i eth0 -w \\\"\\$PCAP_FILE\\\" 'udp port 5001' >/dev/null 2>&1 & "
+            f"sudo tcpdump -i eth0 -w \\\"\\$PCAP_FILE\\\" 'udp port 5001' >/dev/null 2>&1 & "
             f"TCPDUMP_PID=\\$!; "
             f"echo \\\"TCPDUMP_PID=\\$TCPDUMP_PID\\\" >> \\\"\\$LOG_FILE\\\"; "
 
             # Run application
             f"__CRDT_BIN__ -id {i} -config __CRDT_NODE_CONFIG__; "
+            f"APP_RC=\\$?; "
+            f"echo \\\"APP_RC=\\$APP_RC\\\" >> \\\"\\$LOG_FILE\\\"; "
 
-            # Ensure pcap is flushed/closed
-            f"wait \\$TCPDUMP_PID 2>/dev/null; "
-
-            # Extract metrics from PCAP and purge (frames/bytes/duration)
-            f"PCAP_FRAMES=\\$(tshark -r \\\"\\$PCAP_FILE\\\" -T fields -e frame.len 2>/dev/null | wc -l | tr -d ' '); "
-            f"PCAP_BYTES=\\$(tshark -r \\\"\\$PCAP_FILE\\\" -T fields -e frame.len 2>/dev/null | "
-            f"awk '{{s+=\\$1}} END{{print s+0}}'); "
-            f"PCAP_DUR=\\$(tshark -r \\\"\\$PCAP_FILE\\\" -T fields -e frame.time_epoch 2>/dev/null | "
-            f"awk 'NR==1{{first=\\$1}} {{last=\\$1}} END{{if(NR>0) printf \\\"%.6f\\\", last-first; else print 0}}'); "
-            f"echo \\\"PCAP_FRAMES=\\$PCAP_FRAMES\\\" >> \\\"\\$LOG_FILE\\\"; "
-            f"echo \\\"PCAP_BYTES=\\$PCAP_BYTES\\\" >> \\\"\\$LOG_FILE\\\"; "
-            f"echo \\\"PCAP_DURATION=\\$PCAP_DUR\\\" >> \\\"\\$LOG_FILE\\\"; "
-            f"rm -f \\\"\\$PCAP_FILE\\\"; "
+            # Stop tcpdump cleanly + flush
+            f"sudo kill -INT \\$TCPDUMP_PID 2>/dev/null || true; "
+            f"wait \\$TCPDUMP_PID 2>/dev/null || true; "
+            f"sync; "
+            f"echo \\\"PCAP_SAVED=\\$PCAP_FILE\\\" >> \\\"\\$LOG_FILE\\\"; "
 
             # Measurement end (iptables; keep nomenclature)
             f"TX_END=\\$(sudo iptables -nvx -L OUTPUT | awk '/udp spt:5001/ {{print \\$1; exit}}'); "
