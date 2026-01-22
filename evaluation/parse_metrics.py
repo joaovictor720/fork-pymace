@@ -25,12 +25,13 @@ for run_dir in sorted(root.iterdir()):
     # -----------------------------
     # Derived metrics
     # -----------------------------
-    if "final_total" in row and row["final_total"] and "total_packets" in row:
-        row["packets_per_global_increment"] = (
-            row["total_packets"] / row["final_total"]
-        )
+    if row.get("final_total") and row.get("total_packets") is not None:
+        try:
+            row["packets_per_global_increment"] = row["total_packets"] / row["final_total"]
+        except Exception:
+            pass
 
-    if row.get("time_to_90pct_s") and row.get("total_packets"):
+    if row.get("time_to_90pct_s") and row.get("total_packets") is not None:
         row["packets_until_90pct"] = row["total_packets"]
 
     if len(row) > 1:
@@ -40,7 +41,16 @@ if not rows:
     print("No valid runs found.")
     sys.exit(1)
 
+# Fieldnames: união de todas as colunas para não perder campos
+fieldnames = []
+seen = set()
+for r in rows:
+    for k in r.keys():
+        if k not in seen:
+            seen.add(k)
+            fieldnames.append(k)
+
 with open(out_csv, "w", newline="") as f:
-    writer = csv.DictWriter(f, fieldnames=rows[0].keys())
+    writer = csv.DictWriter(f, fieldnames=fieldnames)
     writer.writeheader()
     writer.writerows(rows)

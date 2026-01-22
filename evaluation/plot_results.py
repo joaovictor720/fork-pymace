@@ -23,10 +23,13 @@ OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
 LABELS = {
     "nodes": "Number of Nodes",
     "ops_per_sec": "Operations per Second (Global Load)",
+
     "avg_packets_per_node": "Average Packets per Node",
+    "total_packets": "Total Packets (TX+RX)",
+
     "broadcast": "Flooding (BATMAN)",
     "rapid": "Gossip (RAPID)",
-    
+
     "t99": "Time to 99% (s)",
     "t100": "Time to 100% (s)",
     "failure_rate": "Failure Rate"
@@ -37,19 +40,25 @@ COLS = {
     "algorithm": "algorithm",
     "nodes": "nodes",
     "ops": "ops_per_sec",
-    
+
+    # --- Per-node packets (already present) ---
     "packets_mean": "pkt_node_mean",
     "packets_ci_low": "pkt_node_ci_low",
     "packets_ci_high": "pkt_node_ci_high",
-    
+
+    # --- Total packets (NEW) ---
+    "packets_total_mean": "pkt_total_mean",
+    "packets_total_ci_low": "pkt_total_ci_low",
+    "packets_total_ci_high": "pkt_total_ci_high",
+
     "conv_mean": "conv_mean",
     "conv_ci_low": "conv_ci_low",
     "conv_ci_high": "conv_ci_high",
-    
+
     "t99_mean": "t99_mean",
     "t99_ci_low": "t99_ci_low",
     "t99_ci_high": "t99_ci_high",
-    
+
     "success_rate": "success_rate"
 }
 
@@ -89,9 +98,9 @@ def plot_bar_with_ci(df, x, y, ci_low, ci_high, algo_col,
                      title, xlabel, ylabel, filename):
     plt.figure(figsize=(8, 5))
     ax = plt.gca()
-    
+
     algorithms = df[algo_col].unique()
-    
+
     # 🔧 CONVERSÃO PARA INTEIROS AQUI
     x_values = sorted(df[x].dropna().astype(int).unique())
     x_pos = np.arange(len(x_values))
@@ -102,7 +111,7 @@ def plot_bar_with_ci(df, x, y, ci_low, ci_high, algo_col,
 
         # Garante alinhamento entre todos os X
         metrics = pd.DataFrame({x: x_values}).merge(subset, on=x, how='left')
-        
+
         means = metrics[y].fillna(0)
         yerr = [
             means - metrics[ci_low].fillna(0),
@@ -112,7 +121,7 @@ def plot_bar_with_ci(df, x, y, ci_low, ci_high, algo_col,
         pos = x_pos - width/2 if i == 0 else x_pos + width/2
         color = PALETTE.get(algo, "gray")
         label = LABELS.get(algo, algo)
-        
+
         ax.bar(
             pos, means, width, label=label, color=color, alpha=0.9,
             yerr=yerr, capsize=5,
@@ -137,55 +146,35 @@ def plot_bar_with_ci(df, x, y, ci_low, ci_high, algo_col,
 # ==========================
 df = pd.read_csv(INPUT_CSV)
 
-df_A = df[df[COLS["scenario"]] == "scenario_A_baseline"]
-df_B = df[df[COLS["scenario"]] == "scenario_B_mobility"]
-df_C = df[df[COLS["scenario"]] == "scenario_C_stress"]
+# df_A = df[df[COLS["scenario"]] == "scenario_A_baseline"]
+df_B = df[df["scenario"].isin([
+    "scenario_B_mobility_batman_guts",
+    "scenario_B_mobility_ip_guts",
+])].copy()
+
+# (Opcional, mas recomendado) Normaliza o nome pra aparecer como um único cenário
+df_B["scenario"] = "scenario_B_mobility_guts"
+# df_C = df[df[COLS["scenario"]] == "scenario_C_stress"]
 
 # ==========================
 # GERAR TODOS OS GRÁFICOS
 # ==========================
 
-# 1) Bar Charts de Overhead
-plot_bar_with_ci(
-    df_A,
-    COLS["nodes"],
-    COLS["packets_mean"],
-    COLS["packets_ci_low"],
-    COLS["packets_ci_high"],
-    COLS["algorithm"],
-    "Scenario A — Network Overhead vs. Swarm Size (Static)",
-    LABELS["nodes"],
-    LABELS["avg_packets_per_node"],
-    "bar_A_overhead.png"
-)
-
+# 1) Bar Charts de Overhead (TOTAL PACKETS)
 plot_bar_with_ci(
     df_B,
     COLS["nodes"],
-    COLS["packets_mean"],
-    COLS["packets_ci_low"],
-    COLS["packets_ci_high"],
+    COLS["packets_total_mean"],
+    COLS["packets_total_ci_low"],
+    COLS["packets_total_ci_high"],
     COLS["algorithm"],
-    "Scenario B — Network Overhead vs. Swarm Size (Mobile)",
+    "Scenario B — Total Packets vs. Swarm Size (Mobile)",
     LABELS["nodes"],
-    LABELS["avg_packets_per_node"],
-    "bar_B_overhead.png"
+    LABELS["total_packets"],
+    "bar_B_total_packets.png"
 )
 
 # 2) Line Charts de Convergência
-plot_line_with_ci(
-    df_A,
-    COLS["nodes"],
-    COLS["conv_mean"],
-    COLS["conv_ci_low"],
-    COLS["conv_ci_high"],
-    COLS["algorithm"],
-    "Scenario A — Convergence Latency ($T_{99}$) vs. Swarm Size (Static)",
-    LABELS["nodes"],
-    LABELS["t100"],
-    "line_A_convergence.png"
-)
-
 plot_line_with_ci(
     df_B,
     COLS["nodes"],
@@ -199,21 +188,7 @@ plot_line_with_ci(
     "line_B_convergence99.png"
 )
 
-# 3) Stress Test (Carga x Latência)
-plot_line_with_ci(
-    df_C,
-    COLS["ops"],
-    COLS["t99_mean"],
-    COLS["t99_ci_low"],
-    COLS["t99_ci_high"],
-    COLS["algorithm"],
-    "Scenario C — Convergence Latency ($T_{99}$) vs. Offered Load",
-    LABELS["ops_per_sec"],
-    LABELS["t99"],
-    "line_C_latency.png"
-)
-
-# 4) Failure Rate (Mobilidade)
+# 3) Failure Rate (Mobilidade)
 plt.figure(figsize=(8,5))
 for algo in df_B[COLS["algorithm"]].unique():
     dfa = df_B[df_B[COLS["algorithm"]] == algo].sort_values(COLS["nodes"])
