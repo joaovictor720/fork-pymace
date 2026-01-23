@@ -1,9 +1,9 @@
 {
   "name": "scenario_A_baseline_batman_guts",
   "simulation": {
-    "duration": 130,
+    "duration": 45,
     "start_delay": 5,
-    "area": { "x": 3500, "y": 3500 }
+    "area": { "x": 300, "y": 300 }
   },
   "nodes": {
     "count": 10,
@@ -25,14 +25,14 @@
   },
   "node_config": {
     "ops_per_sec": 2.0,
-    "duration": 20,
-    "dissemination_interval": 0.5,
+    "duration": 5,
+    "dissemination_interval": 1.1,
     "monitor_interval": 2,
-    "cooldown": 30
+    "cooldown": 5
   },
   "experiment": {
     "vary_tuples": [
-      { "nodes.count": 200, "node_config.ops_per_sec": 0.6 }
+      { "nodes.count": 10, "node_config.ops_per_sec": 0.5 }
     ]
   }
 }

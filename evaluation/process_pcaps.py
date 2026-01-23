@@ -44,6 +44,8 @@ def _parse_tcpdump_stderr(path: Path) -> Dict[str, int]:
 def display_filter_for(algo: str, rapid_port: Optional[int]) -> str:
     if algo == "broadcast":
         return "eth.type==0x4305"
+    if algo == "multiunicast":
+        return "eth.type==0x4305"
     if algo == "rapid":
         port = rapid_port if rapid_port is not None else 5001
         return f"udp.port=={port}"
@@ -232,7 +234,7 @@ def append_to_netlog(netlog_path: Path, payload: Dict[str, object]) -> None:
 def main() -> None:
     ap = argparse.ArgumentParser()
     ap.add_argument("result_dir", help="Run directory (e.g. .../broadcast/run_001/)")
-    ap.add_argument("algo", choices=["broadcast", "rapid"])
+    ap.add_argument("algo", choices=["broadcast", "rapid", "multiunicast"])
     ap.add_argument("--delete", action="store_true", help="Delete pcap after successful processing")
     ap.add_argument("--append-netlog", action="store_true", help="Append PCAP_* fields to node_*.net.log")
     args = ap.parse_args()

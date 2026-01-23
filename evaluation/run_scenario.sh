@@ -43,6 +43,7 @@ python "$ROOT_DIR/evaluation/generate_node_config.py" \
 case "$ALGO" in
   rapid) BIN="$ROOT_DIR/apps/crdt/rapid/crdt_rapid" ;;
   broadcast) BIN="$ROOT_DIR/apps/crdt/broadcast/crdt_broadcast" ;;
+  multiunicast) BIN="$ROOT_DIR/apps/crdt/multiunicast/crdt_multiunicast" ;;
   *) echo "[ERROR] Unknown algorithm"; exit 1 ;;
 esac
 

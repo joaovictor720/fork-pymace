@@ -13,7 +13,7 @@ for scenario_dir in ROOT.glob("*__expanded"):
             continue
         variant = variant_dir.name
 
-        for algo in ["broadcast", "rapid"]:
+        for algo in ["broadcast", "rapid", "multiunicast"]:
             csv_path = variant_dir / algo / "summary.csv"
             if not csv_path.exists():
                 continue

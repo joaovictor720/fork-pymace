@@ -15,7 +15,7 @@ done
 
 if [[ -z "$SCENARIO" || -z "$ALGO" || -z "$RUNS" ]]; then
   echo "Usage:"
-  echo "./run_experiment.sh --scenario <name> --algorithm <rapid|broadcast> --runs N"
+  echo "./run_experiment.sh --scenario <name> --algorithm <rapid|broadcast|multiunicast> --runs N"
   exit 1
 fi
 

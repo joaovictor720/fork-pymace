@@ -207,6 +207,55 @@ for i, (x, y) in enumerate(positions):
             f"echo \\\"RAPID_TX_END=\\$TX_END\\\" >> \\\"\\$LOG_FILE\\\"; "
             f"echo \\\"RAPID_RX_END=\\$RX_END\\\" >> \\\"\\$LOG_FILE\\\"\""
         ]
+    elif algo == "multiunicast":
+        function = [
+            f"/bin/bash -lc \""
+            f"ulimit -c 0; "
+            f"set -x; "
+            f"sleep {APPLICATION_START_DELAY}; "
+
+            # Setup BATMAN (igual ao broadcast)
+            f"sudo ip addr flush dev eth0; "
+            f"sudo ip link set up dev eth0; "
+            f"sudo batctl if add eth0; "
+            f"sudo ip link set up dev bat0; "
+            f"sudo ip addr add 10.0.0.{i+1}/24 dev bat0; "
+
+            # Discover result dir safely
+            f"RESULT_DIR=\\$(grep '\\\"log_dir\\\"' __CRDT_NODE_CONFIG__ | "
+            f"sed -E 's/.*\\\"log_dir\\\"[[:space:]]*:[[:space:]]*\\\"([^\\\"]+)\\\".*/\\1/'); "
+            f"LOG_FILE=\\\"\\$RESULT_DIR/node_{i}.net.log\\\"; "
+
+            # Measurement start (/sys) - igual ao broadcast
+            f"TX_START=\\$(cat /sys/class/net/bat0/statistics/tx_packets); "
+            f"RX_START=\\$(cat /sys/class/net/bat0/statistics/rx_packets); "
+            f"echo \\\"BATMAN_TX_START=\\$TX_START\\\" > \\\"\\$LOG_FILE\\\"; "
+            f"echo \\\"BATMAN_RX_START=\\$RX_START\\\" >> \\\"\\$LOG_FILE\\\"; "
+
+            # PCAP capture (filtered: BATMAN-adv only) - igual ao broadcast
+            f"PCAP_FILE=\\\"\\$RESULT_DIR/node_{i}.pcap\\\"; "
+            f"sudo tcpdump -i eth0 -w \\\"\\$PCAP_FILE\\\" 'ether proto 0x4305' >/dev/null 2>&1 & "
+            f"TCPDUMP_PID=\\$!; "
+            f"echo \\\"TCPDUMP_PID=\\$TCPDUMP_PID\\\" >> \\\"\\$LOG_FILE\\\"; "
+
+            # Run application (multiunicast)
+            f"__CRDT_BIN__ -id {i} -config __CRDT_NODE_CONFIG__; "
+            f"APP_RC=\\$?; "
+            f"echo \\\"APP_RC=\\$APP_RC\\\" >> \\\"\\$LOG_FILE\\\"; "
+
+            # Stop tcpdump cleanly + flush
+            f"sudo kill -INT \\$TCPDUMP_PID 2>/dev/null || true; "
+            f"wait \\$TCPDUMP_PID 2>/dev/null || true; "
+            f"sync; "
+            f"echo \\\"PCAP_SAVED=\\$PCAP_FILE\\\" >> \\\"\\$LOG_FILE\\\"; "
+
+            # Measurement end (/sys)
+            f"TX_END=\\$(cat /sys/class/net/bat0/statistics/tx_packets); "
+            f"RX_END=\\$(cat /sys/class/net/bat0/statistics/rx_packets); "
+            f"echo \\\"BATMAN_TX_END=\\$TX_END\\\" >> \\\"\\$LOG_FILE\\\"; "
+            f"echo \\\"BATMAN_RX_END=\\$RX_END\\\" >> \\\"\\$LOG_FILE\\\"\""
+        ]
+
     else:
         raise ValueError(f"Unknown algorithm: {algo}")
 
