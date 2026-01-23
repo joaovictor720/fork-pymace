@@ -6,8 +6,8 @@ RUNS_PER_EXPERIMENT=5
 
 # Lista exata dos nomes dos cenários que criamos (devem bater com o nome da pasta/json em scenarios/)
 SCENARIOS=(
-    "scenario_B_mobility_batman_guts"
-    "scenario_B_mobility_ip_guts"
+    "important_batman"
+    "important_ip"
 )
 
 # Caminho para o script original que executa os experimentos

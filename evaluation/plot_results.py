@@ -148,12 +148,12 @@ df = pd.read_csv(INPUT_CSV)
 
 # df_A = df[df[COLS["scenario"]] == "scenario_A_baseline"]
 df_B = df[df["scenario"].isin([
-    "scenario_B_mobility_batman_guts",
-    "scenario_B_mobility_ip_guts",
+    "important_batman",
+    "important_ip",
 ])].copy()
 
 # (Opcional, mas recomendado) Normaliza o nome pra aparecer como um único cenário
-df_B["scenario"] = "scenario_B_mobility_guts"
+df_B["scenario"] = "important"
 # df_C = df[df[COLS["scenario"]] == "scenario_C_stress"]
 
 # ==========================

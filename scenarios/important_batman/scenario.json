@@ -1,0 +1,42 @@
+{
+  "name": "important_batman",
+  "simulation": {
+    "duration": 65,
+    "start_delay": 5,
+    "area": { "x": 1000, "y": 1000 }
+  },
+  "nodes": {
+    "count": 10,
+    "distribution": "grid",
+    "seed": 22
+  },
+  "mobility": {
+    "model": "random_waypoint",
+    "pause": 0,
+	  "speed": [4.0, 4.2]
+  },
+  "network": {
+    "routing": "batman",
+    "bandwidth": "11000000",
+    "range": 160,
+    "delay": 5,
+    "jitter": 0,
+    "error": 0
+  },
+  "node_config": {
+    "ops_per_sec": 4.0,
+    "duration": 10,
+    "dissemination_interval": 0.5,
+    "monitor_interval": 2,
+    "cooldown": 10
+  },
+  "experiment": {
+    "vary_tuples": [
+      { "nodes.count": 10, "node_config.ops_per_sec": 4.0 },
+      { "nodes.count": 20, "node_config.ops_per_sec": 4.0 },
+      { "nodes.count": 30, "node_config.ops_per_sec": 4.0 },
+      { "nodes.count": 40, "node_config.ops_per_sec": 4.0 },
+      { "nodes.count": 50, "node_config.ops_per_sec": 4.0 }
+    ]
+  }
+}
