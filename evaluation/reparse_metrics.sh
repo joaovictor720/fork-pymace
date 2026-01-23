@@ -14,7 +14,7 @@ done
 
 if [[ -z "$SCENARIO" || -z "$ALGO" ]]; then
   echo "Usage:"
-  echo "./reparse_metrics.sh --scenario <name> --algorithm <rapid|broadcast>"
+  echo "./reparse_metrics.sh --scenario <name> --algorithm <rapid|broadcast|multiunicast>"
   exit 1
 fi
 

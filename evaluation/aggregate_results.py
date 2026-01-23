@@ -3,6 +3,7 @@ import numpy as np
 from scipy import stats
 import sys
 import re
+from pathlib import Path
 
 INPUT = sys.argv[1]
 OUTPUT = sys.argv[2]
@@ -15,12 +16,11 @@ df = pd.read_csv(INPUT)
 def extract_param(variant, key):
     if pd.isna(variant):
         return None
-    m = re.search(rf"{key}=([0-9\.]+)", variant)
+    m = re.search(rf"{key}=([0-9\.]+)", str(variant))
     if m:
         return float(m.group(1))
     return None
 
-# Garante colunas explícitas
 if "variant" in df.columns:
     df["nodes"] = df["variant"].apply(lambda v: extract_param(v, "count"))
     df["ops_per_sec"] = df["variant"].apply(lambda v: extract_param(v, "ops_per_sec"))
@@ -29,7 +29,7 @@ if "variant" in df.columns:
 # 2. Função média + IC 95%
 # -----------------------------
 def mean_ci(series, confidence=0.95):
-    series = series.dropna()
+    series = pd.to_numeric(series, errors="coerce").dropna()
     n = len(series)
     if n == 0:
         return pd.Series({"mean": np.nan, "ci_low": np.nan, "ci_high": np.nan, "std": np.nan, "n": 0})
@@ -55,7 +55,7 @@ def mean_ci(series, confidence=0.95):
 # 3. Decide agrupamento por cenário
 # -----------------------------
 def grouping_cols(scenario_name):
-    if "scenario_C" in scenario_name or "stress" in scenario_name.lower():
+    if "scenario_C" in str(scenario_name) or "stress" in str(scenario_name).lower():
         return ["scenario", "algorithm", "ops_per_sec"]
     else:
         return ["scenario", "algorithm", "nodes"]
@@ -65,7 +65,6 @@ rows = []
 for scenario_name, df_s in df.groupby("scenario"):
     GROUP_COLS = grouping_cols(scenario_name)
 
-    # Remove linhas onde a variável independente não foi extraída corretamente
     df_s = df_s.dropna(subset=GROUP_COLS)
 
     for keys, g in df_s.groupby(GROUP_COLS):
@@ -75,57 +74,45 @@ for scenario_name, df_s in df.groupby("scenario"):
         row = dict(zip(GROUP_COLS, keys))
         row["runs_total"] = len(g)
 
-        # -----------------------------
-        # Confiabilidade (todas as runs)
-        # -----------------------------
-        row["success_rate"] = g["converged"].mean()
-        row["avg_final_coverage"] = g["avg_final_coverage"].mean()
-        row["max_abs_error"] = g["max_abs_error"].max()
+        row["success_rate"] = pd.to_numeric(g.get("converged"), errors="coerce").mean()
+        row["avg_final_coverage"] = pd.to_numeric(g.get("avg_final_coverage"), errors="coerce").mean()
+        row["max_abs_error"] = pd.to_numeric(g.get("max_abs_error"), errors="coerce").max()
 
-        # -----------------------------
-        # Convergência a 100% (somente runs OK)
-        # -----------------------------
-        g_ok = g[g["converged"] == True]
+        g_ok = g[g.get("converged") == True] if "converged" in g.columns else g.iloc[0:0]
 
-        conv = mean_ci(g_ok["convergence_time_s"])
+        conv = mean_ci(g_ok.get("convergence_time_s"))
         row["conv_mean"] = conv["mean"]
         row["conv_ci_low"] = conv["ci_low"]
         row["conv_ci_high"] = conv["ci_high"]
         row["conv_std"] = conv["std"]
         row["conv_n"] = conv["n"]
 
-        # -----------------------------
-        # Convergência parcial (TODAS as runs)
-        # -----------------------------
-        t90 = mean_ci(g["time_to_90pct_s"])
+        t90 = mean_ci(g.get("time_to_90pct_s"))
         row["t90_mean"] = t90["mean"]
         row["t90_ci_low"] = t90["ci_low"]
         row["t90_ci_high"] = t90["ci_high"]
 
-        t95 = mean_ci(g["time_to_95pct_s"])
+        t95 = mean_ci(g.get("time_to_95pct_s"))
         row["t95_mean"] = t95["mean"]
         row["t95_ci_low"] = t95["ci_low"]
         row["t95_ci_high"] = t95["ci_high"]
 
-        t99 = mean_ci(g["time_to_99pct_s"])
+        t99 = mean_ci(g.get("time_to_99pct_s"))
         row["t99_mean"] = t99["mean"]
         row["t99_ci_low"] = t99["ci_low"]
         row["t99_ci_high"] = t99["ci_high"]
 
-        # -----------------------------
-        # Overhead (todas as runs)
-        # -----------------------------
-        pkt = mean_ci(g["avg_packets_per_node"])
+        pkt = mean_ci(g.get("avg_packets_per_node"))
         row["pkt_node_mean"] = pkt["mean"]
         row["pkt_node_ci_low"] = pkt["ci_low"]
         row["pkt_node_ci_high"] = pkt["ci_high"]
 
-        tot = mean_ci(g["total_packets"])
+        tot = mean_ci(g.get("total_packets"))
         row["pkt_total_mean"] = tot["mean"]
         row["pkt_total_ci_low"] = tot["ci_low"]
         row["pkt_total_ci_high"] = tot["ci_high"]
 
-        rx_tx = mean_ci(g["rx_to_tx_ratio"])
+        rx_tx = mean_ci(g.get("rx_to_tx_ratio"))
         row["rx_tx_mean"] = rx_tx["mean"]
         row["rx_tx_ci_low"] = rx_tx["ci_low"]
         row["rx_tx_ci_high"] = rx_tx["ci_high"]
@@ -133,6 +120,83 @@ for scenario_name, df_s in df.groupby("scenario"):
         rows.append(row)
 
 out = pd.DataFrame(rows)
-out.to_csv(OUTPUT, index=False)
 
+# -----------------------------
+# 4) NOVO: Capacidade de disseminação em duas formas
+#     - pooled por nó: todas as amostras (n = nós*run)
+#     - por run: média por run e IC em cima das runs (n = runs)
+# -----------------------------
+cap_path = Path(INPUT).with_name("all_capacity_samples.csv")
+if cap_path.exists():
+    cap = pd.read_csv(cap_path)
+
+    if "variant" in cap.columns:
+        cap["nodes"] = cap["variant"].apply(lambda v: extract_param(v, "count"))
+        cap["ops_per_sec"] = cap["variant"].apply(lambda v: extract_param(v, "ops_per_sec"))
+
+    cap["coverage"] = pd.to_numeric(cap.get("coverage"), errors="coerce")
+
+    # pooled por nó
+    cap_node_rows = []
+    for scenario_name, cap_s in cap.groupby("scenario"):
+        GROUP_COLS = grouping_cols(scenario_name)
+        cap_s = cap_s.dropna(subset=GROUP_COLS)
+
+        for keys, g in cap_s.groupby(GROUP_COLS):
+            if not isinstance(keys, tuple):
+                keys = (keys,)
+            row = dict(zip(GROUP_COLS, keys))
+
+            mc = mean_ci(g["coverage"])
+            row["cap_node_mean"] = mc["mean"]
+            row["cap_node_ci_low"] = mc["ci_low"]
+            row["cap_node_ci_high"] = mc["ci_high"]
+            row["cap_node_std"] = mc["std"]
+            row["cap_node_n"] = mc["n"]
+            cap_node_rows.append(row)
+
+    cap_node_out = pd.DataFrame(cap_node_rows)
+
+    # por run (média de nós dentro da run, depois IC sobre runs)
+    cap_run_rows = []
+    if "run" in cap.columns:
+        for scenario_name, cap_s in cap.groupby("scenario"):
+            GROUP_COLS = grouping_cols(scenario_name)
+            cap_s = cap_s.dropna(subset=GROUP_COLS)
+
+            # mean coverage por run dentro de cada grupo
+            group_plus_run = GROUP_COLS + ["run"]
+            cap_run_means = (
+                cap_s
+                .groupby(group_plus_run, dropna=True)["coverage"]
+                .mean()
+                .reset_index()
+                .rename(columns={"coverage": "run_mean_coverage"})
+            )
+
+            for keys, g in cap_run_means.groupby(GROUP_COLS):
+                if not isinstance(keys, tuple):
+                    keys = (keys,)
+                row = dict(zip(GROUP_COLS, keys))
+
+                mc = mean_ci(g["run_mean_coverage"])
+                row["cap_run_mean"] = mc["mean"]
+                row["cap_run_ci_low"] = mc["ci_low"]
+                row["cap_run_ci_high"] = mc["ci_high"]
+                row["cap_run_std"] = mc["std"]
+                row["cap_run_n"] = mc["n"]
+                cap_run_rows.append(row)
+
+    cap_run_out = pd.DataFrame(cap_run_rows)
+
+    # merge no out final
+    merge_keys = ["scenario", "algorithm", "nodes", "ops_per_sec"]
+    merge_keys = [k for k in merge_keys if k in out.columns]
+
+    if not cap_node_out.empty:
+        out = out.merge(cap_node_out, on=merge_keys, how="left")
+    if not cap_run_out.empty:
+        out = out.merge(cap_run_out, on=merge_keys, how="left")
+
+out.to_csv(OUTPUT, index=False)
 print(f"Aggregated results written to: {OUTPUT}")
