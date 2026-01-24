@@ -2,32 +2,14 @@ import pandas as pd
 import numpy as np
 from scipy import stats
 import sys
-import re
 from pathlib import Path
+from typing import List
 
 INPUT = sys.argv[1]
 OUTPUT = sys.argv[2]
 
 df = pd.read_csv(INPUT)
 
-# -----------------------------
-# 1. Extrair nodes e ops_per_sec da coluna "variant"
-# -----------------------------
-def extract_param(variant, key):
-    if pd.isna(variant):
-        return None
-    m = re.search(rf"{key}=([0-9\.]+)", str(variant))
-    if m:
-        return float(m.group(1))
-    return None
-
-if "variant" in df.columns:
-    df["nodes"] = df["variant"].apply(lambda v: extract_param(v, "count"))
-    df["ops_per_sec"] = df["variant"].apply(lambda v: extract_param(v, "ops_per_sec"))
-
-# -----------------------------
-# 2. Função média + IC 95%
-# -----------------------------
 def mean_ci(series, confidence=0.95):
     series = pd.to_numeric(series, errors="coerce").dropna()
     n = len(series)
@@ -51,29 +33,52 @@ def mean_ci(series, confidence=0.95):
         "n": n
     })
 
-# -----------------------------
-# 3. Decide agrupamento por cenário
-# -----------------------------
-def grouping_cols(scenario_name):
-    if "scenario_C" in str(scenario_name) or "stress" in str(scenario_name).lower():
-        return ["scenario", "algorithm", "ops_per_sec"]
-    else:
-        return ["scenario", "algorithm", "nodes"]
+PARAM_CANDIDATES = ["count", "nodes", "ops_per_sec", "diss_per_sec", "duration", "cooldown"]
+
+def choose_group_params(df_sub: pd.DataFrame) -> List[str]:
+    cols = []
+    for c in PARAM_CANDIDATES:
+        if c in df_sub.columns:
+            nuniq = pd.to_numeric(df_sub[c], errors="coerce").dropna().nunique()
+            if nuniq > 1:
+                cols.append(c)
+    if not cols:
+        for c in ["count", "nodes", "ops_per_sec"]:
+            if c in df_sub.columns:
+                cols.append(c)
+                break
+    return cols
 
 rows = []
 
-for scenario_name, df_s in df.groupby("scenario"):
-    GROUP_COLS = grouping_cols(scenario_name)
+group_top = []
+if "scenario" in df.columns:
+    group_top.append("scenario")
+if "app" in df.columns:
+    group_top.append("app")
+elif "algorithm" in df.columns:
+    df = df.rename(columns={"algorithm": "app"})
+    group_top.append("app")
 
-    df_s = df_s.dropna(subset=GROUP_COLS)
+if not group_top:
+    raise SystemExit("[ERROR] Expected at least scenario/app columns in input CSV.")
 
-    for keys, g in df_s.groupby(GROUP_COLS):
+for keys_top, df_sa in df.groupby(group_top, dropna=True):
+    if not isinstance(keys_top, tuple):
+        keys_top = (keys_top,)
+    top_row = dict(zip(group_top, keys_top))
+
+    group_params = choose_group_params(df_sa)
+    GROUP_COLS = group_top + group_params
+
+    df_sa = df_sa.dropna(subset=GROUP_COLS)
+
+    for keys, g in df_sa.groupby(GROUP_COLS, dropna=True):
         if not isinstance(keys, tuple):
             keys = (keys,)
-
         row = dict(zip(GROUP_COLS, keys))
-        row["runs_total"] = len(g)
 
+        row["runs_total"] = len(g)
         row["success_rate"] = pd.to_numeric(g.get("converged"), errors="coerce").mean()
         row["avg_final_coverage"] = pd.to_numeric(g.get("avg_final_coverage"), errors="coerce").mean()
         row["max_abs_error"] = pd.to_numeric(g.get("max_abs_error"), errors="coerce").max()
@@ -112,41 +117,33 @@ for scenario_name, df_s in df.groupby("scenario"):
         row["pkt_total_ci_low"] = tot["ci_low"]
         row["pkt_total_ci_high"] = tot["ci_high"]
 
-        rx_tx = mean_ci(g.get("rx_to_tx_ratio"))
-        row["rx_tx_mean"] = rx_tx["mean"]
-        row["rx_tx_ci_low"] = rx_tx["ci_low"]
-        row["rx_tx_ci_high"] = rx_tx["ci_high"]
-
         rows.append(row)
 
 out = pd.DataFrame(rows)
 
-# -----------------------------
-# 4) NOVO: Capacidade de disseminação em duas formas
-#     - pooled por nó: todas as amostras (n = nós*run)
-#     - por run: média por run e IC em cima das runs (n = runs)
-# -----------------------------
 cap_path = Path(INPUT).with_name("all_capacity_samples.csv")
 if cap_path.exists():
     cap = pd.read_csv(cap_path)
-
-    if "variant" in cap.columns:
-        cap["nodes"] = cap["variant"].apply(lambda v: extract_param(v, "count"))
-        cap["ops_per_sec"] = cap["variant"].apply(lambda v: extract_param(v, "ops_per_sec"))
+    if "algorithm" in cap.columns and "app" not in cap.columns:
+        cap = cap.rename(columns={"algorithm": "app"})
 
     cap["coverage"] = pd.to_numeric(cap.get("coverage"), errors="coerce")
 
-    # pooled por nó
-    cap_node_rows = []
-    for scenario_name, cap_s in cap.groupby("scenario"):
-        GROUP_COLS = grouping_cols(scenario_name)
-        cap_s = cap_s.dropna(subset=GROUP_COLS)
+    base_keys = [k for k in ["scenario", "app"] if k in cap.columns]
 
-        for keys, g in cap_s.groupby(GROUP_COLS):
+    for scenario_app, cap_sa in cap.groupby(base_keys, dropna=True):
+        if not isinstance(scenario_app, tuple):
+            scenario_app = (scenario_app,)
+        group_params = choose_group_params(cap_sa)
+        GROUP_COLS = base_keys + group_params
+
+        cap_sa = cap_sa.dropna(subset=GROUP_COLS)
+
+        cap_node_rows = []
+        for keys, g in cap_sa.groupby(GROUP_COLS, dropna=True):
             if not isinstance(keys, tuple):
                 keys = (keys,)
             row = dict(zip(GROUP_COLS, keys))
-
             mc = mean_ci(g["coverage"])
             row["cap_node_mean"] = mc["mean"]
             row["cap_node_ci_low"] = mc["ci_low"]
@@ -155,30 +152,33 @@ if cap_path.exists():
             row["cap_node_n"] = mc["n"]
             cap_node_rows.append(row)
 
-    cap_node_out = pd.DataFrame(cap_node_rows)
+        if cap_node_rows:
+            cap_node_out = pd.DataFrame(cap_node_rows)
+            merge_keys = [k for k in cap_node_out.columns if k in out.columns and k not in ["cap_node_mean","cap_node_ci_low","cap_node_ci_high","cap_node_std","cap_node_n"]]
+            out = out.merge(cap_node_out, on=merge_keys, how="left")
 
-    # por run (média de nós dentro da run, depois IC sobre runs)
-    cap_run_rows = []
     if "run" in cap.columns:
-        for scenario_name, cap_s in cap.groupby("scenario"):
-            GROUP_COLS = grouping_cols(scenario_name)
-            cap_s = cap_s.dropna(subset=GROUP_COLS)
+        for scenario_app, cap_sa in cap.groupby(base_keys, dropna=True):
+            if not isinstance(scenario_app, tuple):
+                scenario_app = (scenario_app,)
+            group_params = choose_group_params(cap_sa)
+            GROUP_COLS = base_keys + group_params
+            cap_sa = cap_sa.dropna(subset=GROUP_COLS)
 
-            # mean coverage por run dentro de cada grupo
             group_plus_run = GROUP_COLS + ["run"]
             cap_run_means = (
-                cap_s
+                cap_sa
                 .groupby(group_plus_run, dropna=True)["coverage"]
                 .mean()
                 .reset_index()
                 .rename(columns={"coverage": "run_mean_coverage"})
             )
 
-            for keys, g in cap_run_means.groupby(GROUP_COLS):
+            cap_run_rows = []
+            for keys, g in cap_run_means.groupby(GROUP_COLS, dropna=True):
                 if not isinstance(keys, tuple):
                     keys = (keys,)
                 row = dict(zip(GROUP_COLS, keys))
-
                 mc = mean_ci(g["run_mean_coverage"])
                 row["cap_run_mean"] = mc["mean"]
                 row["cap_run_ci_low"] = mc["ci_low"]
@@ -187,16 +187,10 @@ if cap_path.exists():
                 row["cap_run_n"] = mc["n"]
                 cap_run_rows.append(row)
 
-    cap_run_out = pd.DataFrame(cap_run_rows)
-
-    # merge no out final
-    merge_keys = ["scenario", "algorithm", "nodes", "ops_per_sec"]
-    merge_keys = [k for k in merge_keys if k in out.columns]
-
-    if not cap_node_out.empty:
-        out = out.merge(cap_node_out, on=merge_keys, how="left")
-    if not cap_run_out.empty:
-        out = out.merge(cap_run_out, on=merge_keys, how="left")
+            if cap_run_rows:
+                cap_run_out = pd.DataFrame(cap_run_rows)
+                merge_keys = [k for k in cap_run_out.columns if k in out.columns and k not in ["cap_run_mean","cap_run_ci_low","cap_run_ci_high","cap_run_std","cap_run_n"]]
+                out = out.merge(cap_run_out, on=merge_keys, how="left")
 
 out.to_csv(OUTPUT, index=False)
 print(f"Aggregated results written to: {OUTPUT}")

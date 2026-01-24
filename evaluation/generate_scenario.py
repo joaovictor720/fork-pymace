@@ -3,21 +3,18 @@ import sys
 import random
 import math
 from pathlib import Path
+from typing import Any, Dict, List, Tuple
 
 APPLICATION_START_DELAY = 30
 
-# -------------------------------------------------
-# Helpers for node placement
-# -------------------------------------------------
-
-def generate_random_positions(n, area):
+def generate_random_positions(n: int, area: Dict[str, float]) -> List[Tuple[float, float]]:
     return [(random.uniform(0, area["x"]), random.uniform(0, area["y"])) for _ in range(n)]
 
-def generate_grid_positions(n, area):
+def generate_grid_positions(n: int, area: Dict[str, float]) -> List[Tuple[float, float]]:
     side = math.ceil(math.sqrt(n))
     dx = area["x"] / side
     dy = area["y"] / side
-    positions = []
+    positions: List[Tuple[float, float]] = []
     idx = 0
     for i in range(side):
         for j in range(side):
@@ -27,16 +24,20 @@ def generate_grid_positions(n, area):
             idx += 1
     return positions
 
-# -------------------------------------------------
-# Main
-# -------------------------------------------------
-
 if len(sys.argv) != 3:
-    print("Usage: generate_scenario.py <scenario_dir> <algorithm>")
+    print("Usage: generate_scenario.py <scenario_dir> <app>")
     sys.exit(1)
 
 scenario_dir = Path(sys.argv[1])
-algo = sys.argv[2]   # "rapid" ou "broadcast"
+app = sys.argv[2]
+
+root = Path(__file__).resolve().parent.parent
+apps_path = root / "evaluation" / "apps.json"
+apps_cfg = json.loads(apps_path.read_text(encoding="utf-8"))
+apps = apps_cfg.get("apps", {})
+if app not in apps:
+    raise SystemExit(f"[ERROR] App not found in apps.json: {app}")
+app_cfg = apps[app]
 
 scenario_file = scenario_dir / "scenario.json"
 out_file = scenario_dir / "mace.json"
@@ -44,30 +45,21 @@ out_file = scenario_dir / "mace.json"
 if not scenario_file.exists():
     raise FileNotFoundError(f"Scenario file not found: {scenario_file}")
 
-with open(scenario_file) as f:
+with open(scenario_file, "r", encoding="utf-8") as f:
     sc = json.load(f)
 
-# ----------------------------
-# RNG seed
-# ----------------------------
 seed = sc["nodes"].get("seed", 0)
 random.seed(seed)
 
-# ----------------------------
-# Basic parameters
-# ----------------------------
 node_count = sc["nodes"]["count"]
 distribution = sc["nodes"].get("distribution", "random")
 raw_area = sc["simulation"]["area"]
 
 if isinstance(raw_area, (list, tuple)):
-    area = {"x": raw_area[0], "y": raw_area[1]}
+    area = {"x": float(raw_area[0]), "y": float(raw_area[1])}
 else:
-    area = raw_area
+    area = {"x": float(raw_area["x"]), "y": float(raw_area["y"])}
 
-# ----------------------------
-# Generate node positions
-# ----------------------------
 if distribution == "random":
     positions = generate_random_positions(node_count, area)
 elif distribution == "grid":
@@ -75,10 +67,17 @@ elif distribution == "grid":
 else:
     raise ValueError(f"Unknown node distribution: {distribution}")
 
-# ----------------------------
-# Build node objects
-# ----------------------------
-nodes = []
+nodes: List[Dict[str, Any]] = []
+net_setup = str(app_cfg.get("net_setup", "ip")).lower()
+tcpdump_filter = str(app_cfg.get("tcpdump_filter", "")).strip()
+
+node_cfg = sc.get("node_config", {})
+duration_s = float(node_cfg.get("duration", 10))
+cooldown_s = float(node_cfg.get("cooldown", 10))
+
+# Captura cobre duration+cooldown com pequena folga.
+# Mantém a captura curta e evita depender do teardown do MACE.
+CAPTURE_SEC = int(math.ceil(duration_s + cooldown_s + 1.0))
 
 for i, (x, y) in enumerate(positions):
     mob = sc["mobility"]
@@ -98,166 +97,51 @@ for i, (x, y) in enumerate(positions):
         "pause": mob.get("pause", 0)
     }
 
-    # ----------------------------
-    # Function: depende do algoritmo
-    # - Mantém medições "na mão" (/sys e iptables)
-    # - Adiciona medição "certa" estilo MACE: PCAP via tcpdump em eth0
-    # - Loga START/END e também DELTAS (para facilitar análise)
-    # ----------------------------
-
-    TIME_LIMIT = sc["node_config"]["duration"] + sc["node_config"]["cooldown"] + 1
-
-    # ----------------------------
-    # Function: depende do algoritmo
-    # ----------------------------
-    if algo == "broadcast":
-        function = [
-            f"/bin/bash -lc \""
-            f"ulimit -c 0; "
-            f"set -x; "
-            f"sleep {APPLICATION_START_DELAY}; "
-
-            # Setup BATMAN
+    if net_setup == "batman":
+        base_net_setup = (
             f"sudo ip addr flush dev eth0; "
             f"sudo ip link set up dev eth0; "
             f"sudo batctl if add eth0; "
             f"sudo ip link set up dev bat0; "
             f"sudo ip addr add 10.0.0.{i+1}/24 dev bat0; "
-
-            # Discover result dir safely
-            f"RESULT_DIR=\\$(grep '\\\"log_dir\\\"' __CRDT_NODE_CONFIG__ | "
-            f"sed -E 's/.*\\\"log_dir\\\"[[:space:]]*:[[:space:]]*\\\"([^\\\"]+)\\\".*/\\1/'); "
-            f"LOG_FILE=\\\"\\$RESULT_DIR/node_{i}.net.log\\\"; "
-
-            # Measurement start (/sys)
-            f"TX_START=\\$(cat /sys/class/net/bat0/statistics/tx_packets); "
-            f"RX_START=\\$(cat /sys/class/net/bat0/statistics/rx_packets); "
-            f"echo \\\"BATMAN_TX_START=\\$TX_START\\\" > \\\"\\$LOG_FILE\\\"; "
-            f"echo \\\"BATMAN_RX_START=\\$RX_START\\\" >> \\\"\\$LOG_FILE\\\"; "
-
-            # PCAP capture (filtered: BATMAN-adv only)
-            f"PCAP_FILE=\\\"\\$RESULT_DIR/node_{i}.pcap\\\"; "
-            f"sudo tcpdump -i eth0 -w \\\"\\$PCAP_FILE\\\" 'ether proto 0x4305' >/dev/null 2>&1 & "
-            f"TCPDUMP_PID=\\$!; "
-            f"echo \\\"TCPDUMP_PID=\\$TCPDUMP_PID\\\" >> \\\"\\$LOG_FILE\\\"; "
-
-            # Run application
-            f"__CRDT_BIN__ -id {i} -config __CRDT_NODE_CONFIG__; "
-            f"APP_RC=\\$?; "
-            f"echo \\\"APP_RC=\\$APP_RC\\\" >> \\\"\\$LOG_FILE\\\"; "
-
-            # Stop tcpdump cleanly + flush
-            f"sudo kill -INT \\$TCPDUMP_PID 2>/dev/null || true; "
-            f"wait \\$TCPDUMP_PID 2>/dev/null || true; "
-            f"sync; "
-            f"echo \\\"PCAP_SAVED=\\$PCAP_FILE\\\" >> \\\"\\$LOG_FILE\\\"; "
-
-            # Measurement end (/sys)
-            f"TX_END=\\$(cat /sys/class/net/bat0/statistics/tx_packets); "
-            f"RX_END=\\$(cat /sys/class/net/bat0/statistics/rx_packets); "
-            f"echo \\\"BATMAN_TX_END=\\$TX_END\\\" >> \\\"\\$LOG_FILE\\\"; "
-            f"echo \\\"BATMAN_RX_END=\\$RX_END\\\" >> \\\"\\$LOG_FILE\\\"\""
-        ]
-    elif algo == "rapid":
-        function = [
-            f"/bin/bash -lc \""
-            f"ulimit -c 0; "
-            f"set -x; "
-            f"sleep {APPLICATION_START_DELAY}; "
-
-            # Reset iptables
-            f"sudo iptables -F; "
-
-            # Add rules to count only RAPID traffic (UDP 5001)
-            f"sudo iptables -I OUTPUT -p udp --sport 5001 -j ACCEPT; "
-            f"sudo iptables -I INPUT  -p udp --dport 5001 -j ACCEPT; "
-            f"sudo iptables -Z; "
-
-            # Discover result dir safely
-            f"RESULT_DIR=\\$(grep '\\\"log_dir\\\"' __CRDT_NODE_CONFIG__ | "
-            f"sed -E 's/.*\\\"log_dir\\\"[[:space:]]*:[[:space:]]*\\\"([^\\\"]+)\\\".*/\\1/'); "
-            f"LOG_FILE=\\\"\\$RESULT_DIR/node_{i}.net.log\\\"; "
-
-            # Measurement start (iptables; keep nomenclature)
-            f"TX_START=\\$(sudo iptables -nvx -L OUTPUT | awk '/udp spt:5001/ {{print \\$1; exit}}'); "
-            f"RX_START=\\$(sudo iptables -nvx -L INPUT  | awk '/udp dpt:5001/ {{print \\$1; exit}}'); "
-            f"echo \\\"RAPID_TX_START=\\$TX_START\\\" >  \\\"\\$LOG_FILE\\\"; "
-            f"echo \\\"RAPID_RX_START=\\$RX_START\\\" >> \\\"\\$LOG_FILE\\\"; "
-
-            # PCAP capture (filtered: RAPID only)
-            f"PCAP_FILE=\\\"\\$RESULT_DIR/node_{i}.pcap\\\"; "
-            f"sudo tcpdump -i eth0 -w \\\"\\$PCAP_FILE\\\" 'udp port 5001' >/dev/null 2>&1 & "
-            f"TCPDUMP_PID=\\$!; "
-            f"echo \\\"TCPDUMP_PID=\\$TCPDUMP_PID\\\" >> \\\"\\$LOG_FILE\\\"; "
-
-            # Run application
-            f"__CRDT_BIN__ -id {i} -config __CRDT_NODE_CONFIG__; "
-            f"APP_RC=\\$?; "
-            f"echo \\\"APP_RC=\\$APP_RC\\\" >> \\\"\\$LOG_FILE\\\"; "
-
-            # Stop tcpdump cleanly + flush
-            f"sudo kill -INT \\$TCPDUMP_PID 2>/dev/null || true; "
-            f"wait \\$TCPDUMP_PID 2>/dev/null || true; "
-            f"sync; "
-            f"echo \\\"PCAP_SAVED=\\$PCAP_FILE\\\" >> \\\"\\$LOG_FILE\\\"; "
-
-            # Measurement end (iptables; keep nomenclature)
-            f"TX_END=\\$(sudo iptables -nvx -L OUTPUT | awk '/udp spt:5001/ {{print \\$1; exit}}'); "
-            f"RX_END=\\$(sudo iptables -nvx -L INPUT  | awk '/udp dpt:5001/ {{print \\$1; exit}}'); "
-            f"echo \\\"RAPID_TX_END=\\$TX_END\\\" >> \\\"\\$LOG_FILE\\\"; "
-            f"echo \\\"RAPID_RX_END=\\$RX_END\\\" >> \\\"\\$LOG_FILE\\\"\""
-        ]
-    elif algo == "multiunicast":
-        function = [
-            f"/bin/bash -lc \""
-            f"ulimit -c 0; "
-            f"set -x; "
-            f"sleep {APPLICATION_START_DELAY}; "
-
-            # Setup BATMAN (igual ao broadcast)
-            f"sudo ip addr flush dev eth0; "
-            f"sudo ip link set up dev eth0; "
-            f"sudo batctl if add eth0; "
-            f"sudo ip link set up dev bat0; "
-            f"sudo ip addr add 10.0.0.{i+1}/24 dev bat0; "
-
-            # Discover result dir safely
-            f"RESULT_DIR=\\$(grep '\\\"log_dir\\\"' __CRDT_NODE_CONFIG__ | "
-            f"sed -E 's/.*\\\"log_dir\\\"[[:space:]]*:[[:space:]]*\\\"([^\\\"]+)\\\".*/\\1/'); "
-            f"LOG_FILE=\\\"\\$RESULT_DIR/node_{i}.net.log\\\"; "
-
-            # Measurement start (/sys) - igual ao broadcast
-            f"TX_START=\\$(cat /sys/class/net/bat0/statistics/tx_packets); "
-            f"RX_START=\\$(cat /sys/class/net/bat0/statistics/rx_packets); "
-            f"echo \\\"BATMAN_TX_START=\\$TX_START\\\" > \\\"\\$LOG_FILE\\\"; "
-            f"echo \\\"BATMAN_RX_START=\\$RX_START\\\" >> \\\"\\$LOG_FILE\\\"; "
-
-            # PCAP capture (filtered: BATMAN-adv only) - igual ao broadcast
-            f"PCAP_FILE=\\\"\\$RESULT_DIR/node_{i}.pcap\\\"; "
-            f"sudo tcpdump -i eth0 -w \\\"\\$PCAP_FILE\\\" 'ether proto 0x4305' >/dev/null 2>&1 & "
-            f"TCPDUMP_PID=\\$!; "
-            f"echo \\\"TCPDUMP_PID=\\$TCPDUMP_PID\\\" >> \\\"\\$LOG_FILE\\\"; "
-
-            # Run application (multiunicast)
-            f"__CRDT_BIN__ -id {i} -config __CRDT_NODE_CONFIG__; "
-            f"APP_RC=\\$?; "
-            f"echo \\\"APP_RC=\\$APP_RC\\\" >> \\\"\\$LOG_FILE\\\"; "
-
-            # Stop tcpdump cleanly + flush
-            f"sudo kill -INT \\$TCPDUMP_PID 2>/dev/null || true; "
-            f"wait \\$TCPDUMP_PID 2>/dev/null || true; "
-            f"sync; "
-            f"echo \\\"PCAP_SAVED=\\$PCAP_FILE\\\" >> \\\"\\$LOG_FILE\\\"; "
-
-            # Measurement end (/sys)
-            f"TX_END=\\$(cat /sys/class/net/bat0/statistics/tx_packets); "
-            f"RX_END=\\$(cat /sys/class/net/bat0/statistics/rx_packets); "
-            f"echo \\\"BATMAN_TX_END=\\$TX_END\\\" >> \\\"\\$LOG_FILE\\\"; "
-            f"echo \\\"BATMAN_RX_END=\\$RX_END\\\" >> \\\"\\$LOG_FILE\\\"\""
-        ]
-
+        )
     else:
-        raise ValueError(f"Unknown algorithm: {algo}")
+        # IP: não reconfigura endereço/rota; deixa o MACE fazer.
+        base_net_setup = (
+            f"sudo ip link set up dev eth0; "
+        )
+
+    function = [
+        f"/bin/bash -lc \""
+        f"ulimit -c 0; "
+        f"set -x; "
+        f"sleep {APPLICATION_START_DELAY}; "
+        f"{base_net_setup}"
+        f"RESULT_DIR=\\$(grep '\\\"log_dir\\\"' __CRDT_NODE_CONFIG__ | "
+        f"sed -E 's/.*\\\"log_dir\\\"[[:space:]]*:[[:space:]]*\\\"([^\\\"]+)\\\".*/\\1/'); "
+        f"LOG_FILE=\\\"\\$RESULT_DIR/node_{i}.net.log\\\"; "
+        f"PCAP_FILE=\\\"\\$RESULT_DIR/node_{i}.pcap\\\"; "
+        f"TCPDUMP_ERR=\\\"\\$RESULT_DIR/node_{i}.tcpdump.stderr\\\"; "
+        f"echo \\\"APP={app}\\\" > \\\"\\$LOG_FILE\\\"; "
+
+        # tcpdump com timeout: encerra com SIGINT e fecha o arquivo corretamente
+        f"sudo timeout -s INT {CAPTURE_SEC} tcpdump -i eth0 -w \\\"\\$PCAP_FILE\\\" "
+        f"'{tcpdump_filter}' >/dev/null 2>\\\"\\$TCPDUMP_ERR\\\" & "
+        f"TCPDUMP_PID=\\$!; "
+        f"echo \\\"TCPDUMP_PID=\\$TCPDUMP_PID\\\" >> \\\"\\$LOG_FILE\\\"; "
+
+        # App
+        f"__CRDT_BIN__ -id {i} -config __CRDT_NODE_CONFIG__; "
+        f"APP_RC=\\$?; "
+        f"echo \\\"APP_RC=\\$APP_RC\\\" >> \\\"\\$LOG_FILE\\\"; "
+
+        # Não mata manualmente: timeout garante fechamento limpo.
+        # Só espera o wrapper terminar, se ainda estiver rodando.
+        f"wait \\$TCPDUMP_PID 2>/dev/null || true; "
+        f"sync; "
+        f"echo \\\"PCAP_SAVED=\\$PCAP_FILE\\\" >> \\\"\\$LOG_FILE\\\"; "
+        f"echo \\\"TCPDUMP_STDERR=\\$TCPDUMP_ERR\\\" >> \\\"\\$LOG_FILE\\\"\""
+    ]
 
     node = {
         "name": f"node{i}",
@@ -279,9 +163,6 @@ for i, (x, y) in enumerate(positions):
     }
     nodes.append(node)
 
-# ----------------------------
-# Build MACE config
-# ----------------------------
 mace = {
     "settings": {
         "core": "True",
@@ -313,8 +194,8 @@ mace = {
     "nodes": nodes
 }
 
-with open(out_file, "w") as f:
+with open(out_file, "w", encoding="utf-8") as f:
     json.dump(mace, f, indent=2)
 
 print(f"[OK] Generated {out_file}")
-print(f"[INFO] Nodes: {node_count}, distribution: {distribution}, seed: {seed}, algo: {algo}")
+print(f"[INFO] Nodes: {node_count}, distribution: {distribution}, seed: {seed}, app: {app}, net_setup: {net_setup}, capture_sec: {CAPTURE_SEC}")

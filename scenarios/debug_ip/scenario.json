@@ -1,0 +1,51 @@
+{
+	"name": "debug_ip",
+	"simulation": {
+		"duration": 55,
+		"start_delay": 5,
+		"area": {
+			"x": 300,
+			"y": 300
+		}
+	},
+	"nodes": {
+		"count": 6,
+		"distribution": "grid",
+		"seed": 7
+	},
+	"mobility": {
+		"model": "random_waypoint",
+		"pause": 0,
+		"speed": [
+			0.8,
+			1.2
+		]
+	},
+	"network": {
+		"routing": "none",
+		"bandwidth": "11000000",
+		"range": 160,
+		"delay": 5,
+		"jitter": 0,
+		"error": 0
+	},
+	"node_config": {
+		"udp_port": 5001,
+		"ops_per_sec": 5.0,
+		"diss_per_sec": 2.0,
+		"monitor_interval": 1,
+		"duration": 8,
+		"cooldown": 5
+	},
+	"experiment": {
+		"vary_tuples": [
+			{
+				"nodes.count": 6,
+				"node_config.ops_per_sec": 5.0,
+				"node_config.diss_per_sec": 2.0,
+				"node_config.duration": 8,
+				"node_config.cooldown": 5
+			}
+		]
+	}
+}

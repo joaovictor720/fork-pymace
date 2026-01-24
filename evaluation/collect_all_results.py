@@ -1,7 +1,13 @@
+import json
 import pandas as pd
 from pathlib import Path
 
 ROOT = Path("/home/mace/git/fork-pymace/results")
+ROOT_REPO = Path("/home/mace/git/fork-pymace")
+APPS_PATH = ROOT_REPO / "evaluation" / "apps.json"
+
+cfg = json.loads(APPS_PATH.read_text(encoding="utf-8"))
+apps = sorted(list(cfg.get("apps", {}).keys()))
 
 rows = []
 cap_rows = []
@@ -14,14 +20,14 @@ for scenario_dir in ROOT.glob("*__expanded"):
             continue
         variant = variant_dir.name
 
-        for algo in ["broadcast", "rapid", "multiunicast"]:
-            base = variant_dir / algo
+        for app in apps:
+            base = variant_dir / app
             csv_path = base / "summary.csv"
             if csv_path.exists():
                 df = pd.read_csv(csv_path)
                 df["scenario"] = scenario
                 df["variant"] = variant
-                df["algorithm"] = algo
+                df["app"] = app
                 rows.append(df)
 
             if base.exists() and base.is_dir():
@@ -32,7 +38,7 @@ for scenario_dir in ROOT.glob("*__expanded"):
                     cdf = pd.read_csv(cov_path)
                     cdf["scenario"] = scenario
                     cdf["variant"] = variant
-                    cdf["algorithm"] = algo
+                    cdf["app"] = app
                     cdf["run"] = run_dir.name
                     cap_rows.append(cdf)
 

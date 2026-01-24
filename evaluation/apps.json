@@ -1,0 +1,32 @@
+{
+	"defaults": {
+		"udp_port": 5001,
+		"eth_proto": "0x4305"
+	},
+	"apps": {
+		"broadcast": {
+			"binary": "apps/crdt/broadcast/crdt_broadcast",
+			"net_setup": "batman",
+			"tcpdump_filter": "ether proto 0x4305",
+			"tshark_display_filter": "eth.type==0x4305",
+			"udp_port": 5001,
+			"payload_type_mode": "none"
+		},
+		"multiunicast": {
+			"binary": "apps/crdt/multiunicast/crdt_multiunicast",
+			"net_setup": "batman",
+			"tcpdump_filter": "ether proto 0x4305",
+			"tshark_display_filter": "eth.type==0x4305",
+			"udp_port": 5001,
+			"payload_type_mode": "none"
+		},
+		"rapid": {
+			"binary": "apps/crdt/rapid/crdt_rapid",
+			"net_setup": "ip",
+			"tcpdump_filter": "udp port 5001",
+			"tshark_display_filter": "udp.port==5001",
+			"udp_port": 5001,
+			"payload_type_mode": "first_byte_hex"
+		}
+	}
+}

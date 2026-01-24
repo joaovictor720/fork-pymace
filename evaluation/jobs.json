@@ -1,0 +1,8 @@
+{
+  "default_runs": 5,
+  "jobs": [
+    { "scenario": "debug_batman", "app": "broadcast", "runs": 1 },
+    { "scenario": "debug_batman", "app": "multiunicast", "runs": 1 },
+    { "scenario": "debug_ip", "app": "rapid", "runs": 1 }
+  ]
+}
