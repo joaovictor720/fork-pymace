@@ -1,4 +1,3 @@
-// crdt_multiunicast.cpp
 #include <iostream>
 #include <fstream>
 #include <thread>
@@ -7,16 +6,13 @@
 #include <vector>
 #include <string>
 #include <random>
-#include <map>
-#include <csignal>
 #include <cstring>
+#include <cerrno>
 #include <nlohmann/json.hpp>
 #include <arpa/inet.h>
 #include <sys/socket.h>
 #include <unistd.h>
 #include <mutex>
-#include <queue>
-#include <condition_variable>
 #include <sstream>
 #include <algorithm>
 #include <net/if.h>
@@ -24,17 +20,15 @@
 #include "/home/mace/git/fork-pymace/apps/crdt/common/delta-crdts.cc"
 
 using json = nlohmann::json;
-using namespace std::chrono_literals;
 
 constexpr size_t MSG_MAX = 4096;
+
+static std::atomic<bool> g_running{true};
 
 std::mutex _gc_mutex;
 std::mutex _delta_mutex;
 std::mutex _event_log_mutex;
 std::ofstream _event_log;
-std::condition_variable _diss_cond;
-std::mutex _diss_mutex;
-bool _diss_dirty = false;
 
 struct node_config {
     std::string id;
@@ -85,6 +79,9 @@ node_config load_config(const std::string& cfg_path, const std::string& id) {
     nc.monitor_interval = cfg.value("monitor_interval", 1.0);
 
     std::string log_dir = cfg.value("log_dir", ".");
+    if (!log_dir.empty() && log_dir.back() != '/') {
+        log_dir.push_back('/');
+    }
     nc.log_file = log_dir + "node_" + id + ".log";
 
     nc.cooldown = cfg.value("cooldown", 10);
@@ -148,6 +145,22 @@ static bool make_sockaddr_in(const std::string& addr, int default_port, sockaddr
     return true;
 }
 
+static void set_socket_timeouts(int sockfd) {
+    timeval tv{};
+    tv.tv_sec = 0;
+    tv.tv_usec = 200000;
+    (void)setsockopt(sockfd, SOL_SOCKET, SO_RCVTIMEO, &tv, sizeof(tv));
+}
+
+static void bind_to_bat0(int sockfd) {
+    struct ifreq ifr;
+    std::memset(&ifr, 0, sizeof(ifr));
+    std::snprintf(ifr.ifr_name, sizeof(ifr.ifr_name), "bat0");
+    if (setsockopt(sockfd, SOL_SOCKET, SO_BINDTODEVICE, (void*)&ifr, sizeof(ifr)) < 0) {
+        std::cerr << "AVISO: Falha no Bind Device bat0 (use sudo)\n";
+    }
+}
+
 void dissemination_loop(
     int sockfd,
     const std::vector<sockaddr_in>& peers,
@@ -155,34 +168,46 @@ void dissemination_loop(
     stats& st,
     double interval
 ) {
-    while (true) {
-        {
-            std::unique_lock<std::mutex> lk(_diss_mutex);
-            _diss_cond.wait_for(
-                lk,
-                std::chrono::duration<double>(interval),
-                [] { return _diss_dirty; }
-            );
-            _diss_dirty = false;
+    std::string last_payload;
+    int retriggers_left = 0;
+    const int retriggers_budget = 1;
+
+    auto next = std::chrono::steady_clock::now();
+
+    while (g_running.load()) {
+        next += std::chrono::duration_cast<std::chrono::steady_clock::duration>(std::chrono::duration<double>(interval));
+        std::this_thread::sleep_until(next);
+
+        if (!g_running.load()) {
+            break;
         }
+
         std::string payload;
+        bool has_new = false;
+
         {
             std::lock_guard<std::mutex> dlock(_delta_mutex);
-            if (delta_buffer == gcounter<int, std::string>()) {
+            if (!(delta_buffer == gcounter<int, std::string>())) {
+                payload = delta_buffer.serialize();
+                delta_buffer = gcounter<int, std::string>();
+                has_new = true;
+            }
+        }
+
+        if (!has_new) {
+            if (retriggers_left > 0 && !last_payload.empty()) {
+                payload = last_payload;
+                retriggers_left--;
+            } else {
                 continue;
             }
-            payload = delta_buffer.serialize();
+        } else {
+            last_payload = payload;
+            retriggers_left = retriggers_budget;
         }
-        for (const auto& peer : peers) {
-            ssize_t sent = sendto(
-                sockfd,
-                payload.data(),
-                payload.size(),
-                0,
-                (sockaddr*)&peer,
-                sizeof(peer)
-            );
 
+        for (const auto& peer : peers) {
+            ssize_t sent = sendto(sockfd, payload.data(), payload.size(), 0, (sockaddr*)&peer, sizeof(peer));
             if (sent > 0) {
                 st.sent_msgs++;
                 st.sent_bytes += static_cast<int>(sent);
@@ -196,29 +221,37 @@ void recv_loop(int sockfd, gcounter<int, std::string>& gc, stats& st, const std:
     sockaddr_in src{};
     socklen_t srclen = sizeof(src);
 
-    while (true) {
+    while (g_running.load()) {
         ssize_t n = recvfrom(sockfd, buffer, MSG_MAX, 0, (sockaddr*)&src, &srclen);
         if (n <= 0) {
+            if (!g_running.load()) {
+                break;
+            }
+            if (n < 0) {
+                if (errno == EAGAIN || errno == EWOULDBLOCK) {
+                    continue;
+                }
+                if (errno == EBADF) {
+                    break;
+                }
+            }
             continue;
         }
 
         try {
             auto sender_gcounter = gcounter<int, std::string>::deserialize(std::string(buffer, n));
             int total = 0;
-
             {
                 std::lock_guard<std::mutex> lk(_gc_mutex);
                 gc.join(sender_gcounter);
                 total = gc.read();
             }
-
             {
                 std::lock_guard<std::mutex> lk(_event_log_mutex);
                 _event_log << std::fixed << now_ts()
                            << ", event=op_apply, node=" << node_id
                            << ", total=" << total << "\n";
             }
-
             st.recv_msgs++;
             st.recv_bytes += static_cast<int>(n);
         } catch (...) {
@@ -230,8 +263,7 @@ void recv_loop(int sockfd, gcounter<int, std::string>& gc, stats& st, const std:
 void run_random_mode(
     const node_config& nc,
     gcounter<int, std::string>& gc,
-    gcounter<int, std::string>& delta_buffer,
-    stats& st
+    gcounter<int, std::string>& delta_buffer
 ) {
     double ops_per_sec = nc.ops_per_sec;
     double duration = nc.duration;
@@ -241,13 +273,18 @@ void run_random_mode(
     std::uniform_int_distribution<int> inc_dist(1, 1);
 
     auto start = std::chrono::steady_clock::now();
-    while (true) {
+
+    while (g_running.load()) {
         auto elapsed = std::chrono::duration<double>(std::chrono::steady_clock::now() - start).count();
         if (elapsed > duration) {
             break;
         }
 
         std::this_thread::sleep_for(std::chrono::duration<double>(expd(gen)));
+        if (!g_running.load()) {
+            break;
+        }
+
         int val = inc_dist(gen);
 
         gcounter<int, std::string> d;
@@ -270,22 +307,21 @@ void run_random_mode(
         }
 
         {
-            std::unique_lock<std::mutex> lock(_delta_mutex);
+            std::lock_guard<std::mutex> lock(_delta_mutex);
             delta_buffer.join(d);
         }
-
-        {
-            std::lock_guard<std::mutex> lk(_diss_mutex);
-            _diss_dirty = true;
-        }
-        _diss_cond.notify_one();
     }
 }
 
 void monitor_loop(gcounter<int, std::string>& gc, stats& st, double interval, const std::string& logfile) {
     std::ofstream log(logfile, std::ios::trunc);
-    while (true) {
+
+    while (g_running.load()) {
         std::this_thread::sleep_for(std::chrono::duration<double>(interval));
+        if (!g_running.load()) {
+            break;
+        }
+
         int local = gc.local();
         int total = gc.read();
 
@@ -296,7 +332,7 @@ void monitor_loop(gcounter<int, std::string>& gc, stats& st, double interval, co
         log.flush();
 
         {
-            std::unique_lock<std::mutex> lk(_event_log_mutex);
+            std::lock_guard<std::mutex> lk(_event_log_mutex);
             _event_log.flush();
         }
     }
@@ -320,9 +356,13 @@ int main(int argc, char* argv[]) {
     }
 
     node_config nc = load_config(cfgfile, node_id);
+    if (nc.listen_addr.empty()) {
+        return 1;
+    }
     print_config(nc);
 
     _event_log.open(nc.log_file + ".events", std::ios::trunc);
+    _event_log.setf(std::ios::unitbuf);
 
     auto pos = nc.listen_addr.find(':');
     if (pos == std::string::npos) {
@@ -336,10 +376,8 @@ int main(int argc, char* argv[]) {
         return 1;
     }
 
-    // Build unicast peer list from config ("address" entries)
     std::vector<sockaddr_in> peers;
     peers.reserve(nc.peers.size());
-
     for (const auto& p : nc.peers) {
         sockaddr_in sin{};
         if (make_sockaddr_in(p, listen_port, sin)) {
@@ -347,7 +385,6 @@ int main(int argc, char* argv[]) {
         }
     }
 
-    // Socket (UDP unicast)
     int sockfd = socket(AF_INET, SOCK_DGRAM, 0);
     if (sockfd < 0) {
         return 1;
@@ -356,19 +393,13 @@ int main(int argc, char* argv[]) {
     int reuse = 1;
     (void)setsockopt(sockfd, SOL_SOCKET, SO_REUSEADDR, &reuse, sizeof(reuse));
 
-    // Bind Device (FORÇA SAÍDA PELA BAT0, para não cair na rota default)
-    struct ifreq ifr;
-    std::memset(&ifr, 0, sizeof(ifr));
-    std::snprintf(ifr.ifr_name, sizeof(ifr.ifr_name), "bat0");
-    if (setsockopt(sockfd, SOL_SOCKET, SO_BINDTODEVICE, (void*)&ifr, sizeof(ifr)) < 0) {
-        std::cerr << "AVISO: Falha no Bind Device bat0 (use sudo)\n";
-    }
+    bind_to_bat0(sockfd);
+    set_socket_timeouts(sockfd);
 
     sockaddr_in addr{};
     addr.sin_family = AF_INET;
     addr.sin_addr.s_addr = INADDR_ANY;
     addr.sin_port = htons(static_cast<uint16_t>(listen_port));
-
     if (bind(sockfd, (sockaddr*)&addr, sizeof(addr)) < 0) {
         close(sockfd);
         return 1;
@@ -379,15 +410,10 @@ int main(int argc, char* argv[]) {
     stats st;
 
     std::thread t_recv(recv_loop, sockfd, std::ref(gc), std::ref(st), nc.id);
-    t_recv.detach();
-
     std::thread t_mon(monitor_loop, std::ref(gc), std::ref(st), nc.monitor_interval, nc.log_file);
-    t_mon.detach();
-
     std::thread t_diss(dissemination_loop, sockfd, std::cref(peers), std::ref(delta_buffer), std::ref(st), nc.dissemination_interval);
-    t_diss.detach();
 
-    run_random_mode(nc, gc, delta_buffer, st);
+    run_random_mode(nc, gc, delta_buffer);
 
     {
         std::lock_guard<std::mutex> lk(_event_log_mutex);
@@ -396,6 +422,26 @@ int main(int argc, char* argv[]) {
     }
 
     std::this_thread::sleep_for(std::chrono::duration<double>(nc.cooldown));
+
+    g_running.store(false);
+    shutdown(sockfd, SHUT_RDWR);
     close(sockfd);
+
+    if (t_diss.joinable()) {
+        t_diss.join();
+    }
+    if (t_recv.joinable()) {
+        t_recv.join();
+    }
+    if (t_mon.joinable()) {
+        t_mon.join();
+    }
+
+    {
+        std::lock_guard<std::mutex> lk(_event_log_mutex);
+        _event_log.flush();
+        _event_log.close();
+    }
+
     return 0;
 }
