@@ -1,3 +1,4 @@
+# evaluation/parse_network.py (versão generalizada completa)
 import pathlib
 import csv
 import re
@@ -18,7 +19,7 @@ def _best_counter_set_from_netlog(netlog_path: pathlib.Path) -> Optional[Tuple[i
             prefix, direction, bound, value_s = m.groups()
             by_prefix.setdefault(prefix, {})[f"{direction}_{bound}"] = int(value_s)
 
-    for _, d in by_prefix.items():
+    for prefix, d in by_prefix.items():
         if all(k in d for k in ("TX_START", "TX_END", "RX_START", "RX_END")):
             return d["TX_START"], d["TX_END"], d["RX_START"], d["RX_END"]
 
@@ -57,13 +58,6 @@ def _parse_netlog_counters(run_dir: pathlib.Path):
     }
 
 
-def _is_ok_status(s: Optional[str]) -> bool:
-    if s is None:
-        return False
-    s = str(s).strip().lower()
-    return s == "ok" or s == "ok_truncated"
-
-
 def _parse_pcap_metrics(run_dir: pathlib.Path):
     p = run_dir / "pcap_metrics.csv"
     if not p.exists():
@@ -76,7 +70,7 @@ def _parse_pcap_metrics(run_dir: pathlib.Path):
     with p.open(newline="", encoding="utf-8") as f:
         r = csv.DictReader(f)
         for row in r:
-            if not _is_ok_status(row.get("status")):
+            if row.get("status") != "ok":
                 continue
             try:
                 frames = int(row["frames"])

@@ -100,7 +100,7 @@ def plot_bar_with_ci(df, x, y, ci_low, ci_high, algo_col,
     ax = plt.gca()
 
     algorithms = df[algo_col].dropna().unique()
-    x_values = sorted(df[x].dropna().astype(int).unique())
+    x_values = sorted(pd.to_numeric(df[x], errors="coerce").dropna().unique())
     x_pos = np.arange(len(x_values))
     width = 0.35 if len(algorithms) <= 2 else 0.25
 
@@ -131,7 +131,7 @@ def plot_bar_with_ci(df, x, y, ci_low, ci_high, algo_col,
         )
 
     ax.set_xticks(x_pos)
-    ax.set_xticklabels(x_values)
+    ax.set_xticklabels([str(v).rstrip('0').rstrip('.') if isinstance(v, float) else str(v) for v in x_values])
     ax.set_title(title, pad=15, fontsize=14, fontweight='bold')
     ax.set_xlabel(xlabel, labelpad=10)
     ax.set_ylabel(ylabel, labelpad=10)
@@ -148,124 +148,187 @@ def plot_bar_with_ci(df, x, y, ci_low, ci_high, algo_col,
 # ==========================
 df = pd.read_csv(INPUT_CSV)
 
-df_B = df[df["scenario"].isin([
-    "important_batman",
-    "important_ip"
+# ==========================================================
+# A) workload_diss_sweep_*  (x = diss_per_sec)
+# ==========================================================
+df_A = df[df["scenario"].isin([
+    "workload_diss_sweep_batman",
+    "workload_diss_sweep_ip",
 ])].copy()
 
-df_B["scenario"] = "scenario_B_mobility_guts"
-
-# ==========================
-# PLOTS EXISTENTES
-# ==========================
-plot_bar_with_ci(
-    df_B,
-    COLS["nodes"],
-    COLS["packets_total_mean"],
-    COLS["packets_total_ci_low"],
-    COLS["packets_total_ci_high"],
-    COLS["algorithm"],
-    "Total Packets vs. Swarm Size (Mobile)",
-    LABELS["nodes"],
-    LABELS["total_packets"],
-    "bar_B_total_packets.png"
-)
-
-plot_line_with_ci(
-    df_B,
-    COLS["nodes"],
-    COLS["t99_mean"],
-    COLS["t99_ci_low"],
-    COLS["t99_ci_high"],
-    COLS["algorithm"],
-    "Convergence Latency ($T_{99}$) vs Swarm Size (Mobility)",
-    LABELS["nodes"],
-    LABELS["t99"],
-    "line_B_convergence99.png"
-)
-
-plt.figure(figsize=(8,5))
-for algo in df_B[COLS["algorithm"]].dropna().unique():
-    dfa = df_B[df_B[COLS["algorithm"]] == algo].sort_values(COLS["nodes"])
-    failure = 1.0 - pd.to_numeric(dfa[COLS["success_rate"]], errors="coerce")
-    color = PALETTE.get(algo, "gray")
-    label = LABELS.get(algo, algo)
-    plt.plot(dfa[COLS["nodes"]], failure, marker='s', label=label, color=color, linewidth=2)
-
-x_vals = sorted(df_B[COLS["nodes"]].dropna().astype(int).unique())
-if len(x_vals) > 0:
-    plt.xticks(x_vals)
-
-plt.title("Convergence Failure Rate vs. Swarm Size", pad=15, fontsize=14, fontweight='bold')
-plt.xlabel(LABELS["nodes"], labelpad=10)
-plt.ylabel(LABELS["failure_rate"], labelpad=10)
-plt.grid(True, linestyle=":", alpha=0.6)
-plt.legend(frameon=True)
-plt.tight_layout()
-plt.savefig(OUTPUT_DIR / "line_B_failure.png", dpi=300)
-plt.close()
-print("Saved Failure Plot: line_B_failure.png")
-
-# ==========================
-# NOVO: CAPACIDADE (DUAS FORMAS)
-# ==========================
-has_cap_node = all(c in df_B.columns for c in [COLS["cap_node_mean"], COLS["cap_node_ci_low"], COLS["cap_node_ci_high"]])
-has_cap_run = all(c in df_B.columns for c in [COLS["cap_run_mean"], COLS["cap_run_ci_low"], COLS["cap_run_ci_high"]])
-
-if has_cap_node:
-    plot_line_with_ci(
-        df_B,
-        COLS["nodes"],
-        COLS["cap_node_mean"],
-        COLS["cap_node_ci_low"],
-        COLS["cap_node_ci_high"],
+if df_A.empty:
+    print("[WARN] No rows for workload_diss_sweep_*")
+else:
+    # Total packets (bar)
+    plot_bar_with_ci(
+        df_A,
+        "diss_per_sec",
+        COLS["packets_total_mean"],
+        COLS["packets_total_ci_low"],
+        COLS["packets_total_ci_high"],
         COLS["algorithm"],
-        "Dissemination Capacity (Pooled by Node) vs Swarm Size",
-        LABELS["nodes"],
-        LABELS["cap_node"],
-        "line_B_capacity_node.png"
+        "Total Packets vs Dissemination Frequency",
+        "Disseminations per Second",
+        LABELS["total_packets"],
+        "bar_A_total_packets_vs_diss.png"
     )
+
+    # Capacity (bar) - pooled-by-node
+    if all(c in df_A.columns for c in [COLS["cap_node_mean"], COLS["cap_node_ci_low"], COLS["cap_node_ci_high"]]):
+        plot_bar_with_ci(
+            df_A,
+            "diss_per_sec",
+            COLS["cap_node_mean"],
+            COLS["cap_node_ci_low"],
+            COLS["cap_node_ci_high"],
+            COLS["algorithm"],
+            "Dissemination Capacity vs Dissemination Frequency (Pooled by Node)",
+            "Disseminations per Second",
+            LABELS["cap_node"],
+            "bar_A_capacity_node_vs_diss.png"
+        )
+    else:
+        print("[WARN] cap_node_* missing for workload_diss_sweep_*; skipping capacity_node.")
+
+    # Capacity (bar) - mean-per-run
+    if all(c in df_A.columns for c in [COLS["cap_run_mean"], COLS["cap_run_ci_low"], COLS["cap_run_ci_high"]]):
+        plot_bar_with_ci(
+            df_A,
+            "diss_per_sec",
+            COLS["cap_run_mean"],
+            COLS["cap_run_ci_low"],
+            COLS["cap_run_ci_high"],
+            COLS["algorithm"],
+            "Dissemination Capacity vs Dissemination Frequency (Mean per Run)",
+            "Disseminations per Second",
+            LABELS["cap_run"],
+            "bar_A_capacity_run_vs_diss.png"
+        )
+    else:
+        print("[WARN] cap_run_* missing for workload_diss_sweep_*; skipping capacity_run.")
+
+# ==========================================================
+# B) large_scale_density_*  (x = nodes)
+# ==========================================================
+df_B = df[df["scenario"].isin([
+    "large_scale_density_batman",
+    "large_scale_density_ip",
+])].copy()
+
+if df_B.empty:
+    print("[WARN] No rows for large_scale_density_*")
+else:
     plot_bar_with_ci(
         df_B,
         COLS["nodes"],
-        COLS["cap_node_mean"],
-        COLS["cap_node_ci_low"],
-        COLS["cap_node_ci_high"],
+        COLS["packets_total_mean"],
+        COLS["packets_total_ci_low"],
+        COLS["packets_total_ci_high"],
         COLS["algorithm"],
-        "Dissemination Capacity (Pooled by Node) vs Swarm Size",
+        "Total Packets vs Swarm Size (Large Scale)",
         LABELS["nodes"],
-        LABELS["cap_node"],
-        "bar_B_capacity_node.png"
+        LABELS["total_packets"],
+        "bar_B_total_packets_vs_nodes.png"
     )
-else:
-    print("[WARN] cap_node_* columns not found; skipping node-pooled capacity plots.")
 
-if has_cap_run:
-    plot_line_with_ci(
-        df_B,
-        COLS["nodes"],
-        COLS["cap_run_mean"],
-        COLS["cap_run_ci_low"],
-        COLS["cap_run_ci_high"],
-        COLS["algorithm"],
-        "Dissemination Capacity (Mean per Run) vs Swarm Size",
-        LABELS["nodes"],
-        LABELS["cap_run"],
-        "line_B_capacity_run.png"
-    )
-    plot_bar_with_ci(
-        df_B,
-        COLS["nodes"],
-        COLS["cap_run_mean"],
-        COLS["cap_run_ci_low"],
-        COLS["cap_run_ci_high"],
-        COLS["algorithm"],
-        "Dissemination Capacity (Mean per Run) vs Swarm Size",
-        LABELS["nodes"],
-        LABELS["cap_run"],
-        "bar_B_capacity_run.png"
-    )
+    if all(c in df_B.columns for c in [COLS["cap_node_mean"], COLS["cap_node_ci_low"], COLS["cap_node_ci_high"]]):
+        plot_bar_with_ci(
+            df_B,
+            COLS["nodes"],
+            COLS["cap_node_mean"],
+            COLS["cap_node_ci_low"],
+            COLS["cap_node_ci_high"],
+            COLS["algorithm"],
+            "Dissemination Capacity vs Swarm Size (Pooled by Node)",
+            LABELS["nodes"],
+            LABELS["cap_node"],
+            "bar_B_capacity_node_vs_nodes.png"
+        )
+    else:
+        print("[WARN] cap_node_* missing for large_scale_density_*; skipping capacity_node.")
+
+    if all(c in df_B.columns for c in [COLS["cap_run_mean"], COLS["cap_run_ci_low"], COLS["cap_run_ci_high"]]):
+        plot_bar_with_ci(
+            df_B,
+            COLS["nodes"],
+            COLS["cap_run_mean"],
+            COLS["cap_run_ci_low"],
+            COLS["cap_run_ci_high"],
+            COLS["algorithm"],
+            "Dissemination Capacity vs Swarm Size (Mean per Run)",
+            LABELS["nodes"],
+            LABELS["cap_run"],
+            "bar_B_capacity_run_vs_nodes.png"
+        )
+    else:
+        print("[WARN] cap_run_* missing for large_scale_density_*; skipping capacity_run.")
+
+# ==========================================================
+# C) workload_duration_cooldown_*  (x = duration, split by cooldown)
+# ==========================================================
+df_C = df[df["scenario"].isin([
+    "workload_duration_cooldown_batman",
+    "workload_duration_cooldown_ip",
+])].copy()
+
+if df_C.empty:
+    print("[WARN] No rows for workload_duration_cooldown_*")
 else:
-    print("[WARN] cap_run_* columns not found; skipping run-mean capacity plots.")
+    cooldown_values = sorted(pd.to_numeric(df_C.get("cooldown"), errors="coerce").dropna().unique())
+
+    if not cooldown_values:
+        print("[WARN] No cooldown values found in workload_duration_cooldown_*; skipping.")
+    else:
+        for cd in cooldown_values:
+            df_cd = df_C[pd.to_numeric(df_C["cooldown"], errors="coerce") == cd].copy()
+            if df_cd.empty:
+                continue
+
+            suffix = f"cooldown_{str(cd).rstrip('0').rstrip('.') if isinstance(cd, float) else str(cd)}"
+
+            plot_bar_with_ci(
+                df_cd,
+                "duration",
+                COLS["packets_total_mean"],
+                COLS["packets_total_ci_low"],
+                COLS["packets_total_ci_high"],
+                COLS["algorithm"],
+                f"Total Packets vs Workload Duration (Cooldown={cd}s)",
+                "Workload Duration (s)",
+                LABELS["total_packets"],
+                f"bar_C_total_packets_vs_duration__{suffix}.png"
+            )
+
+            if all(c in df_cd.columns for c in [COLS["cap_node_mean"], COLS["cap_node_ci_low"], COLS["cap_node_ci_high"]]):
+                plot_bar_with_ci(
+                    df_cd,
+                    "duration",
+                    COLS["cap_node_mean"],
+                    COLS["cap_node_ci_low"],
+                    COLS["cap_node_ci_high"],
+                    COLS["algorithm"],
+                    f"Dissemination Capacity vs Workload Duration (Pooled by Node, Cooldown={cd}s)",
+                    "Workload Duration (s)",
+                    LABELS["cap_node"],
+                    f"bar_C_capacity_node_vs_duration__{suffix}.png"
+                )
+            else:
+                print(f"[WARN] cap_node_* missing for cooldown={cd}; skipping capacity_node.")
+
+            if all(c in df_cd.columns for c in [COLS["cap_run_mean"], COLS["cap_run_ci_low"], COLS["cap_run_ci_high"]]):
+                plot_bar_with_ci(
+                    df_cd,
+                    "duration",
+                    COLS["cap_run_mean"],
+                    COLS["cap_run_ci_low"],
+                    COLS["cap_run_ci_high"],
+                    COLS["algorithm"],
+                    f"Dissemination Capacity vs Workload Duration (Mean per Run, Cooldown={cd}s)",
+                    "Workload Duration (s)",
+                    LABELS["cap_run"],
+                    f"bar_C_capacity_run_vs_duration__{suffix}.png"
+                )
+            else:
+                print(f"[WARN] cap_run_* missing for cooldown={cd}; skipping capacity_run.")
 
 print("\nAll plots generated successfully!")
