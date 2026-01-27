@@ -1,16 +1,12 @@
 {
   "default_runs": 10,
   "jobs": [
-    { "scenario": "workload_diss_sweep_batman", "app": "broadcast" },
-    { "scenario": "workload_diss_sweep_batman", "app": "multiunicast" },
-    { "scenario": "workload_diss_sweep_ip", "app": "rapid" },
+    { "scenario": "density_batman", "app": "broadcast" },
+    { "scenario": "density_batman", "app": "multiunicast" },
+    { "scenario": "density_ip", "app": "rapid" },
 
-    { "scenario": "large_scale_density_batman", "app": "broadcast" },
-    { "scenario": "large_scale_density_batman", "app": "multiunicast" },
-    { "scenario": "large_scale_density_ip", "app": "rapid" },
-
-    { "scenario": "workload_duration_cooldown_batman", "app": "broadcast" },
-    { "scenario": "workload_duration_cooldown_batman", "app": "multiunicast" },
-    { "scenario": "workload_duration_cooldown_ip", "app": "rapid" }
+    { "scenario": "scalability_batman", "app": "broadcast" },
+    { "scenario": "scalability_batman", "app": "multiunicast" },
+    { "scenario": "scalability_ip", "app": "rapid" }
   ]
 }

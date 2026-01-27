@@ -1,0 +1,58 @@
+{
+  "name": "scalability_batman",
+  "simulation": {
+    "duration": 55,
+    "start_delay": 5,
+    "area": { "x": 1000, "y": 1000 }
+  },
+  "nodes": {
+    "count": 30,
+    "distribution": "random",
+    "seed": 22
+  },
+  "mobility": {
+    "model": "random_waypoint",
+    "pause": 0,
+    "speed": [4.0, 4.2]
+  },
+  "network": {
+    "routing": "batman",
+    "bandwidth": "11000000",
+    "range": 160,
+    "delay": 5,
+    "jitter": 0,
+    "error": 0
+  },
+  "node_config": {
+    "udp_port": 5001,
+    "ops_per_sec": 2.0,
+    "diss_per_sec": 1.0,
+    "monitor_interval": 2,
+    "duration": 10,
+    "cooldown": 10
+  },
+  "experiment": {
+    "vary_tuples": [
+      {
+        "nodes.count": 10,
+        "simulation.area": [577.35026919, 577.35026919]
+      },
+      {
+        "nodes.count": 20,
+        "simulation.area": [816.496580928, 816.496580928]
+      },
+      {
+        "nodes.count": 30,
+        "simulation.area": [1000, 1000]
+      },
+      {
+        "nodes.count": 40,
+        "simulation.area": [1154.700538379, 1154.700538379]
+      },
+      {
+        "nodes.count": 50,
+        "simulation.area": [1290.994448736, 1290.994448736]
+      }
+    ]
+  }
+}

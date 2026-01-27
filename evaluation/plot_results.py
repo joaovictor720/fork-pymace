@@ -1,42 +1,36 @@
+import json
+from pathlib import Path
+
+import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
 import seaborn as sns
-from pathlib import Path
-import numpy as np
 
 # ==========================
-# CONFIGURAÇÕES VISUAIS
+# CONFIG
 # ==========================
+INPUT_CSV = "results/aggregated_results.csv"
+JOBS_JSON = "evaluation/jobs.json"
+OUTPUT_DIR = Path("results/plots")
+OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
+
 sns.set_theme(style="whitegrid", context="paper", font_scale=1.2)
+
 PALETTE = {
     "broadcast": "#1f77b4",
     "rapid": "#ff7f0e",
     "multiunicast": "#2ca02c",
 }
 
-# ==========================
-# CONFIGURAÇÕES GERAIS
-# ==========================
-INPUT_CSV = "results/aggregated_results.csv"
-OUTPUT_DIR = Path("results/plots")
-OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
-
-LABELS = {
-    "nodes": "Number of Nodes",
-    "ops_per_sec": "Operations per Second (Global Load)",
-
-    "avg_packets_per_node": "Average Packets per Node",
-    "total_packets": "Total Packets (TX+RX)",
-
+LABELS_ALGO = {
     "broadcast": "Flooding (BATMAN)",
-    "rapid": "Gossip (RAPID)",
     "multiunicast": "App Multi-unicast (BATMAN)",
+    "rapid": "Gossip (RAPID)",
+}
 
-    "t99": "Time to 99% (s)",
-    "failure_rate": "Failure Rate",
-
-    "cap_node": "Dissemination Capacity (Pooled by Node, Final Coverage)",
-    "cap_run": "Dissemination Capacity (Mean per Run, Final Coverage)",
+Y_LABELS = {
+    "cap": "Dissemination Capacity",
+    "pkt_total": "Total Packets (TX+RX)",
 }
 
 COLS = {
@@ -45,67 +39,102 @@ COLS = {
     "nodes": "nodes",
     "ops": "ops_per_sec",
 
-    "packets_total_mean": "pkt_total_mean",
-    "packets_total_ci_low": "pkt_total_ci_low",
-    "packets_total_ci_high": "pkt_total_ci_high",
-
-    "t99_mean": "t99_mean",
-    "t99_ci_low": "t99_ci_low",
-    "t99_ci_high": "t99_ci_high",
-
-    "success_rate": "success_rate",
+    "pkt_total_mean": "pkt_total_mean",
+    "pkt_total_ci_low": "pkt_total_ci_low",
+    "pkt_total_ci_high": "pkt_total_ci_high",
 
     "cap_node_mean": "cap_node_mean",
     "cap_node_ci_low": "cap_node_ci_low",
     "cap_node_ci_high": "cap_node_ci_high",
-
-    "cap_run_mean": "cap_run_mean",
-    "cap_run_ci_low": "cap_run_ci_low",
-    "cap_run_ci_high": "cap_run_ci_high",
 }
 
-def plot_line_with_ci(df, x, y, ci_low, ci_high, algo_col,
-                      title, xlabel, ylabel, filename):
-    plt.figure(figsize=(8, 5))
-
-    for algo in df[algo_col].dropna().unique():
-        dfa = df[df[algo_col] == algo].sort_values(x)
-        if dfa.empty:
+# ==========================
+# HELPERS
+# ==========================
+def _read_jobs_prefixes(path: str):
+    p = Path(path)
+    cfg = json.loads(p.read_text(encoding="utf-8"))
+    jobs = cfg.get("jobs", [])
+    prefixes = set()
+    for j in jobs:
+        sc = str(j.get("scenario", "")).strip()
+        if not sc:
             continue
+        if sc.endswith("_batman"):
+            prefixes.add(sc[:-len("_batman")])
+        elif sc.endswith("_ip"):
+            prefixes.add(sc[:-len("_ip")])
+        else:
+            prefixes.add(sc)
+    return sorted(prefixes)
 
-        color = PALETTE.get(algo, "gray")
-        label = LABELS.get(algo, algo)
+def _numeric(df, col):
+    if col in df.columns:
+        df[col] = pd.to_numeric(df[col], errors="coerce")
+    return df
 
-        plt.plot(dfa[x], dfa[y], marker='o', label=label, color=color, linewidth=2)
-        plt.fill_between(dfa[x], dfa[ci_low], dfa[ci_high], color=color, alpha=0.2)
+def _has_cols(df, cols):
+    return all(c in df.columns for c in cols)
 
-    x_vals = sorted(df[x].dropna().unique())
-    if len(x_vals) > 0:
-        plt.xticks(x_vals)
+def _pick_x_axis_for_prefix(df_prefix: pd.DataFrame):
+    candidates = [
+        "nodes",
+        "ops_per_sec",
+        "diss_per_sec",
+        "duration",
+        "cooldown",
+        "dissemination_interval",
+        "density",
+    ]
+    for c in candidates:
+        if c in df_prefix.columns and df_prefix[c].notna().any():
+            uniq = pd.to_numeric(df_prefix[c], errors="coerce").dropna().unique()
+            if len(uniq) >= 2:
+                return c
+    for c in candidates:
+        if c in df_prefix.columns and df_prefix[c].notna().any():
+            return c
+    return None
 
-    plt.title(title, pad=15, fontsize=14, fontweight='bold')
-    plt.xlabel(xlabel, labelpad=10)
-    plt.ylabel(ylabel, labelpad=10)
-    plt.grid(True, linestyle=":", alpha=0.6)
-    plt.legend(frameon=True, framealpha=0.9)
-    plt.tight_layout()
-    plt.savefig(OUTPUT_DIR / filename, dpi=300)
-    plt.close()
+def _pretty_xlabel(xcol: str):
+    mapping = {
+        "nodes": "Number of Nodes",
+        "ops_per_sec": "Operations per Second (Global Load)",
+        "diss_per_sec": "Disseminations per Second",
+        "duration": "Workload Duration (s)",
+        "cooldown": "Cooldown (s)",
+        "dissemination_interval": "Dissemination Interval (s)",
+        "density": "Density (nodes/km²)",
+    }
+    return mapping.get(xcol, xcol)
 
-    print(f"Saved Line Plot: {filename}")
+def _format_xticks(vals):
+    out = []
+    for v in vals:
+        try:
+            fv = float(v)
+            if abs(fv - round(fv)) < 1e-9:
+                out.append(str(int(round(fv))))
+            else:
+                s = f"{fv:.6g}"
+                out.append(s)
+        except Exception:
+            out.append(str(v))
+    return out
 
 def plot_bar_with_ci(df, x, y, ci_low, ci_high, algo_col,
                      title, xlabel, ylabel, filename):
     plt.figure(figsize=(8, 5))
     ax = plt.gca()
 
-    algorithms = df[algo_col].dropna().unique()
+    algorithms = list(df[algo_col].dropna().unique())
     x_values = sorted(pd.to_numeric(df[x], errors="coerce").dropna().unique())
     x_pos = np.arange(len(x_values))
     width = 0.35 if len(algorithms) <= 2 else 0.25
 
     for i, algo in enumerate(algorithms):
-        subset = df[df[algo_col] == algo].sort_values(x)
+        subset = df[df[algo_col] == algo].copy()
+        subset = subset.sort_values(x)
         metrics = pd.DataFrame({x: x_values}).merge(subset, on=x, how='left')
 
         means = pd.to_numeric(metrics[y], errors="coerce").fillna(0.0)
@@ -122,16 +151,18 @@ def plot_bar_with_ci(df, x, y, ci_low, ci_high, algo_col,
             pos = x_pos + offsets[i]
 
         color = PALETTE.get(algo, "gray")
-        label = LABELS.get(algo, algo)
+        label = LABELS_ALGO.get(algo, algo)
 
         ax.bar(
-            pos, means, width, label=label, color=color, alpha=0.9,
+            pos, means, width,
+            label=label,
+            color=color, alpha=0.9,
             yerr=yerr, capsize=5,
-            error_kw={'ecolor': 'black', 'alpha': 0.7}
+            error_kw={"ecolor": "black", "alpha": 0.7}
         )
 
     ax.set_xticks(x_pos)
-    ax.set_xticklabels([str(v).rstrip('0').rstrip('.') if isinstance(v, float) else str(v) for v in x_values])
+    ax.set_xticklabels(_format_xticks(x_values))
     ax.set_title(title, pad=15, fontsize=14, fontweight='bold')
     ax.set_xlabel(xlabel, labelpad=10)
     ax.set_ylabel(ylabel, labelpad=10)
@@ -141,194 +172,76 @@ def plot_bar_with_ci(df, x, y, ci_low, ci_high, algo_col,
     plt.savefig(OUTPUT_DIR / filename, dpi=300)
     plt.close()
 
-    print(f"Saved Bar Plot: {filename}")
+    print(f"[OK] Saved: {filename}")
 
 # ==========================
-# CARREGAR DADOS
+# LOAD
 # ==========================
 df = pd.read_csv(INPUT_CSV)
 
-# ==========================================================
-# A) workload_diss_sweep_*  (x = diss_per_sec)
-# ==========================================================
-df_A = df[df["scenario"].isin([
-    "workload_diss_sweep_batman",
-    "workload_diss_sweep_ip",
-])].copy()
+# normalize scenario base prefix: remove _batman/_ip suffix
+def _scenario_prefix(s):
+    s = str(s)
+    if s.endswith("_batman"):
+        return s[:-len("_batman")]
+    if s.endswith("_ip"):
+        return s[:-len("_ip")]
+    return s
 
-if df_A.empty:
-    print("[WARN] No rows for workload_diss_sweep_*")
-else:
-    # Total packets (bar)
-    plot_bar_with_ci(
-        df_A,
-        "diss_per_sec",
-        COLS["packets_total_mean"],
-        COLS["packets_total_ci_low"],
-        COLS["packets_total_ci_high"],
-        COLS["algorithm"],
-        "Total Packets vs Dissemination Frequency",
-        "Disseminations per Second",
-        LABELS["total_packets"],
-        "bar_A_total_packets_vs_diss.png"
-    )
+df["scenario_prefix"] = df[COLS["scenario"]].apply(_scenario_prefix)
 
-    # Capacity (bar) - pooled-by-node
-    if all(c in df_A.columns for c in [COLS["cap_node_mean"], COLS["cap_node_ci_low"], COLS["cap_node_ci_high"]]):
+prefixes = _read_jobs_prefixes(JOBS_JSON)
+if not prefixes:
+    raise SystemExit(f"[ERROR] No scenarios found in {JOBS_JSON}")
+
+# ==========================
+# PLOT PER PREFIX
+# ==========================
+for prefix in prefixes:
+    df_p = df[df["scenario_prefix"] == prefix].copy()
+    if df_p.empty:
+        print(f"[WARN] No data for prefix={prefix!r} in {INPUT_CSV}")
+        continue
+
+    xcol = _pick_x_axis_for_prefix(df_p)
+    if not xcol:
+        print(f"[WARN] Could not pick x-axis for prefix={prefix!r}; skipping.")
+        continue
+
+    df_p = _numeric(df_p, xcol)
+
+    # 1) Total packets
+    if _has_cols(df_p, [COLS["pkt_total_mean"], COLS["pkt_total_ci_low"], COLS["pkt_total_ci_high"]]):
         plot_bar_with_ci(
-            df_A,
-            "diss_per_sec",
+            df_p,
+            xcol,
+            COLS["pkt_total_mean"],
+            COLS["pkt_total_ci_low"],
+            COLS["pkt_total_ci_high"],
+            COLS["algorithm"],
+            f"Total Packets vs {_pretty_xlabel(xcol)} ({prefix})",
+            _pretty_xlabel(xcol),
+            Y_LABELS["pkt_total"],
+            f"{prefix}__total_packets.png"
+        )
+    else:
+        print(f"[WARN] Missing total-packets columns for prefix={prefix!r}; skipping packets plot.")
+
+    # 2) Dissemination capacity (node-pooled only; label without 'pooled by node')
+    if _has_cols(df_p, [COLS["cap_node_mean"], COLS["cap_node_ci_low"], COLS["cap_node_ci_high"]]):
+        plot_bar_with_ci(
+            df_p,
+            xcol,
             COLS["cap_node_mean"],
             COLS["cap_node_ci_low"],
             COLS["cap_node_ci_high"],
             COLS["algorithm"],
-            "Dissemination Capacity vs Dissemination Frequency (Pooled by Node)",
-            "Disseminations per Second",
-            LABELS["cap_node"],
-            "bar_A_capacity_node_vs_diss.png"
+            f"Dissemination Capacity vs {_pretty_xlabel(xcol)} ({prefix})",
+            _pretty_xlabel(xcol),
+            Y_LABELS["cap"],
+            f"{prefix}__capacity.png"
         )
     else:
-        print("[WARN] cap_node_* missing for workload_diss_sweep_*; skipping capacity_node.")
+        print(f"[WARN] Missing cap_node_* columns for prefix={prefix!r}; skipping capacity plot.")
 
-    # Capacity (bar) - mean-per-run
-    if all(c in df_A.columns for c in [COLS["cap_run_mean"], COLS["cap_run_ci_low"], COLS["cap_run_ci_high"]]):
-        plot_bar_with_ci(
-            df_A,
-            "diss_per_sec",
-            COLS["cap_run_mean"],
-            COLS["cap_run_ci_low"],
-            COLS["cap_run_ci_high"],
-            COLS["algorithm"],
-            "Dissemination Capacity vs Dissemination Frequency (Mean per Run)",
-            "Disseminations per Second",
-            LABELS["cap_run"],
-            "bar_A_capacity_run_vs_diss.png"
-        )
-    else:
-        print("[WARN] cap_run_* missing for workload_diss_sweep_*; skipping capacity_run.")
-
-# ==========================================================
-# B) large_scale_density_*  (x = nodes)
-# ==========================================================
-df_B = df[df["scenario"].isin([
-    "large_scale_density_batman",
-    "large_scale_density_ip",
-])].copy()
-
-if df_B.empty:
-    print("[WARN] No rows for large_scale_density_*")
-else:
-    plot_bar_with_ci(
-        df_B,
-        COLS["nodes"],
-        COLS["packets_total_mean"],
-        COLS["packets_total_ci_low"],
-        COLS["packets_total_ci_high"],
-        COLS["algorithm"],
-        "Total Packets vs Swarm Size (Large Scale)",
-        LABELS["nodes"],
-        LABELS["total_packets"],
-        "bar_B_total_packets_vs_nodes.png"
-    )
-
-    if all(c in df_B.columns for c in [COLS["cap_node_mean"], COLS["cap_node_ci_low"], COLS["cap_node_ci_high"]]):
-        plot_bar_with_ci(
-            df_B,
-            COLS["nodes"],
-            COLS["cap_node_mean"],
-            COLS["cap_node_ci_low"],
-            COLS["cap_node_ci_high"],
-            COLS["algorithm"],
-            "Dissemination Capacity vs Swarm Size (Pooled by Node)",
-            LABELS["nodes"],
-            LABELS["cap_node"],
-            "bar_B_capacity_node_vs_nodes.png"
-        )
-    else:
-        print("[WARN] cap_node_* missing for large_scale_density_*; skipping capacity_node.")
-
-    if all(c in df_B.columns for c in [COLS["cap_run_mean"], COLS["cap_run_ci_low"], COLS["cap_run_ci_high"]]):
-        plot_bar_with_ci(
-            df_B,
-            COLS["nodes"],
-            COLS["cap_run_mean"],
-            COLS["cap_run_ci_low"],
-            COLS["cap_run_ci_high"],
-            COLS["algorithm"],
-            "Dissemination Capacity vs Swarm Size (Mean per Run)",
-            LABELS["nodes"],
-            LABELS["cap_run"],
-            "bar_B_capacity_run_vs_nodes.png"
-        )
-    else:
-        print("[WARN] cap_run_* missing for large_scale_density_*; skipping capacity_run.")
-
-# ==========================================================
-# C) workload_duration_cooldown_*  (x = duration, split by cooldown)
-# ==========================================================
-df_C = df[df["scenario"].isin([
-    "workload_duration_cooldown_batman",
-    "workload_duration_cooldown_ip",
-])].copy()
-
-if df_C.empty:
-    print("[WARN] No rows for workload_duration_cooldown_*")
-else:
-    cooldown_values = sorted(pd.to_numeric(df_C.get("cooldown"), errors="coerce").dropna().unique())
-
-    if not cooldown_values:
-        print("[WARN] No cooldown values found in workload_duration_cooldown_*; skipping.")
-    else:
-        for cd in cooldown_values:
-            df_cd = df_C[pd.to_numeric(df_C["cooldown"], errors="coerce") == cd].copy()
-            if df_cd.empty:
-                continue
-
-            suffix = f"cooldown_{str(cd).rstrip('0').rstrip('.') if isinstance(cd, float) else str(cd)}"
-
-            plot_bar_with_ci(
-                df_cd,
-                "duration",
-                COLS["packets_total_mean"],
-                COLS["packets_total_ci_low"],
-                COLS["packets_total_ci_high"],
-                COLS["algorithm"],
-                f"Total Packets vs Workload Duration (Cooldown={cd}s)",
-                "Workload Duration (s)",
-                LABELS["total_packets"],
-                f"bar_C_total_packets_vs_duration__{suffix}.png"
-            )
-
-            if all(c in df_cd.columns for c in [COLS["cap_node_mean"], COLS["cap_node_ci_low"], COLS["cap_node_ci_high"]]):
-                plot_bar_with_ci(
-                    df_cd,
-                    "duration",
-                    COLS["cap_node_mean"],
-                    COLS["cap_node_ci_low"],
-                    COLS["cap_node_ci_high"],
-                    COLS["algorithm"],
-                    f"Dissemination Capacity vs Workload Duration (Pooled by Node, Cooldown={cd}s)",
-                    "Workload Duration (s)",
-                    LABELS["cap_node"],
-                    f"bar_C_capacity_node_vs_duration__{suffix}.png"
-                )
-            else:
-                print(f"[WARN] cap_node_* missing for cooldown={cd}; skipping capacity_node.")
-
-            if all(c in df_cd.columns for c in [COLS["cap_run_mean"], COLS["cap_run_ci_low"], COLS["cap_run_ci_high"]]):
-                plot_bar_with_ci(
-                    df_cd,
-                    "duration",
-                    COLS["cap_run_mean"],
-                    COLS["cap_run_ci_low"],
-                    COLS["cap_run_ci_high"],
-                    COLS["algorithm"],
-                    f"Dissemination Capacity vs Workload Duration (Mean per Run, Cooldown={cd}s)",
-                    "Workload Duration (s)",
-                    LABELS["cap_run"],
-                    f"bar_C_capacity_run_vs_duration__{suffix}.png"
-                )
-            else:
-                print(f"[WARN] cap_run_* missing for cooldown={cd}; skipping capacity_run.")
-
-print("\nAll plots generated successfully!")
+print("\nAll plots generated.")
