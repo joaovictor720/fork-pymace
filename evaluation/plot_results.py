@@ -4,6 +4,7 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
+import matplotlib.ticker as mticker
 import seaborn as sns
 
 # ==========================
@@ -11,8 +12,12 @@ import seaborn as sns
 # ==========================
 INPUT_CSV = "results/aggregated_results.csv"
 JOBS_JSON = "evaluation/jobs.json"
+
 OUTPUT_DIR = Path("results/plots")
 OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
+
+# Choose output formats: any subset of {"pdf", "png"}
+OUTPUT_FORMATS = ("pdf",)  # e.g. ("pdf",) or ("pdf", "png")
 
 sns.set_theme(style="whitegrid", context="paper", font_scale=1.2)
 
@@ -23,21 +28,19 @@ PALETTE = {
 }
 
 LABELS_ALGO = {
-    "broadcast": "Flooding (BATMAN)",
-    "multiunicast": "App Multi-unicast (BATMAN)",
-    "rapid": "Gossip (RAPID)",
+    "broadcast": "BATMAN-based Flooding",
+    "multiunicast": "Best-effort Multicast",
+    "rapid": "Gossip-based Dissemination",
 }
 
 Y_LABELS = {
-    "cap": "Dissemination Capacity",
-    "pkt_total": "Total Packets (TX+RX)",
+    "cap": "Full Dissemination (%)",
+    "pkt_total": "Total Packets",
 }
 
 COLS = {
     "scenario": "scenario",
     "algorithm": "algorithm",
-    "nodes": "nodes",
-    "ops": "ops_per_sec",
 
     "pkt_total_mean": "pkt_total_mean",
     "pkt_total_ci_low": "pkt_total_ci_low",
@@ -68,12 +71,12 @@ def _read_jobs_prefixes(path: str):
             prefixes.add(sc)
     return sorted(prefixes)
 
-def _numeric(df, col):
+def _numeric(df: pd.DataFrame, col: str):
     if col in df.columns:
         df[col] = pd.to_numeric(df[col], errors="coerce")
     return df
 
-def _has_cols(df, cols):
+def _has_cols(df: pd.DataFrame, cols):
     return all(c in df.columns for c in cols)
 
 def _pick_x_axis_for_prefix(df_prefix: pd.DataFrame):
@@ -98,7 +101,7 @@ def _pick_x_axis_for_prefix(df_prefix: pd.DataFrame):
 
 def _pretty_xlabel(xcol: str):
     mapping = {
-        "nodes": "Number of Nodes",
+        "nodes": "Nodes per km²",
         "ops_per_sec": "Operations per Second (Global Load)",
         "diss_per_sec": "Disseminations per Second",
         "duration": "Workload Duration (s)",
@@ -116,71 +119,12 @@ def _format_xticks(vals):
             if abs(fv - round(fv)) < 1e-9:
                 out.append(str(int(round(fv))))
             else:
-                s = f"{fv:.6g}"
-                out.append(s)
+                out.append(f"{fv:.6g}")
         except Exception:
             out.append(str(v))
     return out
 
-def plot_bar_with_ci(df, x, y, ci_low, ci_high, algo_col,
-                     title, xlabel, ylabel, filename):
-    plt.figure(figsize=(8, 5))
-    ax = plt.gca()
-
-    algorithms = list(df[algo_col].dropna().unique())
-    x_values = sorted(pd.to_numeric(df[x], errors="coerce").dropna().unique())
-    x_pos = np.arange(len(x_values))
-    width = 0.35 if len(algorithms) <= 2 else 0.25
-
-    for i, algo in enumerate(algorithms):
-        subset = df[df[algo_col] == algo].copy()
-        subset = subset.sort_values(x)
-        metrics = pd.DataFrame({x: x_values}).merge(subset, on=x, how='left')
-
-        means = pd.to_numeric(metrics[y], errors="coerce").fillna(0.0)
-        lo = pd.to_numeric(metrics[ci_low], errors="coerce").fillna(means)
-        hi = pd.to_numeric(metrics[ci_high], errors="coerce").fillna(means)
-        yerr = [means - lo, hi - means]
-
-        if len(algorithms) == 1:
-            pos = x_pos
-        elif len(algorithms) == 2:
-            pos = x_pos - width/2 if i == 0 else x_pos + width/2
-        else:
-            offsets = np.linspace(-width, width, len(algorithms))
-            pos = x_pos + offsets[i]
-
-        color = PALETTE.get(algo, "gray")
-        label = LABELS_ALGO.get(algo, algo)
-
-        ax.bar(
-            pos, means, width,
-            label=label,
-            color=color, alpha=0.9,
-            yerr=yerr, capsize=5,
-            error_kw={"ecolor": "black", "alpha": 0.7}
-        )
-
-    ax.set_xticks(x_pos)
-    ax.set_xticklabels(_format_xticks(x_values))
-    ax.set_title(title, pad=15, fontsize=14, fontweight='bold')
-    ax.set_xlabel(xlabel, labelpad=10)
-    ax.set_ylabel(ylabel, labelpad=10)
-    ax.legend(frameon=True, framealpha=0.9)
-    ax.grid(True, axis='y', linestyle=":", alpha=0.6)
-    plt.tight_layout()
-    plt.savefig(OUTPUT_DIR / filename, dpi=300)
-    plt.close()
-
-    print(f"[OK] Saved: {filename}")
-
-# ==========================
-# LOAD
-# ==========================
-df = pd.read_csv(INPUT_CSV)
-
-# normalize scenario base prefix: remove _batman/_ip suffix
-def _scenario_prefix(s):
+def _scenario_prefix(s: str):
     s = str(s)
     if s.endswith("_batman"):
         return s[:-len("_batman")]
@@ -188,6 +132,133 @@ def _scenario_prefix(s):
         return s[:-len("_ip")]
     return s
 
+def _save_figure(base_filename_no_ext: str):
+    for ext in OUTPUT_FORMATS:
+        out_path = OUTPUT_DIR / f"{base_filename_no_ext}.{ext}"
+        kwargs = {"bbox_inches": "tight"}
+        if ext.lower() == "png":
+            kwargs["dpi"] = 300
+        plt.savefig(out_path, **kwargs)
+        print(f"[OK] Saved: {out_path}")
+
+def _apply_kilo_formatter(ax):
+    """
+    Format Y axis as x1000 (k) for readability. Example: 350000 -> 350k
+    Keeps the label unchanged.
+    """
+    def _fmt(v, _pos):
+        av = abs(v)
+        if av >= 1_000_000:
+            return f"{v/1_000_000:.3g}M"
+        if av >= 1_000:
+            return f"{v/1_000:.3g}k"
+        if av >= 1:
+            return f"{v:.3g}"
+        return f"{v:.3g}"
+    ax.yaxis.set_major_formatter(mticker.FuncFormatter(_fmt))
+
+def _apply_percent_axis(ax):
+    """
+    Format Y axis as percent (0..1 -> 0%..100%).
+    Also makes ticks nice and clamps to [0, 1] visually.
+    """
+    ax.set_ylim(0.0, 1.0)
+    ax.yaxis.set_major_formatter(mticker.PercentFormatter(xmax=1.0, decimals=0))
+
+def plot_bar_with_ci(
+    df: pd.DataFrame,
+    x: str,
+    y: str,
+    ci_low: str,
+    ci_high: str,
+    algo_col: str,
+    title: str,
+    xlabel: str,
+    ylabel: str,
+    base_filename_no_ext: str,
+    *,
+    y_axis_mode: str = "plain",  # "plain" | "percent_0_1" | "kilo"
+):
+    plt.figure(figsize=(8, 5))
+    ax = plt.gca()
+
+    algo_order = [a for a in ("broadcast", "multiunicast", "rapid") if a in set(df[algo_col].dropna().unique())]
+    if not algo_order:
+        algo_order = list(df[algo_col].dropna().unique())
+
+    x_values = sorted(pd.to_numeric(df[x], errors="coerce").dropna().unique())
+    x_pos = np.arange(len(x_values))
+
+    if len(algo_order) <= 1:
+        width = 0.55
+    elif len(algo_order) == 2:
+        width = 0.35
+    else:
+        width = 0.25
+
+    for i, algo in enumerate(algo_order):
+        subset = df[df[algo_col] == algo].copy()
+        subset = subset.sort_values(x)
+
+        metrics = pd.DataFrame({x: x_values}).merge(subset, on=x, how="left")
+
+        means = pd.to_numeric(metrics[y], errors="coerce")
+        lo = pd.to_numeric(metrics[ci_low], errors="coerce")
+        hi = pd.to_numeric(metrics[ci_high], errors="coerce")
+
+        mask = means.notna()
+        means = means.where(mask)
+        lo = lo.where(mask, means)
+        hi = hi.where(mask, means)
+
+        yerr_low = (means - lo).where(mask, 0.0)
+        yerr_high = (hi - means).where(mask, 0.0)
+        yerr = np.vstack([yerr_low.to_numpy(), yerr_high.to_numpy()])
+
+        if len(algo_order) == 1:
+            pos = x_pos
+        elif len(algo_order) == 2:
+            pos = x_pos - width / 2 if i == 0 else x_pos + width / 2
+        else:
+            offsets = np.linspace(-width, width, len(algo_order))
+            pos = x_pos + offsets[i]
+
+        color = PALETTE.get(algo, "gray")
+        label = LABELS_ALGO.get(algo, algo)
+
+        ax.bar(
+            pos[mask.to_numpy()],
+            means[mask].to_numpy(),
+            width,
+            label=label,
+            color=color,
+            alpha=0.9,
+            yerr=yerr[:, mask.to_numpy()],
+            capsize=5,
+            error_kw={"ecolor": "black", "alpha": 0.7},
+        )
+
+    ax.set_xticks(x_pos)
+    ax.set_xticklabels(_format_xticks(x_values))
+    ax.set_title(title, pad=12, fontsize=14, fontweight="bold")
+    ax.set_xlabel(xlabel, labelpad=8)
+    ax.set_ylabel(ylabel, labelpad=8)
+    ax.legend(frameon=True, framealpha=0.9)
+    ax.grid(True, axis="y", linestyle=":", alpha=0.6)
+
+    if y_axis_mode == "percent_0_1":
+        _apply_percent_axis(ax)
+    elif y_axis_mode == "kilo":
+        _apply_kilo_formatter(ax)
+
+    plt.tight_layout()
+    _save_figure(base_filename_no_ext)
+    plt.close()
+
+# ==========================
+# LOAD
+# ==========================
+df = pd.read_csv(INPUT_CSV)
 df["scenario_prefix"] = df[COLS["scenario"]].apply(_scenario_prefix)
 
 prefixes = _read_jobs_prefixes(JOBS_JSON)
@@ -210,36 +281,38 @@ for prefix in prefixes:
 
     df_p = _numeric(df_p, xcol)
 
-    # 1) Total packets
+    # 1) Total packets (keep label as-is, format Y in k/M)
     if _has_cols(df_p, [COLS["pkt_total_mean"], COLS["pkt_total_ci_low"], COLS["pkt_total_ci_high"]]):
         plot_bar_with_ci(
-            df_p,
-            xcol,
-            COLS["pkt_total_mean"],
-            COLS["pkt_total_ci_low"],
-            COLS["pkt_total_ci_high"],
-            COLS["algorithm"],
-            f"Total Packets vs {_pretty_xlabel(xcol)} ({prefix})",
-            _pretty_xlabel(xcol),
-            Y_LABELS["pkt_total"],
-            f"{prefix}__total_packets.png"
+            df=df_p,
+            x=xcol,
+            y=COLS["pkt_total_mean"],
+            ci_low=COLS["pkt_total_ci_low"],
+            ci_high=COLS["pkt_total_ci_high"],
+            algo_col=COLS["algorithm"],
+            title="",
+            xlabel=_pretty_xlabel(xcol),
+            ylabel=Y_LABELS["pkt_total"],
+            base_filename_no_ext=f"{prefix}__total_packets",
+            y_axis_mode="kilo",
         )
     else:
         print(f"[WARN] Missing total-packets columns for prefix={prefix!r}; skipping packets plot.")
 
-    # 2) Dissemination capacity (node-pooled only; label without 'pooled by node')
+    # 2) Dissemination capacity (show as percent 0..100%)
     if _has_cols(df_p, [COLS["cap_node_mean"], COLS["cap_node_ci_low"], COLS["cap_node_ci_high"]]):
         plot_bar_with_ci(
-            df_p,
-            xcol,
-            COLS["cap_node_mean"],
-            COLS["cap_node_ci_low"],
-            COLS["cap_node_ci_high"],
-            COLS["algorithm"],
-            f"Dissemination Capacity vs {_pretty_xlabel(xcol)} ({prefix})",
-            _pretty_xlabel(xcol),
-            Y_LABELS["cap"],
-            f"{prefix}__capacity.png"
+            df=df_p,
+            x=xcol,
+            y=COLS["cap_node_mean"],
+            ci_low=COLS["cap_node_ci_low"],
+            ci_high=COLS["cap_node_ci_high"],
+            algo_col=COLS["algorithm"],
+            title="",
+            xlabel=_pretty_xlabel(xcol),
+            ylabel=Y_LABELS["cap"],
+            base_filename_no_ext=f"{prefix}__capacity",
+            y_axis_mode="percent_0_1",
         )
     else:
         print(f"[WARN] Missing cap_node_* columns for prefix={prefix!r}; skipping capacity plot.")
