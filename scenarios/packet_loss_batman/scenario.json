@@ -1,5 +1,5 @@
 {
-  "name": "density_packet_loss_ip",
+  "name": "packet_loss_batman",
   "simulation": {
     "duration": 55,
     "start_delay": 5,
@@ -16,7 +16,7 @@
     "speed": [4.0, 4.2]
   },
   "network": {
-    "routing": "none",
+    "routing": "batman",
     "bandwidth": "11000000",
     "range": 160,
     "delay": 5,
@@ -33,7 +33,7 @@
   },
   "experiment": {
     "vary": {
-      "nodes.count": [10, 20, 30, 40, 50]
+      "network.error": [2, 4, 6, 8, 10]
     }
   }
 }

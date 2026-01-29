@@ -34,7 +34,7 @@ LABELS_ALGO = {
 }
 
 Y_LABELS = {
-    "cap": "Full Dissemination (%)",
+    "cap": "Synchronization (%)",
     "pkt_total": "Total Packets",
 }
 
@@ -101,7 +101,7 @@ def _pick_x_axis_for_prefix(df_prefix: pd.DataFrame):
 
 def _pretty_xlabel(xcol: str):
     mapping = {
-        "nodes": "Nodes per km²",
+        "nodes": "Number of Nodes",
         "ops_per_sec": "Operations per Second (Global Load)",
         "diss_per_sec": "Disseminations per Second",
         "duration": "Workload Duration (s)",
@@ -182,7 +182,9 @@ def plot_bar_with_ci(
     plt.figure(figsize=(8, 5))
     ax = plt.gca()
 
-    algo_order = [a for a in ("broadcast", "multiunicast", "rapid") if a in set(df[algo_col].dropna().unique())]
+    desired_order = ("multiunicast", "broadcast", "rapid")  # left -> middle -> right
+    present = set(df[algo_col].dropna().unique())
+    algo_order = [a for a in desired_order if a in present]
     if not algo_order:
         algo_order = list(df[algo_col].dropna().unique())
 

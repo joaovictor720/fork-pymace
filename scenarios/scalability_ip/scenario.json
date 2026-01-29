@@ -52,6 +52,26 @@
       {
         "nodes.count": 50,
         "simulation.area": [1290.994448736, 1290.994448736]
+      },
+      {
+        "nodes.count": 60,
+        "simulation.area": [1414.213562373, 1414.213562373]
+      },
+      {
+        "nodes.count": 70,
+        "simulation.area": [1516.57508881, 1516.57508881]
+      },
+      {
+        "nodes.count": 80,
+        "simulation.area": [1632.993161855, 1632.993161855]
+      },
+      {
+        "nodes.count": 90,
+        "simulation.area": [1732.050807569, 1732.050807569]
+      },
+      {
+        "nodes.count": 100,
+        "simulation.area": [1825.74185835, 1825.74185835]
       }
     ]
   }
