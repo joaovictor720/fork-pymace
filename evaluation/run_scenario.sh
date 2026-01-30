@@ -98,4 +98,4 @@ python "$ROOT_DIR/evaluation/collect_logs.py" "$RESULT_DIR"
 # -------------------------------
 # Post-process pcaps (host-side) and purge
 # -------------------------------
-python "$ROOT_DIR/evaluation/process_pcaps.py" "$RESULT_DIR" "$APP" --append-netlog --delete
+python "$ROOT_DIR/evaluation/process_pcaps.py" "$RESULT_DIR" "$APP" --append-netlog
