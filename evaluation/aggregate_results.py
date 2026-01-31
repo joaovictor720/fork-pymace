@@ -11,7 +11,7 @@ OUTPUT = sys.argv[2]
 df = pd.read_csv(INPUT)
 
 # -----------------------------
-# 1. Extrair nodes e ops_per_sec da coluna "variant"
+# 1. Extrair params da coluna "variant"
 # -----------------------------
 def extract_param(variant, key):
     if pd.isna(variant):
@@ -21,12 +21,22 @@ def extract_param(variant, key):
         return float(m.group(1))
     return None
 
+# Preserva nodes original (do CSV) antes de sobrescrever
+nodes_orig = None
+if "nodes" in df.columns:
+    nodes_orig = pd.to_numeric(df["nodes"], errors="coerce")
+
 if "variant" in df.columns:
     df["nodes"] = df["variant"].apply(lambda v: extract_param(v, "count"))
     df["ops_per_sec"] = df["variant"].apply(lambda v: extract_param(v, "ops_per_sec"))
     df["diss_per_sec"] = df["variant"].apply(lambda v: extract_param(v, "diss_per_sec"))
     df["duration"] = df["variant"].apply(lambda v: extract_param(v, "duration"))
     df["cooldown"] = df["variant"].apply(lambda v: extract_param(v, "cooldown"))
+    df["error"] = df["variant"].apply(lambda v: extract_param(v, "error"))
+
+    # Se variant não tiver count=..., mantém nodes original do CSV
+    if nodes_orig is not None:
+        df["nodes"] = pd.to_numeric(df["nodes"], errors="coerce").fillna(nodes_orig)
 
 # -----------------------------
 # 2. Função média + IC 95%
@@ -53,7 +63,7 @@ def mean_ci(series, confidence=0.95):
         "std": std,
         "n": n
     })
-    
+
 def keep_existing_cols(df_, cols):
     return [c for c in cols if c in df_.columns]
 
@@ -62,6 +72,9 @@ def keep_existing_cols(df_, cols):
 # -----------------------------
 def grouping_cols(scenario_name):
     s = str(scenario_name)
+
+    if "packet_loss" in s:
+        return ["scenario", "algorithm", "error"]
 
     if "workload_diss_sweep" in s:
         return ["scenario", "algorithm", "diss_per_sec"]
@@ -146,17 +159,26 @@ def merge_keys_from(cap_df, out_df):
     return [c for c in cap_df.columns if c in out_df.columns and c not in metric_cols]
 
 # -----------------------------
-# 4) NOVO: Capacidade de disseminação em duas formas
-#     - pooled por nó: todas as amostras (n = nós*run)
-#     - por run: média por run e IC em cima das runs (n = runs)
+# 4) Capacidade de disseminação (pooled por nó e por run)
 # -----------------------------
 cap_path = Path(INPUT).with_name("all_capacity_samples.csv")
 if cap_path.exists():
     cap = pd.read_csv(cap_path)
 
+    cap_nodes_orig = None
+    if "nodes" in cap.columns:
+        cap_nodes_orig = pd.to_numeric(cap["nodes"], errors="coerce")
+
     if "variant" in cap.columns:
         cap["nodes"] = cap["variant"].apply(lambda v: extract_param(v, "count"))
         cap["ops_per_sec"] = cap["variant"].apply(lambda v: extract_param(v, "ops_per_sec"))
+        cap["diss_per_sec"] = cap["variant"].apply(lambda v: extract_param(v, "diss_per_sec"))
+        cap["duration"] = cap["variant"].apply(lambda v: extract_param(v, "duration"))
+        cap["cooldown"] = cap["variant"].apply(lambda v: extract_param(v, "cooldown"))
+        cap["error"] = cap["variant"].apply(lambda v: extract_param(v, "error"))
+
+        if cap_nodes_orig is not None:
+            cap["nodes"] = pd.to_numeric(cap["nodes"], errors="coerce").fillna(cap_nodes_orig)
 
     cap["coverage"] = pd.to_numeric(cap.get("coverage"), errors="coerce")
 
@@ -184,7 +206,7 @@ if cap_path.exists():
 
     cap_node_out = pd.DataFrame(cap_node_rows)
 
-    # por run (média de nós dentro da run, depois IC sobre runs)
+    # por run
     cap_run_rows = []
     if "run" in cap.columns:
         for scenario_name, cap_s in cap.groupby("scenario"):
@@ -195,8 +217,6 @@ if cap_path.exists():
             cap_s = cap_s.dropna(subset=GROUP_COLS)
             group_plus_run = GROUP_COLS + ["run"]
 
-            # mean coverage por run dentro de cada grupo
-            group_plus_run = GROUP_COLS + ["run"]
             cap_run_means = (
                 cap_s
                 .groupby(group_plus_run, dropna=True)["coverage"]
@@ -219,8 +239,6 @@ if cap_path.exists():
                 cap_run_rows.append(row)
 
     cap_run_out = pd.DataFrame(cap_run_rows)
-
-    # merge no out final
 
     if not cap_node_out.empty:
         out = out.merge(cap_node_out, on=merge_keys_from(cap_node_out, out), how="left")

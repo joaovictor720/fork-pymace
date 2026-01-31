@@ -41,11 +41,9 @@ Y_LABELS = {
 COLS = {
     "scenario": "scenario",
     "algorithm": "algorithm",
-
     "pkt_total_mean": "pkt_total_mean",
     "pkt_total_ci_low": "pkt_total_ci_low",
     "pkt_total_ci_high": "pkt_total_ci_high",
-
     "cap_node_mean": "cap_node_mean",
     "cap_node_ci_low": "cap_node_ci_low",
     "cap_node_ci_high": "cap_node_ci_high",
@@ -81,6 +79,10 @@ def _has_cols(df: pd.DataFrame, cols):
 
 def _pick_x_axis_for_prefix(df_prefix: pd.DataFrame):
     candidates = [
+        "error",
+        "packet_loss",
+        "loss",
+        "loss_pct",
         "nodes",
         "ops_per_sec",
         "diss_per_sec",
@@ -101,7 +103,11 @@ def _pick_x_axis_for_prefix(df_prefix: pd.DataFrame):
 
 def _pretty_xlabel(xcol: str):
     mapping = {
-        "nodes": "Number of Nodes",
+        "error": "Packet Loss (%)",
+        "packet_loss": "Packet Loss (%)",
+        "loss": "Packet Loss (%)",
+        "loss_pct": "Packet Loss (%)",
+        "nodes": "Nodes per km²",
         "ops_per_sec": "Operations per Second (Global Load)",
         "diss_per_sec": "Disseminations per Second",
         "duration": "Workload Duration (s)",
@@ -111,15 +117,18 @@ def _pretty_xlabel(xcol: str):
     }
     return mapping.get(xcol, xcol)
 
-def _format_xticks(vals):
+def _format_xticks(vals, *, as_percent: bool = False):
     out = []
     for v in vals:
         try:
             fv = float(v)
             if abs(fv - round(fv)) < 1e-9:
-                out.append(str(int(round(fv))))
+                s = str(int(round(fv)))
             else:
-                out.append(f"{fv:.6g}")
+                s = f"{fv:.6g}"
+            if as_percent:
+                s = f"{s}%"
+            out.append(s)
         except Exception:
             out.append(str(v))
     return out
@@ -142,10 +151,6 @@ def _save_figure(base_filename_no_ext: str):
         print(f"[OK] Saved: {out_path}")
 
 def _apply_kilo_formatter(ax):
-    """
-    Format Y axis as x1000 (k) for readability. Example: 350000 -> 350k
-    Keeps the label unchanged.
-    """
     def _fmt(v, _pos):
         av = abs(v)
         if av >= 1_000_000:
@@ -158,10 +163,6 @@ def _apply_kilo_formatter(ax):
     ax.yaxis.set_major_formatter(mticker.FuncFormatter(_fmt))
 
 def _apply_percent_axis(ax):
-    """
-    Format Y axis as percent (0..1 -> 0%..100%).
-    Also makes ticks nice and clamps to [0, 1] visually.
-    """
     ax.set_ylim(0.0, 1.0)
     ax.yaxis.set_major_formatter(mticker.PercentFormatter(xmax=1.0, decimals=0))
 
@@ -178,11 +179,12 @@ def plot_bar_with_ci(
     base_filename_no_ext: str,
     *,
     y_axis_mode: str = "plain",  # "plain" | "percent_0_1" | "kilo"
+    x_tick_percent: bool = False,
 ):
     plt.figure(figsize=(8, 5))
     ax = plt.gca()
 
-    desired_order = ("multiunicast", "broadcast", "rapid")  # left -> middle -> right
+    desired_order = ("multiunicast", "broadcast", "rapid")
     present = set(df[algo_col].dropna().unique())
     algo_order = [a for a in desired_order if a in present]
     if not algo_order:
@@ -241,11 +243,19 @@ def plot_bar_with_ci(
         )
 
     ax.set_xticks(x_pos)
-    ax.set_xticklabels(_format_xticks(x_values))
+    ax.set_xticklabels(_format_xticks(x_values, as_percent=x_tick_percent))
     ax.set_title(title, pad=12, fontsize=14, fontweight="bold")
     ax.set_xlabel(xlabel, labelpad=8)
     ax.set_ylabel(ylabel, labelpad=8)
-    ax.legend(frameon=True, framealpha=0.9)
+
+    ax.legend(
+        loc="lower center",
+        bbox_to_anchor=(0.5, 1.02),
+        ncol=min(3, len(algo_order)),
+        frameon=True,
+        framealpha=0.9,
+    )
+
     ax.grid(True, axis="y", linestyle=":", alpha=0.6)
 
     if y_axis_mode == "percent_0_1":
@@ -253,7 +263,7 @@ def plot_bar_with_ci(
     elif y_axis_mode == "kilo":
         _apply_kilo_formatter(ax)
 
-    plt.tight_layout()
+    plt.tight_layout(rect=(0, 0, 1, 0.95))
     _save_figure(base_filename_no_ext)
     plt.close()
 
@@ -283,7 +293,9 @@ for prefix in prefixes:
 
     df_p = _numeric(df_p, xcol)
 
-    # 1) Total packets (keep label as-is, format Y in k/M)
+    x_as_percent = (str(prefix).startswith("packet_loss") and xcol in {"error", "packet_loss", "loss", "loss_pct"})
+
+    # 1) Total packets
     if _has_cols(df_p, [COLS["pkt_total_mean"], COLS["pkt_total_ci_low"], COLS["pkt_total_ci_high"]]):
         plot_bar_with_ci(
             df=df_p,
@@ -297,11 +309,12 @@ for prefix in prefixes:
             ylabel=Y_LABELS["pkt_total"],
             base_filename_no_ext=f"{prefix}__total_packets",
             y_axis_mode="kilo",
+            x_tick_percent=x_as_percent,
         )
     else:
         print(f"[WARN] Missing total-packets columns for prefix={prefix!r}; skipping packets plot.")
 
-    # 2) Dissemination capacity (show as percent 0..100%)
+    # 2) Dissemination capacity
     if _has_cols(df_p, [COLS["cap_node_mean"], COLS["cap_node_ci_low"], COLS["cap_node_ci_high"]]):
         plot_bar_with_ci(
             df=df_p,
@@ -315,6 +328,7 @@ for prefix in prefixes:
             ylabel=Y_LABELS["cap"],
             base_filename_no_ext=f"{prefix}__capacity",
             y_axis_mode="percent_0_1",
+            x_tick_percent=x_as_percent,
         )
     else:
         print(f"[WARN] Missing cap_node_* columns for prefix={prefix!r}; skipping capacity plot.")
