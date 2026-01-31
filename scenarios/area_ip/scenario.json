@@ -1,0 +1,45 @@
+{
+  "name": "area_ip",
+  "simulation": {
+    "duration": 55,
+    "start_delay": 5,
+    "area": { "x": 1000, "y": 1000 }
+  },
+  "nodes": {
+    "count": 30,
+    "distribution": "random",
+    "seed": 22
+  },
+  "mobility": {
+    "model": "random_waypoint",
+    "pause": 0,
+    "speed": [4.0, 4.2]
+  },
+  "network": {
+    "routing": "none",
+    "bandwidth": "11000000",
+    "range": 160,
+    "delay": 5,
+    "jitter": 0,
+    "error": 0
+  },
+  "node_config": {
+    "udp_port": 5001,
+    "ops_per_sec": 2.0,
+    "diss_per_sec": 1.0,
+    "monitor_interval": 2,
+    "duration": 10,
+    "cooldown": 10
+  },
+  "experiment": {
+    "vary":{
+      "simulation.area": [
+        [1732.0508, 1732.0508],
+        [1224.7448, 1224.7448],
+        [1000.0, 1000.0],
+        [866.0254, 866.0254],
+        [774.5967, 774.5967]
+      ]
+    }
+  }
+}
