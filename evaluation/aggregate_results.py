@@ -11,7 +11,17 @@ OUTPUT = sys.argv[2]
 df = pd.read_csv(INPUT)
 
 # -----------------------------
-# 1. Extrair params da coluna "variant"
+# 0) Preferir nodes_cfg/density vindos do scenario.json (coletados em collect_all_results.py)
+# -----------------------------
+if "nodes_cfg" in df.columns:
+    df["nodes_cfg"] = pd.to_numeric(df["nodes_cfg"], errors="coerce")
+    df["nodes"] = df["nodes_cfg"]
+
+if "density" in df.columns:
+    df["density"] = pd.to_numeric(df["density"], errors="coerce")
+
+# -----------------------------
+# 1) Extrair params da coluna "variant" (mantém compatibilidade com cenários antigos)
 # -----------------------------
 def extract_param(variant, key):
     if pd.isna(variant):
@@ -21,25 +31,25 @@ def extract_param(variant, key):
         return float(m.group(1))
     return None
 
-# Preserva nodes original (do CSV) antes de sobrescrever
 nodes_orig = None
 if "nodes" in df.columns:
     nodes_orig = pd.to_numeric(df["nodes"], errors="coerce")
 
 if "variant" in df.columns:
-    df["nodes"] = df["variant"].apply(lambda v: extract_param(v, "count"))
+    # só preenche se ainda não houver nodes vindo de nodes_cfg
+    if "nodes_cfg" not in df.columns:
+        df["nodes"] = df["variant"].apply(lambda v: extract_param(v, "count"))
+        if nodes_orig is not None:
+            df["nodes"] = pd.to_numeric(df["nodes"], errors="coerce").fillna(nodes_orig)
+
     df["ops_per_sec"] = df["variant"].apply(lambda v: extract_param(v, "ops_per_sec"))
     df["diss_per_sec"] = df["variant"].apply(lambda v: extract_param(v, "diss_per_sec"))
     df["duration"] = df["variant"].apply(lambda v: extract_param(v, "duration"))
     df["cooldown"] = df["variant"].apply(lambda v: extract_param(v, "cooldown"))
     df["error"] = df["variant"].apply(lambda v: extract_param(v, "error"))
 
-    # Se variant não tiver count=..., mantém nodes original do CSV
-    if nodes_orig is not None:
-        df["nodes"] = pd.to_numeric(df["nodes"], errors="coerce").fillna(nodes_orig)
-
 # -----------------------------
-# 2. Função média + IC 95%
+# 2) Função média + IC 95%
 # -----------------------------
 def mean_ci(series, confidence=0.95):
     series = pd.to_numeric(series, errors="coerce").dropna()
@@ -68,11 +78,22 @@ def keep_existing_cols(df_, cols):
     return [c for c in cols if c in df_.columns]
 
 # -----------------------------
-# 3. Decide agrupamento por cenário
+# 3) Decide agrupamento por cenário
 # -----------------------------
 def grouping_cols(scenario_name):
     s = str(scenario_name)
 
+    # seus cenários do artigo
+    if s.startswith("density_") or s.startswith("area_"):
+        # queremos X em densidade (nodes/km^2), independentemente do que varia no JSON
+        if "density" in df.columns:
+            return ["scenario", "algorithm", "density"]
+        return ["scenario", "algorithm", "nodes"]
+
+    if s.startswith("scalability_"):
+        return ["scenario", "algorithm", "nodes"]
+
+    # cenários antigos/gerais
     if "packet_loss" in s:
         return ["scenario", "algorithm", "error"]
 
@@ -85,15 +106,19 @@ def grouping_cols(scenario_name):
     if "workload_duration_cooldown" in s:
         return ["scenario", "algorithm", "duration", "cooldown"]
 
-    # fallback antigo
     if "scenario_C" in s or "stress" in s.lower():
         return ["scenario", "algorithm", "ops_per_sec"]
+
     return ["scenario", "algorithm", "nodes"]
 
 rows = []
 
 for scenario_name, df_s in df.groupby("scenario"):
     GROUP_COLS = grouping_cols(scenario_name)
+
+    GROUP_COLS = keep_existing_cols(df_s, GROUP_COLS)
+    if not GROUP_COLS:
+        continue
 
     df_s = df_s.dropna(subset=GROUP_COLS)
 
@@ -165,20 +190,29 @@ cap_path = Path(INPUT).with_name("all_capacity_samples.csv")
 if cap_path.exists():
     cap = pd.read_csv(cap_path)
 
+    if "nodes_cfg" in cap.columns:
+        cap["nodes_cfg"] = pd.to_numeric(cap["nodes_cfg"], errors="coerce")
+        cap["nodes"] = cap["nodes_cfg"]
+
+    if "density" in cap.columns:
+        cap["density"] = pd.to_numeric(cap["density"], errors="coerce")
+
+    # compat (caso não exista nodes_cfg)
     cap_nodes_orig = None
     if "nodes" in cap.columns:
         cap_nodes_orig = pd.to_numeric(cap["nodes"], errors="coerce")
 
     if "variant" in cap.columns:
-        cap["nodes"] = cap["variant"].apply(lambda v: extract_param(v, "count"))
+        if "nodes_cfg" not in cap.columns:
+            cap["nodes"] = cap["variant"].apply(lambda v: extract_param(v, "count"))
+            if cap_nodes_orig is not None:
+                cap["nodes"] = pd.to_numeric(cap["nodes"], errors="coerce").fillna(cap_nodes_orig)
+
         cap["ops_per_sec"] = cap["variant"].apply(lambda v: extract_param(v, "ops_per_sec"))
         cap["diss_per_sec"] = cap["variant"].apply(lambda v: extract_param(v, "diss_per_sec"))
         cap["duration"] = cap["variant"].apply(lambda v: extract_param(v, "duration"))
         cap["cooldown"] = cap["variant"].apply(lambda v: extract_param(v, "cooldown"))
         cap["error"] = cap["variant"].apply(lambda v: extract_param(v, "error"))
-
-        if cap_nodes_orig is not None:
-            cap["nodes"] = pd.to_numeric(cap["nodes"], errors="coerce").fillna(cap_nodes_orig)
 
     cap["coverage"] = pd.to_numeric(cap.get("coverage"), errors="coerce")
 
