@@ -19,7 +19,12 @@ OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
 
 OUTPUT_FORMATS = ("pdf",)
 
-# LaTeX-like typography without requiring LaTeX installation
+BASE_FONT_SCALE = 1.2
+FONT_SCALE = 1.6
+FIG_SCALE = FONT_SCALE / BASE_FONT_SCALE
+
+BASE_FIGSIZE = (8, 5)
+
 plt.rcParams.update({
     "font.family": "serif",
     "font.serif": ["Computer Modern Roman", "CMU Serif", "DejaVu Serif"],
@@ -29,7 +34,7 @@ plt.rcParams.update({
     "ps.fonttype": 42,
 })
 
-sns.set_theme(style="whitegrid", context="paper", font_scale=1.2)
+sns.set_theme(style="whitegrid", context="paper", font_scale=FONT_SCALE)
 
 PALETTE = {
     "broadcast": "#1f77b4",
@@ -95,10 +100,10 @@ def _scenario_prefix(s: str):
         return s[:-len("_ip")]
     return s
 
-def _save_figure(base_filename_no_ext: str):
+def _save_figure(fig, base_filename_no_ext: str):
     for ext in OUTPUT_FORMATS:
         out_path = OUTPUT_DIR / f"{base_filename_no_ext}.{ext}"
-        plt.savefig(out_path, bbox_inches="tight")
+        fig.savefig(out_path, bbox_inches="tight")
         print(f"[OK] Saved: {out_path}")
 
 def _apply_percent_axis(ax):
@@ -106,17 +111,15 @@ def _apply_percent_axis(ax):
     ax.yaxis.set_major_formatter(mticker.PercentFormatter(xmax=1.0, decimals=0))
 
 def _apply_thousands_sci(ax):
-    # Forces ×10^3 style (scientific offset), avoids "50k" formatting
     fmt = ScalarFormatter(useMathText=True)
     fmt.set_scientific(True)
     fmt.set_powerlimits((3, 3))
     ax.yaxis.set_major_formatter(fmt)
     ax.ticklabel_format(axis="y", style="sci", scilimits=(3, 3), useMathText=True)
 
-    # Move the scientific offset text slightly away from the legend zone
     off = ax.yaxis.get_offset_text()
-    off.set_x(-0.02)     # slightly closer to axis
-    off.set_y(1.01)      # slightly up, but not too much (avoids legend overlap)
+    off.set_x(-0.02)
+    off.set_y(1.01)
 
 def _format_xticks(vals):
     out = []
@@ -149,7 +152,6 @@ def _xcol_for(prefix: str, df_prefix: pd.DataFrame):
     return "nodes"
 
 def _apply_top_legend(ax, ncol: int):
-    # Slightly higher than before to avoid overlapping the y-axis scientific offset (×10^3)
     ax.legend(
         loc="lower center",
         bbox_to_anchor=(0.5, 1.08),
@@ -158,6 +160,14 @@ def _apply_top_legend(ax, ncol: int):
         framealpha=0.9,
         borderaxespad=0.0,
     )
+
+def _new_fig_ax():
+    w, h = BASE_FIGSIZE
+    fig, ax = plt.subplots(figsize=(w * FIG_SCALE, h * FIG_SCALE))
+    return fig, ax
+
+def _finalize_layout(fig):
+    fig.subplots_adjust(left=0.12, right=0.98, bottom=0.14, top=0.80)
 
 def plot_bar_with_ci(
     df: pd.DataFrame,
@@ -170,10 +180,9 @@ def plot_bar_with_ci(
     ylabel: str,
     base_filename_no_ext: str,
     *,
-    y_axis_mode: str = "plain",  # "plain" | "percent_0_1" | "thousands_sci"
+    y_axis_mode: str = "plain",
 ):
-    plt.figure(figsize=(8, 5))
-    ax = plt.gca()
+    fig, ax = _new_fig_ax()
 
     desired_order = ("multiunicast", "broadcast", "rapid")
     present = set(df[algo_col].dropna().unique())
@@ -248,10 +257,9 @@ def plot_bar_with_ci(
     elif y_axis_mode == "thousands_sci":
         _apply_thousands_sci(ax)
 
-    # Reserve a bit more top space for the legend
-    plt.tight_layout(rect=(0, 0, 1, 0.92))
-    _save_figure(base_filename_no_ext)
-    plt.close()
+    _finalize_layout(fig)
+    _save_figure(fig, base_filename_no_ext)
+    plt.close(fig)
 
 def plot_line_with_ci(
     df: pd.DataFrame,
@@ -264,10 +272,9 @@ def plot_line_with_ci(
     ylabel: str,
     base_filename_no_ext: str,
     *,
-    y_axis_mode: str = "plain",  # "plain" | "percent_0_1"
+    y_axis_mode: str = "plain",
 ):
-    plt.figure(figsize=(8, 5))
-    ax = plt.gca()
+    fig, ax = _new_fig_ax()
 
     desired_order = ("multiunicast", "broadcast", "rapid")
     present = set(df[algo_col].dropna().unique())
@@ -315,9 +322,9 @@ def plot_line_with_ci(
     if y_axis_mode == "percent_0_1":
         _apply_percent_axis(ax)
 
-    plt.tight_layout(rect=(0, 0, 1, 0.92))
-    _save_figure(base_filename_no_ext)
-    plt.close()
+    _finalize_layout(fig)
+    _save_figure(fig, base_filename_no_ext)
+    plt.close(fig)
 
 # ==========================
 # LOAD
@@ -347,7 +354,6 @@ for prefix in prefixes:
 
     xlabel = _xlabel_for(prefix)
 
-    # 1) Total packets (bars only)
     if _has_cols(df_p, [COLS["pkt_total_mean"], COLS["pkt_total_ci_low"], COLS["pkt_total_ci_high"]]):
         plot_bar_with_ci(
             df=df_p,
@@ -364,7 +370,6 @@ for prefix in prefixes:
     else:
         print(f"[WARN] Missing total-packets columns for prefix={prefix!r}; skipping packets plot.")
 
-    # 2) Dissemination capacity (bars + lines)
     if _has_cols(df_p, [COLS["cap_node_mean"], COLS["cap_node_ci_low"], COLS["cap_node_ci_high"]]):
         plot_bar_with_ci(
             df=df_p,
