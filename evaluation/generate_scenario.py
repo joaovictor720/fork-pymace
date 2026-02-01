@@ -76,8 +76,13 @@ duration_s = float(node_cfg.get("duration", 10))
 cooldown_s = float(node_cfg.get("cooldown", 10))
 
 # Captura cobre duration+cooldown com pequena folga.
-# Mantém a captura curta e evita depender do teardown do MACE.
 CAPTURE_SEC = int(math.ceil(duration_s + cooldown_s + 1.0))
+
+# GPS logging: conforme pedido do professor
+GPS_INTERVAL_S = float(node_cfg.get("gps_interval", 0.5))
+GPS_LOG_SEC = float(node_cfg.get("gps_duration", duration_s + cooldown_s))  # por padrão, só durante workload
+
+gps_logger_path = root / "evaluation" / "gps_logger.py"
 
 for i, (x, y) in enumerate(positions):
     mob = sc["mobility"]
@@ -106,7 +111,6 @@ for i, (x, y) in enumerate(positions):
             f"sudo ip addr add 10.0.0.{i+1}/24 dev bat0; "
         )
     else:
-        # IP: não reconfigura endereço/rota; deixa o MACE fazer.
         base_net_setup = (
             f"sudo ip link set up dev eth0; "
         )
@@ -122,25 +126,38 @@ for i, (x, y) in enumerate(positions):
         f"LOG_FILE=\\\"\\$RESULT_DIR/node_{i}.net.log\\\"; "
         f"PCAP_FILE=\\\"\\$RESULT_DIR/node_{i}.pcap\\\"; "
         f"TCPDUMP_ERR=\\\"\\$RESULT_DIR/node_{i}.tcpdump.stderr\\\"; "
+        f"GPS_FILE=\\\"\\$RESULT_DIR/node_{i}.gps.csv\\\"; "
+        f"GPS_ERR=\\\"\\$RESULT_DIR/node_{i}.gps.stderr\\\"; "
         f"echo \\\"APP={app}\\\" > \\\"\\$LOG_FILE\\\"; "
 
-        # tcpdump com timeout: encerra com SIGINT e fecha o arquivo corretamente
+        # tcpdump com timeout
         f"sudo timeout -s INT {CAPTURE_SEC} tcpdump -i eth0 -w \\\"\\$PCAP_FILE\\\" "
         f"'{tcpdump_filter}' >/dev/null 2>\\\"\\$TCPDUMP_ERR\\\" & "
         f"TCPDUMP_PID=\\$!; "
         f"echo \\\"TCPDUMP_PID=\\$TCPDUMP_PID\\\" >> \\\"\\$LOG_FILE\\\"; "
+
+        # GPS logger (background)
+        f"GPS_TAG=\\\"node{i}\\\"; "
+        f"/usr/bin/python3 {gps_logger_path} "
+        f"--tag \\\"\\$GPS_TAG\\\" --node {i} --out \\\"\\$GPS_FILE\\\" "
+        f"--interval {GPS_INTERVAL_S} --duration {GPS_LOG_SEC} "
+        f">/dev/null 2>\\\"\\$GPS_ERR\\\" & "
+        f"GPS_PID=\\$!; "
+        f"echo \\\"GPS_PID=\\$GPS_PID\\\" >> \\\"\\$LOG_FILE\\\"; "
+        f"echo \\\"GPS_FILE=\\$GPS_FILE\\\" >> \\\"\\$LOG_FILE\\\"; "
 
         # App
         f"__CRDT_BIN__ -id {i} -config __CRDT_NODE_CONFIG__; "
         f"APP_RC=\\$?; "
         f"echo \\\"APP_RC=\\$APP_RC\\\" >> \\\"\\$LOG_FILE\\\"; "
 
-        # Não mata manualmente: timeout garante fechamento limpo.
-        # Só espera o wrapper terminar, se ainda estiver rodando.
+        # waits
         f"wait \\$TCPDUMP_PID 2>/dev/null || true; "
+        f"wait \\$GPS_PID 2>/dev/null || true; "
         f"sync; "
         f"echo \\\"PCAP_SAVED=\\$PCAP_FILE\\\" >> \\\"\\$LOG_FILE\\\"; "
-        f"echo \\\"TCPDUMP_STDERR=\\$TCPDUMP_ERR\\\" >> \\\"\\$LOG_FILE\\\"\""
+        f"echo \\\"TCPDUMP_STDERR=\\$TCPDUMP_ERR\\\" >> \\\"\\$LOG_FILE\\\"; "
+        f"echo \\\"GPS_STDERR=\\$GPS_ERR\\\" >> \\\"\\$LOG_FILE\\\"\""
     ]
 
     node = {
@@ -174,7 +191,8 @@ mace = {
         "username": "mace",
         "disks_folder": "/mnt/pymace/",
         "report_folder": "/home/mace/git/fork-pymace/reports/",
-        "emane_location": "/usr/share/emane"
+        "emane_location": "/usr/share/emane",
+        "emane_scale": 1.0
     },
     "networks": [
         {
@@ -199,3 +217,4 @@ with open(out_file, "w", encoding="utf-8") as f:
 
 print(f"[OK] Generated {out_file}")
 print(f"[INFO] Nodes: {node_count}, distribution: {distribution}, seed: {seed}, app: {app}, net_setup: {net_setup}, capture_sec: {CAPTURE_SEC}")
+print(f"[INFO] GPS: interval={GPS_INTERVAL_S}s, duration={GPS_LOG_SEC}s, gps_logger={gps_logger_path}")

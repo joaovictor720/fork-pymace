@@ -1,0 +1,35 @@
+{
+  "name": "topology_degree_ecdf",
+  "simulation": {
+    "duration": 55,
+    "start_delay": 5,
+    "area": { "x": 1000, "y": 1000 }
+  },
+  "nodes": {
+    "count": 30,
+    "distribution": "random",
+    "seed": 22
+  },
+  "mobility": {
+    "model": "random_waypoint",
+    "pause": 0,
+    "speed": [4.0, 4.2]
+  },
+  "network": {
+    "routing": "batman",
+    "bandwidth": "11000000",
+    "range": 160,
+    "delay": 5,
+    "jitter": 0,
+    "error": 0
+  },
+  "node_config": {
+    "gps_interval": 1.0,
+    "udp_port": 5001,
+    "ops_per_sec": 2.0,
+    "diss_per_sec": 1.0,
+    "monitor_interval": 2,
+    "duration": 10,
+    "cooldown": 10
+  }
+}
