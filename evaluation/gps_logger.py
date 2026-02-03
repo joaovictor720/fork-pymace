@@ -5,55 +5,65 @@ import pickle
 import socket
 import struct
 import time
-import traceback
-from typing import Any, Optional, Tuple
+from typing import Any, Tuple
+
+
+TIMEOUT_S = 3.0
+RETRIES = 3
+RETRY_SLEEP_S = 0.05
+FLUSH_EVERY = 10
 
 
 class GPSBridge:
     def __init__(self, tag: str) -> None:
         self.tag = tag
+        self.sock_path = "/tmp/" + self.tag + "_gps.sock"
 
-    def get_position(self) -> bytes:
+    def _recv_exact(self, sock: socket.socket, n: int):
+        buf = b""
+        while len(buf) < n:
+            chunk = sock.recv(n - len(buf))
+            if not chunk:
+                return None
+            buf += chunk
+        return buf
+
+    def _try_once(self):
         data = [self.tag, "GET_POSITION"]
         payload = pickle.dumps(data)
         length = len(payload)
 
         gps = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
-        gps.settimeout(1)
-
-        sock_path = "/tmp/" + self.tag + "_gps.sock"
+        gps.settimeout(TIMEOUT_S)
 
         try:
-            gps.connect(sock_path)
-        except (FileNotFoundError, ConnectionRefusedError, socket.timeout, OSError):
-            gps.close()
-            return pickle.dumps([-1.0, -1.0, -1.0])
-
-        try:
+            gps.connect(self.sock_path)
             gps.sendall(struct.pack("!I", length))
             gps.sendall(payload)
 
-            lengthbuf = gps.recv(4)
-            if lengthbuf is None or len(lengthbuf) != 4:
-                gps.close()
-                return pickle.dumps([-1.0, -1.0, -1.0])
+            lengthbuf = self._recv_exact(gps, 4)
+            if lengthbuf is None:
+                return None
 
             resp_len, = struct.unpack("!I", lengthbuf)
-            buf = b""
-            remaining = resp_len
-            while remaining > 0:
-                chunk = gps.recv(remaining)
-                if not chunk:
-                    gps.close()
-                    return pickle.dumps([-1.0, -1.0, -1.0])
-                buf += chunk
-                remaining -= len(chunk)
-
-            gps.close()
+            buf = self._recv_exact(gps, int(resp_len))
             return buf
         except Exception:
-            gps.close()
-            return pickle.dumps([-1.0, -1.0, -1.0])
+            return None
+        finally:
+            try:
+                gps.close()
+            except Exception:
+                pass
+
+    def get_position(self) -> bytes:
+        for i in range(max(1, RETRIES)):
+            out = self._try_once()
+            if out is not None:
+                return out
+            if i + 1 < RETRIES:
+                time.sleep(RETRY_SLEEP_S)
+        return pickle.dumps([-1.0, -1.0, -1.0])
 
 
 def _coerce_xyz(obj: Any) -> Tuple[float, float, float, int]:
@@ -110,6 +120,7 @@ def main() -> int:
         w.writerow(["time_s", "node", "x_m", "y_m", "z_m", "ok"])
 
         next_t = t0
+        nrows = 0
         while True:
             now = time.monotonic()
             elapsed = now - t0
@@ -118,12 +129,16 @@ def main() -> int:
 
             x, y, z, ok = poll_once(args.tag)
             w.writerow([f"{elapsed:.9f}", args.node, f"{x:.6f}", f"{y:.6f}", f"{z:.6f}", ok])
-            f.flush()
+            nrows += 1
+            if (nrows % FLUSH_EVERY) == 0:
+                f.flush()
 
             next_t += args.interval
             sleep_s = next_t - time.monotonic()
             if sleep_s > 0:
                 time.sleep(sleep_s)
+
+        f.flush()
 
     return 0
 
