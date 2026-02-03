@@ -74,8 +74,10 @@ def save_points_csv(out_prefix: Path, metric: str, kind: str, label: str, x: np.
     fp = out_prefix.with_name(f"{out_prefix.name}_{metric}_{kind}_{safe_label}.csv")
     if metric == "degree":
         df = pd.DataFrame({"degree": x.astype(int), kind: y})
-    else:
+    elif metric == "component":
         df = pd.DataFrame({"component_size": x.astype(int), kind: y})
+    else:
+        df = pd.DataFrame({"components_count": x.astype(int), kind: y})
     df.to_csv(fp, index=False)
     print(f"[OK] Wrote: {fp}")
 
@@ -89,6 +91,7 @@ def plot_multi(
     xmin: int,
     xmax: int,
     drawstyle: Optional[str],
+    ylim_top: float,
 ):
     plt.figure(figsize=(7, 4.5))
     for label, x, y in series:
@@ -99,7 +102,7 @@ def plot_multi(
 
     set_integer_xticks(xmin, xmax, max_xticks)
 
-    plt.ylim(0.0, 1.0)
+    plt.ylim(0.0, ylim_top)
     plt.xlabel(xlabel)
     plt.ylabel(ylabel)
     plt.grid(True, linestyle=":", alpha=0.6)
@@ -110,6 +113,18 @@ def plot_multi(
     print(f"[OK] Saved: {out_path}")
 
 
+def extract_snapshot_values(df: pd.DataFrame, col: str) -> np.ndarray:
+    if col not in df.columns:
+        return np.array([], dtype=np.int64)
+    needed = ["run", "time_bin_s", col]
+    for c in needed:
+        if c not in df.columns:
+            return np.array([], dtype=np.int64)
+    snap = df[needed].dropna().drop_duplicates(subset=["run", "time_bin_s"])
+    vals = pd.to_numeric(snap[col], errors="coerce").dropna().astype(int).to_numpy()
+    return vals
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--in_csv", required=True, nargs="+")
@@ -117,6 +132,7 @@ def main():
     ap.add_argument("--max_xticks", type=int, default=9)
     ap.add_argument("--extend_ecdf_to_global_x", action="store_true")
     ap.add_argument("--pmf_style", choices=["line", "step"], default="line")
+    ap.add_argument("--plot_components_count", action="store_true")
     args = ap.parse_args()
 
     in_paths = [Path(p) for p in args.in_csv]
@@ -128,10 +144,15 @@ def main():
     comp_ecdf_series = []
     comp_pmf_series = []
 
+    components_ecdf_series = []
+    components_pmf_series = []
+
     degree_xmins = []
     degree_xmaxs = []
     comp_xmins = []
     comp_xmaxs = []
+    components_xmins = []
+    components_xmaxs = []
 
     per_csv_cache: List[Dict[str, object]] = []
 
@@ -161,6 +182,8 @@ def main():
         comp_xmins.append(int(x_cs_ecdf.min()))
         comp_xmaxs.append(int(x_cs_ecdf.max()))
 
+        comps_vals = extract_snapshot_values(df, "components_count")
+
         per_csv_cache.append({
             "label": label,
             "x_deg_ecdf": x_deg_ecdf,
@@ -171,7 +194,13 @@ def main():
             "y_cs_ecdf": y_cs_ecdf,
             "x_cs_pmf": x_cs_pmf,
             "y_cs_pmf": y_cs_pmf,
+            "comps_vals": comps_vals,
         })
+
+        if args.plot_components_count and comps_vals.size > 0:
+            x_cc_ecdf, _ = ecdf_points(comps_vals)
+            components_xmins.append(int(x_cc_ecdf.min()))
+            components_xmaxs.append(int(x_cc_ecdf.max()))
 
     if not per_csv_cache:
         raise SystemExit("[ERROR] No valid samples across input CSVs.")
@@ -180,6 +209,14 @@ def main():
     deg_xmax = int(max(degree_xmaxs))
     cs_xmin = int(min(comp_xmins))
     cs_xmax = int(max(comp_xmaxs))
+
+    have_components = args.plot_components_count and len(components_xmins) > 0
+    if have_components:
+        cc_xmin = int(min(components_xmins))
+        cc_xmax = int(max(components_xmaxs))
+    else:
+        cc_xmin = 0
+        cc_xmax = 0
 
     for it in per_csv_cache:
         label = str(it["label"])
@@ -208,6 +245,18 @@ def main():
         save_points_csv(out_prefix, "component", "ecdf", label, x_cs_ecdf, y_cs_ecdf)
         save_points_csv(out_prefix, "component", "pmf", label, x_cs_pmf, y_cs_pmf)
 
+        if have_components:
+            comps_vals = np.array(it["comps_vals"])
+            if comps_vals.size > 0:
+                x_cc_ecdf, y_cc_ecdf = ecdf_points(comps_vals)
+                x_cc_pmf, y_cc_pmf = pmf_points(comps_vals)
+                if args.extend_ecdf_to_global_x:
+                    x_cc_ecdf, y_cc_ecdf = extend_ecdf_to_xmax(x_cc_ecdf, y_cc_ecdf, cc_xmax)
+                components_ecdf_series.append((label, x_cc_ecdf, y_cc_ecdf))
+                components_pmf_series.append((label, x_cc_pmf, y_cc_pmf))
+                save_points_csv(out_prefix, "components", "ecdf", label, x_cc_ecdf, y_cc_ecdf)
+                save_points_csv(out_prefix, "components", "pmf", label, x_cc_pmf, y_cc_pmf)
+
     drawstyle_pmf = None if args.pmf_style == "line" else "steps-mid"
 
     plot_multi(
@@ -219,6 +268,7 @@ def main():
         xmin=deg_xmin,
         xmax=deg_xmax,
         drawstyle=None,
+        ylim_top=1.0,
     )
 
     plot_multi(
@@ -230,6 +280,7 @@ def main():
         xmin=deg_xmin,
         xmax=deg_xmax,
         drawstyle=drawstyle_pmf,
+        ylim_top=1.0,
     )
 
     plot_multi(
@@ -241,6 +292,7 @@ def main():
         xmin=cs_xmin,
         xmax=cs_xmax,
         drawstyle=None,
+        ylim_top=1.0,
     )
 
     plot_multi(
@@ -252,7 +304,33 @@ def main():
         xmin=cs_xmin,
         xmax=cs_xmax,
         drawstyle=drawstyle_pmf,
+        ylim_top=1.0,
     )
+
+    if have_components and len(components_ecdf_series) > 0:
+        plot_multi(
+            components_ecdf_series,
+            out_prefix.with_name(f"{out_prefix.name}_components_ecdf.pdf"),
+            xlabel="Number of Partitions",
+            ylabel="Probability (ECDF)",
+            max_xticks=int(args.max_xticks),
+            xmin=cc_xmin,
+            xmax=cc_xmax,
+            drawstyle=None,
+            ylim_top=1.0,
+        )
+
+        plot_multi(
+            components_pmf_series,
+            out_prefix.with_name(f"{out_prefix.name}_components_pmf.pdf"),
+            xlabel="Number of Partitions",
+            ylabel="Probability (PMF)",
+            max_xticks=int(args.max_xticks),
+            xmin=cc_xmin,
+            xmax=cc_xmax,
+            drawstyle=drawstyle_pmf,
+            ylim_top=1.0,
+        )
 
 
 if __name__ == "__main__":

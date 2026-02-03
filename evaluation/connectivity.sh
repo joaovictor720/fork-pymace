@@ -35,4 +35,5 @@ python3 evaluation/plot_degree_ecdf.py \
   --in_csv "${IN_CSVS[@]}" \
   --out_prefix "${OUT_PREFIX}" \
   --max_xticks 9 \
-  --extend_ecdf_to_global_x
+  --extend_ecdf_to_global_x \
+  --plot_components_count

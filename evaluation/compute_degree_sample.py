@@ -27,10 +27,6 @@ class UnionFind:
         self.parent[rb] = ra
         self.size[ra] += self.size[rb]
 
-    def comp_sizes_per_node(self) -> np.ndarray:
-        roots = np.array([self.find(i) for i in range(len(self.parent))], dtype=np.int32)
-        return self.size[roots]
-
 
 def compute_for_time_snapshot(pos: np.ndarray, range_m: float):
     n = pos.shape[0]
@@ -38,8 +34,9 @@ def compute_for_time_snapshot(pos: np.ndarray, range_m: float):
     degrees = np.full(n, np.nan, dtype=np.float64)
     comp_sizes = np.full(n, np.nan, dtype=np.float64)
 
-    if valid.sum() == 0:
-        return degrees, comp_sizes
+    n_valid = int(valid.sum())
+    if n_valid == 0:
+        return degrees, comp_sizes, np.nan, np.nan
 
     idx = np.where(valid)[0]
     p = pos[idx]
@@ -62,11 +59,13 @@ def compute_for_time_snapshot(pos: np.ndarray, range_m: float):
         b = int(triu[1][k])
         uf.union(a, b)
 
-    cs = uf.comp_sizes_per_node().astype(np.int32)
+    roots = np.array([uf.find(i) for i in range(len(idx))], dtype=np.int32)
+    cs = uf.size[roots].astype(np.int32)
+    n_components = int(np.unique(roots).size)
 
     degrees[idx] = deg
     comp_sizes[idx] = cs
-    return degrees, comp_sizes
+    return degrees, comp_sizes, float(n_components), float(n_valid)
 
 
 def _load_run_gps(run_dir: Path, bin_s: float) -> pd.DataFrame:
@@ -105,7 +104,7 @@ def _load_run_gps(run_dir: Path, bin_s: float) -> pd.DataFrame:
 
 def _compute_degree_table(mob: pd.DataFrame, range_m: float, max_time_s: Optional[float]) -> pd.DataFrame:
     if mob.empty:
-        return pd.DataFrame(columns=["time_bin_s", "node", "degree", "component_size", "is_isolated"])
+        return pd.DataFrame(columns=["time_bin_s", "node", "degree", "component_size", "is_isolated", "components_count", "valid_nodes"])
 
     if max_time_s is not None:
         mob = mob[mob["time_bin_s"] <= float(max_time_s)]
@@ -124,7 +123,7 @@ def _compute_degree_table(mob: pd.DataFrame, range_m: float, max_time_s: Optiona
             pos[i, 0] = float(r["x_m"])
             pos[i, 1] = float(r["y_m"])
 
-        deg, cs = compute_for_time_snapshot(pos, range_m)
+        deg, cs, ncomp, nvalid = compute_for_time_snapshot(pos, range_m)
 
         for i, nid in enumerate(nodes):
             if np.isfinite(deg[i]):
@@ -136,6 +135,8 @@ def _compute_degree_table(mob: pd.DataFrame, range_m: float, max_time_s: Optiona
                     "degree": di,
                     "component_size": csi,
                     "is_isolated": int(di == 0),
+                    "components_count": int(ncomp),
+                    "valid_nodes": int(nvalid),
                 })
 
     return pd.DataFrame(rows)
