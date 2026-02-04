@@ -7,6 +7,50 @@ import pandas as pd
 import matplotlib.pyplot as plt
 from matplotlib.ticker import MaxNLocator
 
+BASE_FONT_SCALE = 0.95
+FONT_SCALE = 1.6
+FIG_SCALE = FONT_SCALE / BASE_FONT_SCALE
+BASE_FIGSIZE = (8, 5)
+
+STYLE_RC = {
+    "font.family": "serif",
+    "font.serif": ["CMU Serif", "Computer Modern Roman", "DejaVu Serif"],
+    "mathtext.fontset": "cm",
+    "axes.unicode_minus": False,
+    "pdf.fonttype": 42,
+    "ps.fonttype": 42,
+    "font.size": 11.0 * FONT_SCALE,
+    "axes.labelsize": 11.0 * FONT_SCALE,
+    "axes.titlesize": 12.0 * FONT_SCALE,
+    "xtick.labelsize": 10.0 * FONT_SCALE,
+    "ytick.labelsize": 10.0 * FONT_SCALE,
+    "legend.fontsize": 10.0 * FONT_SCALE,
+}
+
+plt.rcParams.update(STYLE_RC)
+
+def _new_fig_ax():
+    w, h = BASE_FIGSIZE
+    fig, ax = plt.subplots(figsize=(w * FIG_SCALE, h * FIG_SCALE))
+    return fig, ax
+
+def _finalize_layout(fig):
+    fig.subplots_adjust(left=0.12, right=0.98, bottom=0.14, top=0.80)
+
+def _apply_top_legend(ax, ncol: int):
+    ax.legend(
+        loc="lower center",
+        bbox_to_anchor=(0.5, 1.08),
+        ncol=ncol,
+        frameon=True,
+        framealpha=0.95,
+        borderaxespad=0.0,
+        handlelength=2.4,
+    )
+
+SERIES_COLORS = ["#1f77b4", "#2ca02c", "#9467bd", "#8c564b", "#d62728"]
+SERIES_MARKERS = ["o", "s", "^", "D", "v"]
+SERIES_LINESTYLES = ["-", "--", "-.", ":", (0, (3, 1, 1, 1))]
 
 def ecdf_points(values: np.ndarray) -> Tuple[np.ndarray, np.ndarray]:
     uniq, cnt = np.unique(values, return_counts=True)
@@ -16,7 +60,6 @@ def ecdf_points(values: np.ndarray) -> Tuple[np.ndarray, np.ndarray]:
     y = np.cumsum(c) / np.sum(c)
     return x, y
 
-
 def pmf_points(values: np.ndarray) -> Tuple[np.ndarray, np.ndarray]:
     uniq, cnt = np.unique(values, return_counts=True)
     order = np.argsort(uniq)
@@ -24,7 +67,6 @@ def pmf_points(values: np.ndarray) -> Tuple[np.ndarray, np.ndarray]:
     c = cnt[order]
     y = c / np.sum(c)
     return x, y
-
 
 def parse_count_label(path_str: str) -> str:
     s = path_str.replace("\\", "/")
@@ -40,12 +82,9 @@ def parse_count_label(path_str: str) -> str:
         return Path(path_str).parent.name
     return f"{s[j:k]} nodes/km$^2$"
 
-
-def set_integer_xticks(xmin: int, xmax: int, max_xticks: int):
-    ax = plt.gca()
+def set_integer_xticks(ax, xmin: int, xmax: int, max_xticks: int):
     ax.xaxis.set_major_locator(MaxNLocator(nbins=max_xticks, integer=True, prune=None))
     ax.set_xlim(xmin, xmax)
-
 
 def extend_ecdf_to_xmax(x: np.ndarray, y: np.ndarray, xmax: int) -> Tuple[np.ndarray, np.ndarray]:
     if x.size == 0:
@@ -56,10 +95,8 @@ def extend_ecdf_to_xmax(x: np.ndarray, y: np.ndarray, xmax: int) -> Tuple[np.nda
     y2 = np.concatenate([y, np.array([1.0], dtype=y.dtype)])
     return x2, y2
 
-
 def ensure_out_dir(out_prefix: Path):
     out_prefix.parent.mkdir(parents=True, exist_ok=True)
-
 
 def save_points_csv(out_prefix: Path, metric: str, kind: str, label: str, x: np.ndarray, y: np.ndarray):
     safe_label = (
@@ -81,6 +118,12 @@ def save_points_csv(out_prefix: Path, metric: str, kind: str, label: str, x: np.
     df.to_csv(fp, index=False)
     print(f"[OK] Wrote: {fp}")
 
+def _markevery_for(n: int) -> int:
+    if n <= 18:
+        return 1
+    if n <= 40:
+        return 2
+    return max(1, n // 20)
 
 def plot_multi(
     series: List[Tuple[str, np.ndarray, np.ndarray]],
@@ -90,28 +133,46 @@ def plot_multi(
     max_xticks: int,
     xmin: int,
     xmax: int,
-    drawstyle: Optional[str],
     ylim_top: float,
+    *,
+    use_markers: bool = True,
 ):
-    plt.figure(figsize=(7, 4.5))
-    for label, x, y in series:
-        if drawstyle is None:
-            plt.plot(x, y, linestyle="-", label=label)
-        else:
-            plt.plot(x, y, linestyle="-", label=label, drawstyle=drawstyle)
+    fig, ax = _new_fig_ax()
 
-    set_integer_xticks(xmin, xmax, max_xticks)
+    for i, (label, x, y) in enumerate(series):
+        color = SERIES_COLORS[i % len(SERIES_COLORS)]
+        ls = SERIES_LINESTYLES[i % len(SERIES_LINESTYLES)]
+        mk = SERIES_MARKERS[i % len(SERIES_MARKERS)]
 
-    plt.ylim(0.0, ylim_top)
-    plt.xlabel(xlabel)
-    plt.ylabel(ylabel)
-    plt.grid(True, linestyle=":", alpha=0.6)
-    plt.legend(frameon=True)
-    plt.tight_layout()
-    plt.savefig(out_path, bbox_inches="tight", dpi=300)
-    plt.close()
+        kwargs = {
+            "linestyle": ls,
+            "linewidth": 2.0,
+            "label": label,
+            "color": color,
+        }
+
+        if use_markers:
+            kwargs.update({
+                "marker": mk,
+                "markersize": 5.0,
+                "markeredgewidth": 0.8,
+                "markeredgecolor": "black",
+                "markevery": _markevery_for(len(x)),
+            })
+
+        ax.plot(x, y, **kwargs)
+
+    set_integer_xticks(ax, xmin, xmax, max_xticks)
+    ax.set_ylim(0.0, ylim_top)
+    ax.set_xlabel(xlabel, labelpad=8)
+    ax.set_ylabel(ylabel, labelpad=8)
+    ax.grid(True, linestyle=":", alpha=0.6)
+    _apply_top_legend(ax, ncol=min(5, len(series)))
+
+    _finalize_layout(fig)
+    fig.savefig(out_path, bbox_inches="tight", dpi=300)
+    plt.close(fig)
     print(f"[OK] Saved: {out_path}")
-
 
 def extract_snapshot_values(df: pd.DataFrame, col: str) -> np.ndarray:
     if col not in df.columns:
@@ -124,15 +185,14 @@ def extract_snapshot_values(df: pd.DataFrame, col: str) -> np.ndarray:
     vals = pd.to_numeric(snap[col], errors="coerce").dropna().astype(int).to_numpy()
     return vals
 
-
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--in_csv", required=True, nargs="+")
     ap.add_argument("--out_prefix", required=True)
     ap.add_argument("--max_xticks", type=int, default=9)
     ap.add_argument("--extend_ecdf_to_global_x", action="store_true")
-    ap.add_argument("--pmf_style", choices=["line", "step"], default="line")
     ap.add_argument("--plot_components_count", action="store_true")
+    ap.add_argument("--plot_pmf", action="store_true")
     args = ap.parse_args()
 
     in_paths = [Path(p) for p in args.in_csv]
@@ -140,11 +200,11 @@ def main():
     ensure_out_dir(out_prefix)
 
     degree_ecdf_series = []
-    degree_pmf_series = []
     comp_ecdf_series = []
-    comp_pmf_series = []
-
     components_ecdf_series = []
+
+    degree_pmf_series = []
+    comp_pmf_series = []
     components_pmf_series = []
 
     degree_xmins = []
@@ -172,10 +232,7 @@ def main():
             continue
 
         x_deg_ecdf, y_deg_ecdf = ecdf_points(deg)
-        x_deg_pmf, y_deg_pmf = pmf_points(deg)
-
         x_cs_ecdf, y_cs_ecdf = ecdf_points(cs)
-        x_cs_pmf, y_cs_pmf = pmf_points(cs)
 
         degree_xmins.append(int(x_deg_ecdf.min()))
         degree_xmaxs.append(int(x_deg_ecdf.max()))
@@ -188,12 +245,10 @@ def main():
             "label": label,
             "x_deg_ecdf": x_deg_ecdf,
             "y_deg_ecdf": y_deg_ecdf,
-            "x_deg_pmf": x_deg_pmf,
-            "y_deg_pmf": y_deg_pmf,
             "x_cs_ecdf": x_cs_ecdf,
             "y_cs_ecdf": y_cs_ecdf,
-            "x_cs_pmf": x_cs_pmf,
-            "y_cs_pmf": y_cs_pmf,
+            "deg": deg,
+            "cs": cs,
             "comps_vals": comps_vals,
         })
 
@@ -223,88 +278,68 @@ def main():
 
         x_deg_ecdf = np.array(it["x_deg_ecdf"])
         y_deg_ecdf = np.array(it["y_deg_ecdf"])
-        x_deg_pmf = np.array(it["x_deg_pmf"])
-        y_deg_pmf = np.array(it["y_deg_pmf"])
-
         x_cs_ecdf = np.array(it["x_cs_ecdf"])
         y_cs_ecdf = np.array(it["y_cs_ecdf"])
-        x_cs_pmf = np.array(it["x_cs_pmf"])
-        y_cs_pmf = np.array(it["y_cs_pmf"])
 
         if args.extend_ecdf_to_global_x:
             x_deg_ecdf, y_deg_ecdf = extend_ecdf_to_xmax(x_deg_ecdf, y_deg_ecdf, deg_xmax)
             x_cs_ecdf, y_cs_ecdf = extend_ecdf_to_xmax(x_cs_ecdf, y_cs_ecdf, cs_xmax)
 
         degree_ecdf_series.append((label, x_deg_ecdf, y_deg_ecdf))
-        degree_pmf_series.append((label, x_deg_pmf, y_deg_pmf))
         comp_ecdf_series.append((label, x_cs_ecdf, y_cs_ecdf))
-        comp_pmf_series.append((label, x_cs_pmf, y_cs_pmf))
 
         save_points_csv(out_prefix, "degree", "ecdf", label, x_deg_ecdf, y_deg_ecdf)
-        save_points_csv(out_prefix, "degree", "pmf", label, x_deg_pmf, y_deg_pmf)
         save_points_csv(out_prefix, "component", "ecdf", label, x_cs_ecdf, y_cs_ecdf)
-        save_points_csv(out_prefix, "component", "pmf", label, x_cs_pmf, y_cs_pmf)
+
+        if args.plot_pmf:
+            deg = np.array(it["deg"])
+            cs = np.array(it["cs"])
+
+            x_deg_pmf, y_deg_pmf = pmf_points(deg)
+            x_cs_pmf, y_cs_pmf = pmf_points(cs)
+
+            degree_pmf_series.append((label, x_deg_pmf, y_deg_pmf))
+            comp_pmf_series.append((label, x_cs_pmf, y_cs_pmf))
+
+            save_points_csv(out_prefix, "degree", "pmf", label, x_deg_pmf, y_deg_pmf)
+            save_points_csv(out_prefix, "component", "pmf", label, x_cs_pmf, y_cs_pmf)
 
         if have_components:
             comps_vals = np.array(it["comps_vals"])
             if comps_vals.size > 0:
                 x_cc_ecdf, y_cc_ecdf = ecdf_points(comps_vals)
-                x_cc_pmf, y_cc_pmf = pmf_points(comps_vals)
                 if args.extend_ecdf_to_global_x:
                     x_cc_ecdf, y_cc_ecdf = extend_ecdf_to_xmax(x_cc_ecdf, y_cc_ecdf, cc_xmax)
                 components_ecdf_series.append((label, x_cc_ecdf, y_cc_ecdf))
-                components_pmf_series.append((label, x_cc_pmf, y_cc_pmf))
                 save_points_csv(out_prefix, "components", "ecdf", label, x_cc_ecdf, y_cc_ecdf)
-                save_points_csv(out_prefix, "components", "pmf", label, x_cc_pmf, y_cc_pmf)
 
-    drawstyle_pmf = None if args.pmf_style == "line" else "steps-mid"
+                if args.plot_pmf:
+                    x_cc_pmf, y_cc_pmf = pmf_points(comps_vals)
+                    components_pmf_series.append((label, x_cc_pmf, y_cc_pmf))
+                    save_points_csv(out_prefix, "components", "pmf", label, x_cc_pmf, y_cc_pmf)
 
     plot_multi(
         degree_ecdf_series,
         out_prefix.with_name(f"{out_prefix.name}_degree_ecdf.pdf"),
         xlabel="Neighborhood Degree",
-        ylabel="Probability (ECDF)",
+        ylabel="ECDF",
         max_xticks=int(args.max_xticks),
         xmin=deg_xmin,
         xmax=deg_xmax,
-        drawstyle=None,
         ylim_top=1.0,
-    )
-
-    plot_multi(
-        degree_pmf_series,
-        out_prefix.with_name(f"{out_prefix.name}_degree_pmf.pdf"),
-        xlabel="Neighborhood Degree",
-        ylabel="Probability (PMF)",
-        max_xticks=int(args.max_xticks),
-        xmin=deg_xmin,
-        xmax=deg_xmax,
-        drawstyle=drawstyle_pmf,
-        ylim_top=1.0,
+        use_markers=True,
     )
 
     plot_multi(
         comp_ecdf_series,
         out_prefix.with_name(f"{out_prefix.name}_component_ecdf.pdf"),
         xlabel="Connected Component Size",
-        ylabel="Probability (ECDF)",
+        ylabel="ECDF",
         max_xticks=int(args.max_xticks),
         xmin=cs_xmin,
         xmax=cs_xmax,
-        drawstyle=None,
         ylim_top=1.0,
-    )
-
-    plot_multi(
-        comp_pmf_series,
-        out_prefix.with_name(f"{out_prefix.name}_component_pmf.pdf"),
-        xlabel="Connected Component Size",
-        ylabel="Probability (PMF)",
-        max_xticks=int(args.max_xticks),
-        xmin=cs_xmin,
-        xmax=cs_xmax,
-        drawstyle=drawstyle_pmf,
-        ylim_top=1.0,
+        use_markers=True,
     )
 
     if have_components and len(components_ecdf_series) > 0:
@@ -312,26 +347,51 @@ def main():
             components_ecdf_series,
             out_prefix.with_name(f"{out_prefix.name}_components_ecdf.pdf"),
             xlabel="Number of Partitions",
-            ylabel="Probability (ECDF)",
+            ylabel="ECDF",
             max_xticks=int(args.max_xticks),
             xmin=cc_xmin,
             xmax=cc_xmax,
-            drawstyle=None,
             ylim_top=1.0,
+            use_markers=True,
+        )
+
+    if args.plot_pmf:
+        plot_multi(
+            degree_pmf_series,
+            out_prefix.with_name(f"{out_prefix.name}_degree_pmf.pdf"),
+            xlabel="Neighborhood Degree",
+            ylabel="PMF",
+            max_xticks=int(args.max_xticks),
+            xmin=deg_xmin,
+            xmax=deg_xmax,
+            ylim_top=1.0,
+            use_markers=True,
         )
 
         plot_multi(
-            components_pmf_series,
-            out_prefix.with_name(f"{out_prefix.name}_components_pmf.pdf"),
-            xlabel="Number of Partitions",
-            ylabel="Probability (PMF)",
+            comp_pmf_series,
+            out_prefix.with_name(f"{out_prefix.name}_component_pmf.pdf"),
+            xlabel="Connected Component Size",
+            ylabel="PMF",
             max_xticks=int(args.max_xticks),
-            xmin=cc_xmin,
-            xmax=cc_xmax,
-            drawstyle=drawstyle_pmf,
+            xmin=cs_xmin,
+            xmax=cs_xmax,
             ylim_top=1.0,
+            use_markers=True,
         )
 
+        if have_components and len(components_pmf_series) > 0:
+            plot_multi(
+                components_pmf_series,
+                out_prefix.with_name(f"{out_prefix.name}_components_pmf.pdf"),
+                xlabel="Number of Partitions",
+                ylabel="PMF",
+                max_xticks=int(args.max_xticks),
+                xmin=cc_xmin,
+                xmax=cc_xmax,
+                ylim_top=1.0,
+                use_markers=True,
+            )
 
 if __name__ == "__main__":
     raise SystemExit(main())

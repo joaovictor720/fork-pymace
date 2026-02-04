@@ -4,7 +4,7 @@ set -euo pipefail
 SCENARIO="topology_degree_ecdf__expanded"
 APP="broadcast"
 
-COUNTS=(10 30 50)
+COUNTS=(10 20 30 40 50)
 
 RANGE_M=160
 BIN_S=1.0
