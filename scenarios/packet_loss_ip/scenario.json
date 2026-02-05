@@ -33,7 +33,7 @@
   },
   "experiment": {
     "vary": {
-      "network.error": [2, 4, 6, 8, 10]
+      "network.error": [2, 4, 6, 8, 10, 15, 20, 30, 40]
     }
   }
 }
