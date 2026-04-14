@@ -7,6 +7,8 @@ class VirtualGPS:
   def __init__(self, tag, node_number):
     self.tag = tag
     self.position = []
+    self.socket_path = "/tmp/" + self.tag + "_gps.sock"
+    self.virtual_gps_thread = None
     self._setup()
 
   def _setup(self):
@@ -30,7 +32,7 @@ class VirtualGPS:
 
   def start(self):
     self.state = 'ENABLED'
-    self.virtual_gps_thread = threading.Thread(target=self._interface_listener, args=())
+    self.virtual_gps_thread = threading.Thread(target=self._interface_listener, args=(), daemon=True)
     self.virtual_gps_thread.start()
 
   def _stop(self):
@@ -38,26 +40,46 @@ class VirtualGPS:
 
   def shutdown(self):
     self._stop()
-    self.virtual_gps_thread.join(timeout = 2)
+    try:
+      wakeup = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+      wakeup.settimeout(0.2)
+      wakeup.connect(self.socket_path)
+      wakeup.close()
+    except:
+      pass
+    if self.virtual_gps_thread is not None and self.virtual_gps_thread.is_alive():
+      self.virtual_gps_thread.join(timeout = 2)
 
   def _interface_listener(self):
     #this section is a synchronizer so that all nodes can start ROUGHLY at the same time
     gps_socket = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+    gps_socket.settimeout(1.0)
     try:
-      os.remove("/tmp/" + self.tag +"_gps.sock")
+      os.remove(self.socket_path)
     except OSError:
       #traceback.print_exc()
       pass
     try:
-      gps_socket.bind("/tmp/" + self.tag +"_gps.sock")
+      gps_socket.bind(self.socket_path)
       gps_socket.listen(1000) #backlog
     except OSError:
       traceback.print_exc()
     except:
       traceback.print_exc()
     while self.state != "DISABLED":
-      conn, addr = gps_socket.accept()
+      try:
+        conn, addr = gps_socket.accept()
+      except socket.timeout:
+        continue
+      except OSError:
+        if self.state == "DISABLED":
+          break
+        traceback.print_exc()
+        continue
       lengthbuf = conn.recv(4)
+      if not lengthbuf:
+        conn.close()
+        continue
       length, = struct.unpack('!I', lengthbuf)
       data = b''
       while length:
@@ -74,11 +96,15 @@ class VirtualGPS:
       conn.sendall(payload)
       conn.close()
     gps_socket.close()
+    try:
+      os.remove(self.socket_path)
+    except OSError:
+      pass
 
   def emmit_to_gps_socket(self, data):
     gps = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
     gps.settimeout(1)
-    gps.connect("/tmp/" + self.tag +"_gps.sock")
+    gps.connect(self.socket_path)
     payload = pickle.dumps(data)
     length = len(payload)
     gps.sendall(struct.pack('!I', length))

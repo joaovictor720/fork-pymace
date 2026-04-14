@@ -1,12 +1,8 @@
 {
   "default_runs": 10,
   "jobs": [
-    { "scenario": "density_batman", "app": "broadcast" },
-    { "scenario": "density_batman", "app": "multiunicast" },
-    { "scenario": "density_ip", "app": "rapid" },
-
-    { "scenario": "scalability_batman", "app": "broadcast" },
-    { "scenario": "scalability_batman", "app": "multiunicast" },
-    { "scenario": "scalability_ip", "app": "rapid" }
+    { "scenario": "debug_batman", "app": "broadcast" },
+    { "scenario": "debug_batman", "app": "multiunicast" },
+    { "scenario": "debug_ip", "app": "rapid" }
   ]
 }

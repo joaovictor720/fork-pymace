@@ -70,7 +70,7 @@ def _parse_pcap_metrics(run_dir: pathlib.Path):
     with p.open(newline="", encoding="utf-8") as f:
         r = csv.DictReader(f)
         for row in r:
-            if row.get("status") != "ok":
+            if row.get("status") not in {"ok", "ok_truncated"}:
                 continue
             try:
                 frames = int(row["frames"])

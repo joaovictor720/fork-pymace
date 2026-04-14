@@ -33,4 +33,33 @@ To use the results from the csv files :
 
 Except for `plot.py`, all files in the `files_with_labels.py` list will be on the same figure. You can change the color label and linestyle with argument in this list.
 
+#### Run Status And Aggregation
+
+The evaluation harness now writes a `run_status.json` file inside every run directory, for example `results/<variant>/<app>/run_001/run_status.json`.
+
+`run_status.json` records:
+- scenario, app, run id, cwd and timestamps
+- the exact `pymace.py` command, its return code and the captured logs
+- artifact counts such as `node_*.log`, `node_*.net.log`, `node_*.pcap`
+- post-processing return codes for `collect_logs.py` and `process_pcaps.py`
+- the final `status` and whether the run is `analyzable`
+
+Final `status` values are:
+- `setup_failed`: scenario generation, app resolution, node config generation or path injection failed before execution
+- `execution_failed_no_artifacts`: execution finished without enough material to analyze the run
+- `execution_nonzero_but_artifacts_present`: `pymace.py` returned non-zero but the run still produced enough evidence to analyze it
+- `postprocessing_failed`: execution produced artifacts, but log collection or PCAP processing failed in a way that left the run non-analyzable
+- `success`: execution and post-processing completed with analyzable outputs
+
+`analyzable=true` is the gate for downstream aggregation. In this first layer, the harness requires enough node logs for parsing plus usable network material from `pcap_metrics.csv`, useful netlogs or useful pcaps.
+
+`--keep-going` changes exit behavior:
+- in `run_scenario.sh`, the script still writes the real `status`, but exits `0` even when the run is not analyzable
+- in `run_experiment.sh`, the loop continues across non-analyzable runs instead of aborting at the first one
+
+The harness also writes `variant_status.json` in `results/<variant>/<app>/`. Automatic `summary.csv` generation now happens only when every expected run for that variant/app has `analyzable=true`. A run no longer needs `status=success` to be included in aggregation.
+
+Captured runner logs are stored directly in each run directory:
+- `pymace.stdout.log`
+- `pymace.stderr.log`
 
