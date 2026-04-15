@@ -39,6 +39,10 @@ ping3
 geopy
 pymobility
 
+Optional Python packages:
+
+- pprzlink: only required for PAPARAZZI-based mobility or PPRZ network integrations. Regular socket-based evaluation scenarios do not require it.
+
 This work has been testes with Python 3.8
 
 ### PyMACE

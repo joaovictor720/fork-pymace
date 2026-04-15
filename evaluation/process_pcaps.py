@@ -6,22 +6,10 @@ import json
 import os
 import re
 import subprocess
+import sys
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple
-
-
-def _read_kv_file(path: Path) -> Dict[str, str]:
-    kv: Dict[str, str] = {}
-    if not path.exists():
-        return kv
-    for line in path.read_text(encoding="utf-8", errors="replace").splitlines():
-        line = line.strip()
-        if not line or "=" not in line:
-            continue
-        k, v = line.split("=", 1)
-        kv[k.strip()] = v.strip()
-    return kv
 
 
 def _parse_tcpdump_stderr(path: Path) -> Dict[str, int]:
@@ -78,14 +66,12 @@ class PcapStats:
     bytes_total: int = 0
     first_ts: Optional[float] = None
     last_ts: Optional[float] = None
-
     min_len: Optional[int] = None
     max_len: Optional[int] = None
-
     payload_type_frames: Dict[int, int] = None  # type: ignore
     payload_type_bytes: Dict[int, int] = None   # type: ignore
 
-    def __post_init__(self):
+    def __post_init__(self) -> None:
         self.payload_type_frames = {}
         self.payload_type_bytes = {}
 
@@ -103,17 +89,17 @@ class PcapStats:
 
     @property
     def pps(self) -> float:
-        d = self.duration_sec
-        if d <= 0.0:
+        duration = self.duration_sec
+        if duration <= 0.0:
             return 0.0
-        return self.frames / d
+        return self.frames / duration
 
     @property
     def bps(self) -> float:
-        d = self.duration_sec
-        if d <= 0.0:
+        duration = self.duration_sec
+        if duration <= 0.0:
             return 0.0
-        return (self.bytes_total * 8.0) / d
+        return (self.bytes_total * 8.0) / duration
 
 
 def _tshark_fields(payload_mode: str) -> List[str]:
@@ -125,32 +111,34 @@ def _tshark_fields(payload_mode: str) -> List[str]:
 
 def _run_tshark_rows(pcap_path: str, dfilt: str, fields: List[str]) -> subprocess.Popen:
     cmd = ["tshark", "-r", pcap_path, "-Y", dfilt, "-T", "fields", "-E", "separator=\t"]
-    for f in fields:
-        cmd += ["-e", f]
+    for field in fields:
+        cmd += ["-e", field]
     return subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
 
 
 def _first_byte_from_hex(data_data: str) -> Optional[int]:
     if not data_data:
         return None
-    s = data_data.strip()
-    if not s:
+    hex_data = data_data.strip()
+    if not hex_data:
         return None
-    if ":" in s:
-        s = s.replace(":", "")
-    if len(s) < 2:
+    if ":" in hex_data:
+        hex_data = hex_data.replace(":", "")
+    if len(hex_data) < 2:
         return None
     try:
-        return int(s[0:2], 16)
+        return int(hex_data[0:2], 16)
     except ValueError:
         return None
 
 
 def compute_metrics_allow_partial(pcap_path: str, dfilt: str, payload_mode: str) -> Tuple[PcapStats, int, str]:
-    fields = _tshark_fields(payload_mode)
-    proc = _run_tshark_rows(pcap_path, dfilt, fields)
+    try:
+        proc = _run_tshark_rows(pcap_path, dfilt, _tshark_fields(payload_mode))
+    except Exception as exc:
+        return PcapStats(), 127, str(exc)
 
-    st = PcapStats()
+    stats = PcapStats()
 
     assert proc.stdout is not None
     for line in proc.stdout:
@@ -170,41 +158,45 @@ def compute_metrics_allow_partial(pcap_path: str, dfilt: str, payload_mode: str)
         except ValueError:
             continue
 
-        st.frames += 1
-        st.bytes_total += ln
+        stats.frames += 1
+        stats.bytes_total += ln
 
-        if st.first_ts is None:
-            st.first_ts = ts
-        st.last_ts = ts
+        if stats.first_ts is None:
+            stats.first_ts = ts
+        stats.last_ts = ts
 
-        if st.min_len is None or ln < st.min_len:
-            st.min_len = ln
-        if st.max_len is None or ln > st.max_len:
-            st.max_len = ln
+        if stats.min_len is None or ln < stats.min_len:
+            stats.min_len = ln
+        if stats.max_len is None or ln > stats.max_len:
+            stats.max_len = ln
 
         if payload_mode == "first_byte_hex":
             data_data = parts[2].strip() if len(parts) > 2 else ""
-            mt = _first_byte_from_hex(data_data)
-            if mt is not None:
-                st.payload_type_frames[mt] = st.payload_type_frames.get(mt, 0) + 1
-                st.payload_type_bytes[mt] = st.payload_type_bytes.get(mt, 0) + ln
+            message_type = _first_byte_from_hex(data_data)
+            if message_type is not None:
+                stats.payload_type_frames[message_type] = stats.payload_type_frames.get(message_type, 0) + 1
+                stats.payload_type_bytes[message_type] = stats.payload_type_bytes.get(message_type, 0) + ln
 
     assert proc.stderr is not None
     stderr = proc.stderr.read()
     rc = proc.wait()
-    return st, rc, stderr.strip()
+    return stats, rc, stderr.strip()
 
 
 def append_to_netlog(netlog_path: Path, payload: Dict[str, object]) -> None:
     with netlog_path.open("a", encoding="utf-8") as f:
-        for k, v in payload.items():
-            if isinstance(v, float):
-                f.write(f"{k}={v:.6f}\n")
+        for key, value in payload.items():
+            if isinstance(value, float):
+                f.write(f"{key}={value:.6f}\n")
             else:
-                f.write(f"{k}={v}\n")
+                f.write(f"{key}={value}\n")
 
 
-def main() -> None:
+def write_summary(path: Path, payload: Dict[str, object]) -> None:
+    path.write_text(json.dumps(payload, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+
+
+def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("result_dir", help="Run directory (e.g. .../broadcast/run_001/)")
     ap.add_argument("app", help="App name (must exist in evaluation/apps.json)")
@@ -221,45 +213,63 @@ def main() -> None:
 
     dfilt = display_filter_for_app(args.app, apps_cfg)
     payload_mode = payload_type_mode_for_app(args.app, apps_cfg)
+    summary_path = result_dir / "process_pcaps_summary.json"
 
     pcaps = sorted(glob.glob(str(result_dir / "node_*.pcap")))
     if not pcaps:
+        payload = {
+            "result_dir": str(result_dir),
+            "app": args.app,
+            "status": "no_material",
+            "total_pcaps": 0,
+            "useful_pcaps": 0,
+            "empty_pcaps": 0,
+            "failed_pcaps": 0,
+            "partial_failure": False,
+            "warnings": [f"No pcaps found in {result_dir}"],
+        }
+        write_summary(summary_path, payload)
         print(f"[INFO] No pcaps found in {result_dir}")
-        return
+        return 1
 
     out_csv = result_dir / "pcap_metrics.csv"
     tmp_csv = result_dir / "pcap_metrics.csv.tmp"
     out_jsonl = result_dir / "pcap_metrics.jsonl"
     tmp_jsonl = result_dir / "pcap_metrics.jsonl.tmp"
 
-    with tmp_csv.open("w", newline="", encoding="utf-8") as fcsv, tmp_jsonl.open("w", encoding="utf-8") as fjsonl:
-        w = csv.writer(fcsv)
+    useful_pcaps = 0
+    empty_pcaps = 0
+    failed_pcaps = 0
+    warnings: List[str] = []
 
-        cols = [
-            "node",
-            "frames",
-            "bytes",
-            "duration_sec",
-            "pps",
-            "bps",
-            "min_len",
-            "max_len",
-            "mean_len",
-            "tcpdump_captured",
-            "tcpdump_filtered",
-            "tcpdump_dropped",
-            "pcap_file",
-            "status",
-            "tshark_rc",
-            "tshark_error",
-            "payload_type_frames_json",
-            "payload_type_bytes_json",
-        ]
-        w.writerow(cols)
+    with tmp_csv.open("w", newline="", encoding="utf-8") as fcsv, tmp_jsonl.open("w", encoding="utf-8") as fjsonl:
+        writer = csv.writer(fcsv)
+        writer.writerow(
+            [
+                "node",
+                "frames",
+                "bytes",
+                "duration_sec",
+                "pps",
+                "bps",
+                "min_len",
+                "max_len",
+                "mean_len",
+                "tcpdump_captured",
+                "tcpdump_filtered",
+                "tcpdump_dropped",
+                "pcap_file",
+                "status",
+                "tshark_rc",
+                "tshark_error",
+                "payload_type_frames_json",
+                "payload_type_bytes_json",
+            ]
+        )
 
         for pcap in pcaps:
-            p = Path(pcap)
-            node = p.stem
+            pcap_path = Path(pcap)
+            node = pcap_path.stem
 
             try:
                 size = os.path.getsize(pcap)
@@ -273,67 +283,91 @@ def main() -> None:
                 alt = result_dir / f"{node.split('_', 1)[1]}.tcpdump.stderr"
                 if alt.exists():
                     tcpdump_err = alt
-            td = _parse_tcpdump_stderr(tcpdump_err)
+            tcpdump_stats = _parse_tcpdump_stderr(tcpdump_err)
 
             if size <= 0:
-                row = [
-                    node, 0, 0, "0.000000", "0.000000", "0.000000",
-                    "", "", "0.000000",
-                    td["captured"], td["filtered"], td["dropped"],
-                    pcap, "empty",
-                    "", "",
-                    "{}", "{}",
-                ]
-                w.writerow(row)
-                fjsonl.write(json.dumps({
-                    "node": node,
-                    "pcap_file": pcap,
-                    "status": "empty",
-                    "tcpdump": td,
-                    "app": args.app,
-                }) + "\n")
+                empty_pcaps += 1
+                writer.writerow(
+                    [
+                        node,
+                        0,
+                        0,
+                        "0.000000",
+                        "0.000000",
+                        "0.000000",
+                        "",
+                        "",
+                        "0.000000",
+                        tcpdump_stats["captured"],
+                        tcpdump_stats["filtered"],
+                        tcpdump_stats["dropped"],
+                        pcap,
+                        "empty",
+                        "",
+                        "",
+                        "{}",
+                        "{}",
+                    ]
+                )
+                fjsonl.write(
+                    json.dumps(
+                        {
+                            "node": node,
+                            "pcap_file": pcap,
+                            "status": "empty",
+                            "tcpdump": tcpdump_stats,
+                            "app": args.app,
+                        },
+                        sort_keys=True,
+                    )
+                    + "\n"
+                )
                 continue
 
-            st, rc, err = compute_metrics_allow_partial(pcap, dfilt, payload_mode)
+            stats, rc, err = compute_metrics_allow_partial(pcap, dfilt, payload_mode)
 
             truncated = False
             if rc != 0:
-                e = err.lower()
-                if "appears to have been cut short" in e or "cut short" in e:
+                lowered = err.lower()
+                if "appears to have been cut short" in lowered or "cut short" in lowered:
                     truncated = True
 
             if rc == 0:
                 status = "ok"
+                useful_pcaps += 1
+            elif stats.frames > 0 and truncated:
+                status = "ok_truncated"
+                useful_pcaps += 1
+                warnings.append(f"Processed truncated pcap successfully enough for metrics: {pcap}")
             else:
-                if st.frames > 0 and truncated:
-                    status = "ok_truncated"
-                else:
-                    status = f"error:tshark_rc={rc}"
+                status = f"error:tshark_rc={rc}"
+                failed_pcaps += 1
 
-            payload_type_frames_json = json.dumps(st.payload_type_frames, sort_keys=True)
-            payload_type_bytes_json = json.dumps(st.payload_type_bytes, sort_keys=True)
+            payload_type_frames_json = json.dumps(stats.payload_type_frames, sort_keys=True)
+            payload_type_bytes_json = json.dumps(stats.payload_type_bytes, sort_keys=True)
 
-            row = [
-                node,
-                st.frames,
-                st.bytes_total,
-                f"{st.duration_sec:.6f}",
-                f"{st.pps:.6f}",
-                f"{st.bps:.6f}",
-                st.min_len if st.min_len is not None else "",
-                st.max_len if st.max_len is not None else "",
-                f"{st.mean_len:.6f}",
-                td["captured"],
-                td["filtered"],
-                td["dropped"],
-                pcap,
-                status,
-                rc,
-                err,
-                payload_type_frames_json,
-                payload_type_bytes_json,
-            ]
-            w.writerow(row)
+            writer.writerow(
+                [
+                    node,
+                    stats.frames,
+                    stats.bytes_total,
+                    f"{stats.duration_sec:.6f}",
+                    f"{stats.pps:.6f}",
+                    f"{stats.bps:.6f}",
+                    stats.min_len if stats.min_len is not None else "",
+                    stats.max_len if stats.max_len is not None else "",
+                    f"{stats.mean_len:.6f}",
+                    tcpdump_stats["captured"],
+                    tcpdump_stats["filtered"],
+                    tcpdump_stats["dropped"],
+                    pcap,
+                    status,
+                    rc,
+                    err,
+                    payload_type_frames_json,
+                    payload_type_bytes_json,
+                ]
+            )
 
             detail = {
                 "node": node,
@@ -342,43 +376,43 @@ def main() -> None:
                 "status": status,
                 "tshark_rc": rc,
                 "tshark_error": err,
-                "frames": st.frames,
-                "bytes_total": st.bytes_total,
-                "first_ts": st.first_ts,
-                "last_ts": st.last_ts,
-                "duration_sec": st.duration_sec,
-                "pps": st.pps,
-                "bps": st.bps,
-                "min_len": st.min_len,
-                "max_len": st.max_len,
-                "mean_len": st.mean_len,
-                "tcpdump": td,
-                "payload_type_frames": st.payload_type_frames,
-                "payload_type_bytes": st.payload_type_bytes,
+                "frames": stats.frames,
+                "bytes_total": stats.bytes_total,
+                "first_ts": stats.first_ts,
+                "last_ts": stats.last_ts,
+                "duration_sec": stats.duration_sec,
+                "pps": stats.pps,
+                "bps": stats.bps,
+                "min_len": stats.min_len,
+                "max_len": stats.max_len,
+                "mean_len": stats.mean_len,
+                "tcpdump": tcpdump_stats,
+                "payload_type_frames": stats.payload_type_frames,
+                "payload_type_bytes": stats.payload_type_bytes,
             }
             fjsonl.write(json.dumps(detail, sort_keys=True) + "\n")
 
             if args.append_netlog and netlog.exists():
                 netlog_payload: Dict[str, object] = {
-                    "PCAP_FRAMES": st.frames,
-                    "PCAP_BYTES": st.bytes_total,
-                    "PCAP_DURATION": st.duration_sec,
-                    "PCAP_PPS": st.pps,
-                    "PCAP_BPS": st.bps,
-                    "PCAP_MIN_LEN": st.min_len if st.min_len is not None else "",
-                    "PCAP_MAX_LEN": st.max_len if st.max_len is not None else "",
-                    "PCAP_MEAN_LEN": st.mean_len,
-                    "TCPDUMP_CAPTURED": td["captured"],
-                    "TCPDUMP_FILTERED": td["filtered"],
-                    "TCPDUMP_DROPPED": td["dropped"],
+                    "PCAP_FRAMES": stats.frames,
+                    "PCAP_BYTES": stats.bytes_total,
+                    "PCAP_DURATION": stats.duration_sec,
+                    "PCAP_PPS": stats.pps,
+                    "PCAP_BPS": stats.bps,
+                    "PCAP_MIN_LEN": stats.min_len if stats.min_len is not None else "",
+                    "PCAP_MAX_LEN": stats.max_len if stats.max_len is not None else "",
+                    "PCAP_MEAN_LEN": stats.mean_len,
+                    "TCPDUMP_CAPTURED": tcpdump_stats["captured"],
+                    "TCPDUMP_FILTERED": tcpdump_stats["filtered"],
+                    "TCPDUMP_DROPPED": tcpdump_stats["dropped"],
                     "TSHARK_RC": rc,
                     "TSHARK_STATUS": status,
                 }
                 if payload_mode == "first_byte_hex":
-                    for mt, cnt in st.payload_type_frames.items():
-                        netlog_payload[f"PAYLOAD_MT_{mt}_FRAMES"] = cnt
-                    for mt, b in st.payload_type_bytes.items():
-                        netlog_payload[f"PAYLOAD_MT_{mt}_BYTES"] = b
+                    for message_type, count in stats.payload_type_frames.items():
+                        netlog_payload[f"PAYLOAD_MT_{message_type}_FRAMES"] = count
+                    for message_type, value in stats.payload_type_bytes.items():
+                        netlog_payload[f"PAYLOAD_MT_{message_type}_BYTES"] = value
                 append_to_netlog(netlog, netlog_payload)
 
             if args.delete and status in ("ok", "ok_truncated", "empty"):
@@ -389,9 +423,35 @@ def main() -> None:
 
     tmp_csv.replace(out_csv)
     tmp_jsonl.replace(out_jsonl)
+
+    if useful_pcaps > 0 and failed_pcaps == 0:
+        summary_status = "success"
+    elif useful_pcaps > 0:
+        summary_status = "partial_success"
+    else:
+        summary_status = "failed"
+
+    summary = {
+        "result_dir": str(result_dir),
+        "app": args.app,
+        "status": summary_status,
+        "total_pcaps": len(pcaps),
+        "useful_pcaps": useful_pcaps,
+        "empty_pcaps": empty_pcaps,
+        "failed_pcaps": failed_pcaps,
+        "partial_failure": useful_pcaps > 0 and failed_pcaps > 0,
+        "csv_path": out_csv.name,
+        "jsonl_path": out_jsonl.name,
+        "warnings": warnings,
+    }
+    write_summary(summary_path, summary)
+
     print(f"[OK] Wrote {out_csv}")
     print(f"[OK] Wrote {out_jsonl}")
+    print(f"[INFO] PCAP summary: useful={useful_pcaps} empty={empty_pcaps} failed={failed_pcaps}")
+
+    return 0 if useful_pcaps > 0 else 1
 
 
 if __name__ == "__main__":
-    main()
+    sys.exit(main())

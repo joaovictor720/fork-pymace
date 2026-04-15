@@ -58,6 +58,7 @@ class Scenario():
     self.mace_nodes = []
     self.simulation_time = 0
     self.running = False
+    self._shutdown_started = False
     self.load_networks(scenario_json)
     self.load_nodes(scenario_json)
 
@@ -142,12 +143,49 @@ class Scenario():
       node.gps = VirtualGPS(node.name, node.tag_number)
       node.gps.start()
       node.set_position([node.coordinates[0],node.coordinates[1]])
-      node.time_thread = threading.Thread(target=node.increment_time)
+      node.time_thread = threading.Thread(target=node.increment_time, daemon=True)
       node.tracer = Tracer(node, node.tagname, self.report_folder)
       #node.tracer.start()
       #node.time_thread.start()
-    self.timer_thread = threading.Thread(target=self.check_runtime)
+    self.timer_thread = threading.Thread(target=self.check_runtime, daemon=True)
     self.timer_thread.start()
+
+  def _shutdown_nodes(self):
+    if self._shutdown_started:
+      return
+
+    self._shutdown_started = True
+    current = threading.current_thread()
+
+    for node in self.mace_nodes:
+      try:
+        if node.mobility_model is not None:
+          node.mobility_model.shutdown()
+      except:
+        pass
+
+      try:
+        node.stop()
+      except:
+        pass
+
+      try:
+        if node.time_thread is not None and node.time_thread is not current and node.time_thread.is_alive():
+          node.time_thread.join(timeout=2)
+      except:
+        pass
+
+      try:
+        if node.gps is not None:
+          node.gps.shutdown()
+      except:
+        pass
+
+      try:
+        if node.tracer is not None:
+          node.tracer.shutdown()
+      except:
+        pass
 
   def check_runtime(self):
     """_summary_
@@ -156,20 +194,12 @@ class Scenario():
       time.sleep(1)
       self.simulation_time += 1
     self.running = False
-    for node in self.mace_nodes:
-      try:
-        node.tracer.shutdown()
-        node.stop()
-        node.time_thread.join()
-      except:
-        pass
+    self._shutdown_nodes()
 
   def stop(self):
     print("scenario> #################################################STOP###################################################")
     self.running = False
-    for node in self.mace_nodes:
-      node.tracer.shutdown()
-      node.stop()
+    self._shutdown_nodes()
 
   def setup_links(self, session):
     """_summary_
