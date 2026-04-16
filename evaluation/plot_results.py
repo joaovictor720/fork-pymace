@@ -47,31 +47,36 @@ plt.rcParams.update(STYLE_RC)
 PALETTE = {
     "broadcast": "#1f77b4",   # blue
     "rapid": "#9467bd",       # purple
-    "multiunicast": "#2ca02c" # green
+    "multiunicast": "#2ca02c", # green
+    "trickle": "#d62728"      # red
 }
 
 LINESTYLES = {
     "multiunicast": "--",
     "broadcast": "-",
     "rapid": "-.",
+    "trickle": ":",
 }
 
 MARKERS = {
     "multiunicast": "s",
     "broadcast": "o",
     "rapid": "^",
+    "trickle": "D",
 }
 
 HATCHES = {
     "multiunicast": "///",
     "broadcast": "\\\\",
     "rapid": "xx",
+    "trickle": "..",
 }
 
 LABELS_ALGO = {
     "broadcast": "Flooding Multicast",
     "multiunicast": "Best-effort Multicast",
     "rapid": "Gossip-based Multicast",
+    "trickle": "Trickle",
 }
 
 Y_LABELS = {
@@ -98,6 +103,7 @@ LEGEND_LABELS_SHORT = {
     "multiunicast": "Best-effort Multicast",
     "broadcast": "Flooding Multicast",
     "rapid": "Gossip Multicast",
+    "trickle": "Trickle",
 }
 
 def _legend_fontsize_pt():
@@ -203,7 +209,7 @@ def _finalize_layout(fig):
     fig.subplots_adjust(left=0.16, right=0.98, bottom=0.16, top=0.96)
 
 def _algo_order(df: pd.DataFrame, algo_col: str):
-    desired_order = ("multiunicast", "broadcast", "rapid")
+    desired_order = ("multiunicast", "broadcast", "rapid", "trickle")
     present = set(df[algo_col].dropna().unique())
     algo_order = [a for a in desired_order if a in present]
     if not algo_order:

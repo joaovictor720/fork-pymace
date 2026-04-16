@@ -3,6 +3,7 @@
   "jobs": [
     { "scenario": "debug_batman", "app": "broadcast" },
     { "scenario": "debug_batman", "app": "multiunicast" },
-    { "scenario": "debug_ip", "app": "rapid" }
+    { "scenario": "debug_ip", "app": "rapid" },
+    { "scenario": "debug_ip", "app": "trickle" }
   ]
 }
