@@ -4,6 +4,10 @@
     { "scenario": "debug_batman", "app": "broadcast" },
     { "scenario": "debug_batman", "app": "multiunicast" },
     { "scenario": "debug_ip", "app": "rapid" },
-    { "scenario": "debug_ip", "app": "trickle" }
+    { "scenario": "debug_ip", "app": "trickle" },
+    { "scenario": "trickle_density_ip", "app": "rapid", "runs": 5 },
+    { "scenario": "trickle_density_ip", "app": "trickle", "runs": 5 },
+    { "scenario": "trickle_duration_cooldown_ip", "app": "rapid", "runs": 5 },
+    { "scenario": "trickle_duration_cooldown_ip", "app": "trickle", "runs": 5 }
   ]
 }

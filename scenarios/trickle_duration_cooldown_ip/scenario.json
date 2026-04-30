@@ -1,0 +1,42 @@
+{
+  "name": "trickle_duration_cooldown_ip",
+  "simulation": {
+    "duration": 120,
+    "start_delay": 5,
+    "area": { "x": 500, "y": 500 }
+  },
+  "nodes": {
+    "count": 20,
+    "distribution": "random",
+    "seed": 22
+  },
+  "mobility": {
+    "model": "random_waypoint",
+    "pause": 0,
+    "speed": [0.0, 0.0]
+  },
+  "network": {
+    "routing": "none",
+    "bandwidth": "11000000",
+    "range": 160,
+    "delay": 5,
+    "jitter": 0,
+    "error": 0
+  },
+  "node_config": {
+    "udp_port": 5001,
+    "ops_per_sec": 4.0,
+    "diss_per_sec": 2.0,
+    "monitor_interval": 1,
+    "duration": 10,
+    "cooldown": 10,
+    "trickle_k": 1,
+    "trickle_imax_ticks": 16
+  },
+  "experiment": {
+    "vary": {
+      "node_config.duration": [10, 30, 50],
+      "node_config.cooldown": [10, 30]
+    }
+  }
+}
