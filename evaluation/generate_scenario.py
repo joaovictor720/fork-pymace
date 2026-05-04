@@ -116,6 +116,10 @@ def main() -> None:
             "velocity_upper": vmax,
             "pause": mob.get("pause", 0),
         }
+        if "aggregation" in mob:
+            mobility["aggregation"] = mob["aggregation"]
+        if "epoch" in mob:
+            mobility["epoch"] = mob["epoch"]
 
         if net_setup == "batman":
             base_net_setup = (
