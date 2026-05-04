@@ -1,7 +1,7 @@
 import pandas as pd
 from pathlib import Path
 
-ROOT = Path("/home/mace/git/fork-pymace/results")
+ROOT = Path(__file__).resolve().parent.parent / "results"
 
 
 def _read_variant_scenario_params(variant_dir: Path):
@@ -58,7 +58,9 @@ def _read_variant_scenario_params(variant_dir: Path):
 rows = []
 cap_rows = []
 
-for scenario_dir in ROOT.glob("*__expanded"):
+for scenario_dir in ROOT.rglob("*__expanded"):
+    if not scenario_dir.is_dir():
+        continue
     scenario = scenario_dir.name.replace("__expanded", "")
 
     for variant_dir in scenario_dir.iterdir():

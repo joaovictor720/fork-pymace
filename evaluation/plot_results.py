@@ -101,8 +101,8 @@ COLS = {
 LEGEND_FONT_SCALE = 0.88   # relative to rcParams legend.fontsize
 LEGEND_LABELS_SHORT = {
     "multiunicast": "Best-effort Multicast",
-    "broadcast": "Flooding Multicast",
-    "rapid": "Gossip Multicast",
+    "broadcast": "Flooding",
+    "rapid": "RAPID",
     "trickle": "Trickle",
 }
 
@@ -526,9 +526,15 @@ def plot_line_with_ci(
 df = pd.read_csv(INPUT_CSV)
 df["scenario_prefix"] = df[COLS["scenario"]].apply(_scenario_prefix)
 
-prefixes = _read_jobs_prefixes(JOBS_JSON)
+data_prefixes = list(dict.fromkeys(df["scenario_prefix"].dropna().astype(str).tolist()))
+jobs_prefixes = _read_jobs_prefixes(JOBS_JSON)
+
+present_from_jobs = [p for p in jobs_prefixes if p in data_prefixes]
+extra_from_data = [p for p in data_prefixes if p not in present_from_jobs]
+prefixes = present_from_jobs + extra_from_data
+
 if not prefixes:
-    raise SystemExit(f"[ERROR] No scenarios found in {JOBS_JSON}")
+    raise SystemExit(f"[ERROR] No scenario prefixes found in {INPUT_CSV}")
 
 for c in ["nodes", "density"]:
     if c in df.columns:
