@@ -1,0 +1,43 @@
+{
+  "name": "trickle_calibration_ip",
+  "simulation": {
+    "duration": 110,
+    "start_delay": 5,
+    "area": { "x": 1000, "y": 1000 }
+  },
+  "nodes": {
+    "count": 30,
+    "distribution": "random",
+    "seed": 22
+  },
+  "mobility": {
+    "model": "random_waypoint",
+    "pause": 0,
+    "speed": [4.0, 4.2]
+  },
+  "network": {
+    "routing": "none",
+    "bandwidth": "11000000",
+    "range": 160,
+    "delay": 5,
+    "jitter": 0,
+    "error": 0
+  },
+  "node_config": {
+    "udp_port": 5001,
+    "ops_per_sec": 0.66,
+    "diss_per_sec": 2.0,
+    "monitor_interval": 2,
+    "duration": 20,
+    "cooldown": 30,
+    "trickle_k": 1,
+    "trickle_imax_ticks": 16
+  },
+  "experiment": {
+    "vary": {
+      "node_config.trickle_k": [1, 2],
+      "node_config.trickle_imax_ticks": [8, 16, 32],
+      "node_config.diss_per_sec": [1, 2, 4]
+    }
+  }
+}

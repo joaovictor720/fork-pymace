@@ -6,6 +6,7 @@ from typing import Iterable, List
 
 from parse_convergence import parse_convergence
 from parse_network import parse_network_overhead
+from parse_trickle_events import parse_trickle_events
 
 
 def iter_run_dirs(root: pathlib.Path) -> Iterable[pathlib.Path]:
@@ -57,9 +58,11 @@ def main() -> int:
 
         net = parse_network_overhead(run_dir)
         conv = parse_convergence(run_dir)
+        trickle = parse_trickle_events(run_dir)
 
         row.update(net)
         row.update(conv)
+        row.update(trickle)
 
         if row.get("final_total") and row.get("total_packets") is not None:
             try:

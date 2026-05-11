@@ -51,9 +51,11 @@ def _parse_netlog_counters(run_dir: pathlib.Path):
         "total_tx_packets": total_tx,
         "total_rx_packets": total_rx,
         "total_packets": total_packets,
+        "total_bytes": None,
         "avg_tx_per_node": total_tx / nodes,
         "avg_rx_per_node": total_rx / nodes,
         "avg_packets_per_node": total_packets / nodes,
+        "avg_bytes_per_node": None,
         "rx_to_tx_ratio": (total_rx / total_tx) if total_tx > 0 else None,
     }
 
@@ -89,9 +91,11 @@ def _parse_pcap_metrics(run_dir: pathlib.Path):
         "total_tx_packets": None,
         "total_rx_packets": None,
         "total_packets": total_frames,
+        "total_bytes": total_bytes,
         "avg_tx_per_node": None,
         "avg_rx_per_node": None,
         "avg_packets_per_node": total_frames / nodes,
+        "avg_bytes_per_node": total_bytes / nodes,
         "rx_to_tx_ratio": None,
     }
 
