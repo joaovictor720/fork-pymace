@@ -642,7 +642,7 @@ def reference_point_group(nr_nodes, dimensions, velocity=(0.1, 1.), aggregation=
         groups.append(np.arange(prev,n+prev))
         prev += n
     
-    g_ref = np.empty(sum(nr_nodes), dtype=np.int)
+    g_ref = np.empty(sum(nr_nodes), dtype=int)
     for (i,g) in enumerate(groups):
         for n in g:
             g_ref[n] = i
@@ -788,7 +788,7 @@ def tvc(nr_nodes, dimensions, velocity=(0.1, 1.), aggregation=[0.5,0.], epoch=[1
         groups.append(np.arange(prev,n+prev))
         prev += n
     
-    g_ref = np.empty(sum(nr_nodes), dtype=np.int)
+    g_ref = np.empty(sum(nr_nodes), dtype=int)
     for (i,g) in enumerate(groups):
         for n in g:
             g_ref[n] = i

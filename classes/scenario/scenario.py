@@ -25,7 +25,22 @@ from core.emane.models.tdma import EmaneTdmaModel
 from core.emane.nodes import EmaneNet
 
 #Other libs
-import sys, subprocess, os, traceback, pprint, threading, time
+import json, sys, subprocess, os, traceback, pprint, threading, time
+
+SHARED_MOBILITY_MODELS = {
+  'RANDOM_WAYPOINT',
+  'RANDOM_WALK',
+  'TRUNCATED_LEVY',
+  'HETEROGENEOUS_TRUNCATED_LEVY',
+  'GAUSS_MARKOV',
+  'RANDOM_DIRECTION',
+  'REFERENCE_POINT_GROUP',
+  'TVC',
+}
+
+
+def _mobility_key(config):
+  return json.dumps(config, sort_keys=True, separators=(',', ':'))
 
 class Scenario():
   """ The Scenario class has the function of reading the scenario file
@@ -156,11 +171,15 @@ class Scenario():
 
     self._shutdown_started = True
     current = threading.current_thread()
+    stopped_mobility = set()
 
     for node in self.mace_nodes:
       try:
         if node.mobility_model is not None:
-          node.mobility_model.shutdown()
+          mobility_id = id(node.mobility_model)
+          if mobility_id not in stopped_mobility:
+            stopped_mobility.add(mobility_id)
+            node.mobility_model.shutdown()
       except:
         pass
 
@@ -482,11 +501,44 @@ class Scenario():
     Args:
         session (_type_): _description_
     """
+    shared_mobility = {}
+    one_to_one_mobility = []
+
     for node in self.mace_nodes:
       if node.mobility == "none":
-        pass
+        continue
+
+      model = node.mobility['model'].upper()
+
+      # Group-aware pymobility models need to see every node in the group.
+      if model in SHARED_MOBILITY_MODELS:
+        mobility_key = _mobility_key(node.mobility)
+        if mobility_key not in shared_mobility:
+          shared_mobility[mobility_key] = Mobility(
+            self,
+            node.mobility['model'],
+            node.max_position,
+            node.velocity,
+            node.coordinates,
+            node.mobility,
+          )
+        node.mobility_model = shared_mobility[mobility_key]
       else:
-        node.mobility_model = Mobility(self, node.mobility['model'], node.max_position, node.velocity, node.coordinates)
-        node.mobility_model.register_core_node(node.corenode)
-        node.mobility_model.register_mace_node(node)
-        node.mobility_model.configure_mobility()
+        node.mobility_model = Mobility(
+          self,
+          node.mobility['model'],
+          node.max_position,
+          node.velocity,
+          node.coordinates,
+          node.mobility,
+        )
+        one_to_one_mobility.append(node.mobility_model)
+
+      node.mobility_model.register_core_node(node.corenode)
+      node.mobility_model.register_mace_node(node)
+
+    for mobility_model in shared_mobility.values():
+      mobility_model.configure_mobility()
+
+    for mobility_model in one_to_one_mobility:
+      mobility_model.configure_mobility()

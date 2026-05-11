@@ -28,11 +28,12 @@ def _load_pprz_interface():
 class Mobility():
   """_summary_
   """
-  def __init__ (self, scenario, model, dimensions, velocity, pos):
+  def __init__ (self, scenario, model, dimensions, velocity, pos, config=None):
     self.scenario = scenario
     self.pos = pos
     self.name = "MOB"
     self.mobility_model = model
+    self.mobility_config = {} if config is None else config
     self.core_nodes = []
     self.mace_nodes = []
     self.scheduler = BackgroundScheduler()
@@ -103,10 +104,27 @@ class Mobility():
       self.mobility_object = random_direction(len(self.core_nodes), dimensions=(self.x_dim , self.y_dim ), velocity=(self.velocity_lower, self.velocity_upper), wt_max=1.0)
       self._start_mobility_thread()
     elif self.mobility_model.upper() == 'REFERENCE_POINT_GROUP':
-      self.mobility_object = reference_point_group(len(self.core_nodes), dimensions=(self.x_dim , self.y_dim ), velocity=(self.velocity_lower, self.velocity_upper))
+      aggregation = self.mobility_config.get('aggregation', 0.1)
+      self.mobility_object = reference_point_group(
+        len(self.core_nodes),
+        dimensions=(self.x_dim , self.y_dim ),
+        velocity=(self.velocity_lower, self.velocity_upper),
+        aggregation=aggregation,
+      )
       self._start_mobility_thread()
     elif self.mobility_model.upper() == 'TVC':
-      self.mobility_object = tvc(len(self.core_nodes), dimensions=(self.x_dim , self.y_dim ), velocity=(self.velocity_lower, self.velocity_upper))
+      tvc_config = {
+        'velocity': (self.velocity_lower, self.velocity_upper),
+      }
+      if 'aggregation' in self.mobility_config:
+        tvc_config['aggregation'] = self.mobility_config['aggregation']
+      if 'epoch' in self.mobility_config:
+        tvc_config['epoch'] = self.mobility_config['epoch']
+      self.mobility_object = tvc(
+        len(self.core_nodes),
+        dimensions=(self.x_dim , self.y_dim ),
+        **tvc_config,
+      )
       self._start_mobility_thread()
     elif self.mobility_model.upper() == 'PAPARAZZI':
       pprz_interface = _load_pprz_interface()
