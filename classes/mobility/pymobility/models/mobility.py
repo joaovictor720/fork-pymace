@@ -595,7 +595,7 @@ def gauss_markov(nr_nodes, dimensions, velocity_mean=1., alpha=1., variance=1.):
         
         yield np.dstack((x,y))[0]
         
-def reference_point_group(nr_nodes, dimensions, velocity=(0.1, 1.), aggregation=0.1):
+def reference_point_group(nr_nodes, dimensions, velocity=(0.1, 1.), aggregation=0.1, initial_positions=None):
     '''
     Reference Point Group Mobility model, discussed in the following paper:
     
@@ -627,6 +627,12 @@ def reference_point_group(nr_nodes, dimensions, velocity=(0.1, 1.), aggregation=
         the nodes will be more aggregated and closer to the group center.
         With a value of 0, the nodes are randomly distributed in the simulation area.
         With a value of 1, the nodes are close to the group center.
+        In this implementation the value is added as a per-step displacement
+        toward the group center, so scenario sweeps may use values greater than 1.
+
+      *initial_positions*:
+        Optional array-like of shape (sum(nr_nodes), 2). When present, nodes start
+        from these coordinates instead of random coordinates.
     '''
     
     try:
@@ -653,8 +659,19 @@ def reference_point_group(nr_nodes, dimensions, velocity=(0.1, 1.), aggregation=
     VELOCITY_DISTR = lambda FD: U(MIN_V, MAX_V, FD)
     
     MAX_X, MAX_Y = dimensions
-    x = U(0, MAX_X, NODES)
-    y = U(0, MAX_Y, NODES)
+    if initial_positions is None:
+        x = U(0, MAX_X, NODES)
+        y = U(0, MAX_Y, NODES)
+    else:
+        initial_positions = np.asarray(initial_positions, dtype=float)
+        expected_shape = (sum(nr_nodes), 2)
+        if initial_positions.shape != expected_shape:
+            raise ValueError(
+                "initial_positions must have shape %s, got %s" %
+                (expected_shape, initial_positions.shape)
+            )
+        x = initial_positions[:, 0].copy()
+        y = initial_positions[:, 1].copy()
     velocity = 1.
     theta = U(0, 2*np.pi, NODES)
     costheta = np.cos(theta)
@@ -662,7 +679,7 @@ def reference_point_group(nr_nodes, dimensions, velocity=(0.1, 1.), aggregation=
     
     GROUPS = np.arange(len(groups))
     g_x = U(0, MAX_X, GROUPS)
-    g_y = U(0, MAX_X, GROUPS)
+    g_y = U(0, MAX_Y, GROUPS)
     g_fl = FL_DISTR(GROUPS)
     g_velocity = VELOCITY_DISTR(g_fl)
     g_theta = U(0, 2*np.pi, GROUPS)

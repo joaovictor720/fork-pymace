@@ -63,3 +63,23 @@ Captured runner logs are stored directly in each run directory:
 - `pymace.stdout.log`
 - `pymace.stderr.log`
 
+#### Reference Point Group Topology Characterization
+
+`reference_point_group_topology.sh` runs an offline topology characterization of the
+`reference_point_group` mobility model without starting CRDT/RAPID/Trickle apps:
+
+```bash
+./evaluation/reference_point_group_topology.sh
+```
+
+The default config is `scenarios/reference_point_group_topology/scenario.json`.
+It sweeps `aggregation` over low/medium/high, `initial_layout` over
+random/grid/clustered, and writes CSV summaries plus plots under
+`results/reference_point_group_topology/`.
+
+Main outputs:
+- `node_snapshots.csv`: per-node degree, component id, component size and position
+- `snapshot_metrics.csv`: mean degree, isolated ratio, largest component, partitions and coverage over time
+- `component_samples.csv`: component-size samples for ECDFs
+- `contacts.csv`: contact intervals and durations, including right-censored contacts
+- `summary_by_aggregation.csv` and `summary_by_condition.csv`: compact tables for interpreting the sweep

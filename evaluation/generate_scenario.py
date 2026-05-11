@@ -6,6 +6,7 @@ from pathlib import Path
 from typing import Any, Dict, List, Tuple
 
 APPLICATION_START_DELAY = 30
+GPS_SHUTDOWN_MARGIN_S = 1.0
 
 
 def parse_args() -> argparse.Namespace:
@@ -38,6 +39,24 @@ def generate_grid_positions(n: int, area: Dict[str, float]) -> List[Tuple[float,
                 break
             positions.append(((i + 0.5) * dx, (j + 0.5) * dy))
             idx += 1
+    return positions
+
+
+def generate_clustered_positions(n: int, area: Dict[str, float]) -> List[Tuple[float, float]]:
+    clusters = max(2, min(4, math.ceil(math.sqrt(n) / 2)))
+    spread = max(1.0, min(area["x"], area["y"]) / 12.0)
+    centers = [
+        (random.uniform(0, area["x"]), random.uniform(0, area["y"]))
+        for _ in range(clusters)
+    ]
+
+    positions: List[Tuple[float, float]] = []
+    for i in range(n):
+        cx, cy = centers[i % clusters]
+        x = min(area["x"], max(0.0, random.gauss(cx, spread)))
+        y = min(area["y"], max(0.0, random.gauss(cy, spread)))
+        positions.append((x, y))
+    random.shuffle(positions)
     return positions
 
 
@@ -81,6 +100,8 @@ def main() -> None:
         positions = generate_random_positions(node_count, area)
     elif distribution == "grid":
         positions = generate_grid_positions(node_count, area)
+    elif distribution == "clustered":
+        positions = generate_clustered_positions(node_count, area)
     else:
         raise ValueError(f"Unknown node distribution: {distribution}")
 
@@ -91,11 +112,22 @@ def main() -> None:
     node_cfg = sc.get("node_config", {})
     duration_s = float(node_cfg.get("duration", 10))
     cooldown_s = float(node_cfg.get("cooldown", 10))
-
-    CAPTURE_SEC = int(math.ceil(duration_s + cooldown_s + 1.0))
+    requested_capture_s = duration_s + cooldown_s + 1.0
 
     GPS_INTERVAL_S = float(node_cfg.get("gps_interval", 0.5))
-    GPS_LOG_SEC = float(node_cfg.get("gps_duration", duration_s + cooldown_s))
+    requested_gps_log_s = float(node_cfg.get("gps_duration", duration_s + cooldown_s))
+    runtime_s = float(sc["simulation"]["duration"])
+    gps_margin_s = max(GPS_SHUTDOWN_MARGIN_S, GPS_INTERVAL_S)
+    usable_after_app_delay_s = runtime_s - APPLICATION_START_DELAY - gps_margin_s
+    if usable_after_app_delay_s <= 0:
+        raise ValueError(
+            "simulation.duration leaves no safe GPS logging window after "
+            f"APPLICATION_START_DELAY={APPLICATION_START_DELAY}s "
+            f"and gps margin={gps_margin_s}s"
+        )
+
+    GPS_LOG_SEC = min(requested_gps_log_s, usable_after_app_delay_s)
+    CAPTURE_SEC = int(math.ceil(min(requested_capture_s, usable_after_app_delay_s + 1.0)))
 
     gps_logger_path = root / "evaluation" / "gps_logger.py"
 
@@ -154,6 +186,7 @@ def main() -> None:
             f"/usr/bin/python3 {gps_logger_path} "
             f"--tag \\\"\\$GPS_TAG\\\" --node {i} --out \\\"\\$GPS_FILE\\\" "
             f"--interval {GPS_INTERVAL_S} --duration {GPS_LOG_SEC} "
+            f"--drop-invalid --stop-after-invalid 2 "
             f">/dev/null 2>\\\"\\$GPS_ERR\\\" & "
             f"GPS_PID=\\$!; "
             f"echo \\\"GPS_PID=\\$GPS_PID\\\" >> \\\"\\$LOG_FILE\\\"; "
@@ -233,6 +266,11 @@ def main() -> None:
         f"[INFO] GPS: interval={GPS_INTERVAL_S}s, duration={GPS_LOG_SEC}s, "
         f"gps_logger={gps_logger_path}"
     )
+    if GPS_LOG_SEC < requested_gps_log_s:
+        print(
+            f"[WARN] GPS duration capped from {requested_gps_log_s}s to "
+            f"{GPS_LOG_SEC}s to avoid logging after scenario shutdown."
+        )
 
 
 if __name__ == "__main__":

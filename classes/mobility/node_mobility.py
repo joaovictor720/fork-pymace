@@ -105,11 +105,13 @@ class Mobility():
       self._start_mobility_thread()
     elif self.mobility_model.upper() == 'REFERENCE_POINT_GROUP':
       aggregation = self.mobility_config.get('aggregation', 0.1)
+      initial_positions = [[n.coordinates[0], n.coordinates[1]] for n in self.mace_nodes]
       self.mobility_object = reference_point_group(
         len(self.core_nodes),
         dimensions=(self.x_dim , self.y_dim ),
         velocity=(self.velocity_lower, self.velocity_upper),
         aggregation=aggregation,
+        initial_positions=initial_positions,
       )
       self._start_mobility_thread()
     elif self.mobility_model.upper() == 'TVC':
