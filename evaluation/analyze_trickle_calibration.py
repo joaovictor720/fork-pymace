@@ -13,6 +13,12 @@ PARAM_KEYS = {
     "node_config.diss_per_sec": "diss_per_sec",
 }
 
+VARIANT_NAME_PARAM_KEYS = {
+    "trickle_k": "node_config.trickle_k",
+    "trickle_imax_ticks": "node_config.trickle_imax_ticks",
+    "diss_per_sec": "node_config.diss_per_sec",
+}
+
 METRICS = {
     "avg_final_coverage": "convergence",
     "min_final_coverage": "min_convergence",
@@ -71,13 +77,39 @@ def read_csv_rows(path: Path) -> List[dict]:
         return list(csv.DictReader(f))
 
 
-def load_variant_params(variant_dir: Path) -> Dict[str, object]:
-    meta_path = variant_dir / "variant_meta.json"
-    if not meta_path.exists():
-        return {}
+def parse_variant_value(raw: str) -> object:
+    try:
+        parsed = float(raw)
+    except ValueError:
+        return raw
+    if parsed.is_integer():
+        return int(parsed)
+    return parsed
 
-    meta = json.loads(meta_path.read_text(encoding="utf-8"))
-    return meta.get("params", {})
+
+def params_from_variant_name(variant_name: str) -> Dict[str, object]:
+    params: Dict[str, object] = {}
+    for part in variant_name.split("__"):
+        if "=" not in part:
+            continue
+        key, raw_value = part.split("=", 1)
+        param_key = VARIANT_NAME_PARAM_KEYS.get(key)
+        if param_key is not None:
+            params[param_key] = parse_variant_value(raw_value)
+    return params
+
+
+def load_variant_params(variant_dir: Path, app: str) -> Dict[str, object]:
+    for meta_path in (variant_dir / "variant_meta.json", variant_dir / app / "variant_meta.json"):
+        if not meta_path.exists():
+            continue
+
+        meta = json.loads(meta_path.read_text(encoding="utf-8"))
+        params = meta.get("params", {})
+        if params:
+            return params
+
+    return params_from_variant_name(variant_dir.name)
 
 
 def variant_record(variant_dir: Path, app: str) -> Optional[dict]:
@@ -89,7 +121,7 @@ def variant_record(variant_dir: Path, app: str) -> Optional[dict]:
     if not run_rows:
         return None
 
-    params = load_variant_params(variant_dir)
+    params = load_variant_params(variant_dir, app)
     record = {
         "variant": variant_dir.name,
         "runs": len(run_rows),
