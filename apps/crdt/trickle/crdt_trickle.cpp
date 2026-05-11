@@ -93,6 +93,8 @@ struct TrickleStateSnapshot {
 struct TickResult {
     TickAction action{TA_NONE};
     TrickleStateSnapshot state;
+    bool interval_changed{false};
+    TrickleStateSnapshot next_state;
 };
 
 inline double now_ts() {
@@ -516,7 +518,10 @@ public:
 
         elapsed_ticks_++;
         if (elapsed_ticks_ >= interval_ticks_) {
+            uint32_t previous_interval = interval_ticks_;
             advance_locked();
+            result.next_state = snapshot_locked();
+            result.interval_changed = (previous_interval != result.next_state.interval_ticks);
         }
 
         return result;
@@ -626,6 +631,14 @@ void trickle_timer_loop(const node_config& nc, TrickleController& trickle, stats
                     << ", consistent_count=" << result.state.consistent_count;
             log_protocol_event(nc.id, "trickle_suppressed", details.str());
         }
+
+        if (result.interval_changed) {
+            std::ostringstream details;
+            details << "from_interval_ticks=" << result.state.interval_ticks
+                    << ", to_interval_ticks=" << result.next_state.interval_ticks
+                    << ", next_tx_tick=" << result.next_state.tx_tick;
+            log_protocol_event(nc.id, "trickle_interval_change", details.str());
+        }
     }
 }
 
@@ -689,6 +702,8 @@ void recv_loop(
                 trickle.note_consistent_summary();
             } else if (rel == REL_LOCAL_NEWER) {
                 send_repair(build_repair_entries(local_summary, remote_summary), st, nc, "summary_older");
+                trickle.note_new_information();
+                log_protocol_event(nc.id, "trickle_reset", "reason=summary_local_newer");
             } else if (rel == REL_REMOTE_NEWER) {
                 trickle.note_new_information();
                 log_protocol_event(nc.id, "trickle_reset", "reason=summary_remote_newer");
