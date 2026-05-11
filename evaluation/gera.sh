@@ -6,7 +6,7 @@ rm -f results/plots/*.png
 
 # 1) Reparse: gerar summary.csv em cada (scenario__expanded/variant/app)
 # (usa parse_metrics.py que percorre run_* e escreve summary.csv no diretório pai)
-for d in results/*__expanded/*/{broadcast,rapid,multiunicast}; do
+for d in results/*__expanded/*/{broadcast,rapid,multiunicast,trickle}; do
   [ -d "$d" ] || continue
   python3 evaluation/parse_metrics.py "$d" >/dev/null || echo "[WARN] parse_metrics falhou em $d"
 done

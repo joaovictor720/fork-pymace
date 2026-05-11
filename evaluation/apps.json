@@ -27,6 +27,14 @@
 			"tshark_display_filter": "udp.port==5001",
 			"udp_port": 5001,
 			"payload_type_mode": "first_byte_hex"
+		},
+		"trickle": {
+			"binary": "apps/crdt/trickle/crdt_trickle",
+			"net_setup": "ip",
+			"tcpdump_filter": "udp port 5001",
+			"tshark_display_filter": "udp.port==5001",
+			"udp_port": 5001,
+			"payload_type_mode": "first_byte_hex"
 		}
 	}
 }

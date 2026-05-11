@@ -4,8 +4,8 @@
 		"duration": 55,
 		"start_delay": 5,
 		"area": {
-			"x": 300,
-			"y": 300
+			"x": 100,
+			"y": 100
 		}
 	},
 	"nodes": {

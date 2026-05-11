@@ -47,31 +47,36 @@ plt.rcParams.update(STYLE_RC)
 PALETTE = {
     "broadcast": "#1f77b4",   # blue
     "rapid": "#9467bd",       # purple
-    "multiunicast": "#2ca02c" # green
+    "multiunicast": "#2ca02c", # green
+    "trickle": "#d62728"      # red
 }
 
 LINESTYLES = {
     "multiunicast": "--",
     "broadcast": "-",
     "rapid": "-.",
+    "trickle": ":",
 }
 
 MARKERS = {
     "multiunicast": "s",
     "broadcast": "o",
     "rapid": "^",
+    "trickle": "D",
 }
 
 HATCHES = {
     "multiunicast": "///",
     "broadcast": "\\\\",
     "rapid": "xx",
+    "trickle": "..",
 }
 
 LABELS_ALGO = {
     "broadcast": "Flooding Multicast",
     "multiunicast": "Best-effort Multicast",
     "rapid": "Gossip-based Multicast",
+    "trickle": "Trickle",
 }
 
 Y_LABELS = {
@@ -96,8 +101,9 @@ COLS = {
 LEGEND_FONT_SCALE = 0.88   # relative to rcParams legend.fontsize
 LEGEND_LABELS_SHORT = {
     "multiunicast": "Best-effort Multicast",
-    "broadcast": "Flooding Multicast",
-    "rapid": "Gossip Multicast",
+    "broadcast": "Flooding",
+    "rapid": "RAPID",
+    "trickle": "Trickle",
 }
 
 def _legend_fontsize_pt():
@@ -203,7 +209,7 @@ def _finalize_layout(fig):
     fig.subplots_adjust(left=0.16, right=0.98, bottom=0.16, top=0.96)
 
 def _algo_order(df: pd.DataFrame, algo_col: str):
-    desired_order = ("multiunicast", "broadcast", "rapid")
+    desired_order = ("multiunicast", "broadcast", "rapid", "trickle")
     present = set(df[algo_col].dropna().unique())
     algo_order = [a for a in desired_order if a in present]
     if not algo_order:
@@ -520,9 +526,15 @@ def plot_line_with_ci(
 df = pd.read_csv(INPUT_CSV)
 df["scenario_prefix"] = df[COLS["scenario"]].apply(_scenario_prefix)
 
-prefixes = _read_jobs_prefixes(JOBS_JSON)
+data_prefixes = list(dict.fromkeys(df["scenario_prefix"].dropna().astype(str).tolist()))
+jobs_prefixes = _read_jobs_prefixes(JOBS_JSON)
+
+present_from_jobs = [p for p in jobs_prefixes if p in data_prefixes]
+extra_from_data = [p for p in data_prefixes if p not in present_from_jobs]
+prefixes = present_from_jobs + extra_from_data
+
 if not prefixes:
-    raise SystemExit(f"[ERROR] No scenarios found in {JOBS_JSON}")
+    raise SystemExit(f"[ERROR] No scenario prefixes found in {INPUT_CSV}")
 
 for c in ["nodes", "density"]:
     if c in df.columns:
