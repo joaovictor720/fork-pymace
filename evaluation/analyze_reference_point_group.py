@@ -453,6 +453,197 @@ def safe_name(value: str) -> str:
     return "".join(c if c.isalnum() or c in ("-", "_") else "_" for c in value)
 
 
+def _time_step_s(snap_df: pd.DataFrame) -> float:
+    times = np.sort(pd.to_numeric(snap_df["time_s"], errors="coerce").dropna().unique())
+    if len(times) < 2:
+        return 1.0
+    diffs = np.diff(times)
+    diffs = diffs[diffs > 0]
+    if len(diffs) == 0:
+        return 1.0
+    return float(np.median(diffs))
+
+
+def _window_mask(df: pd.DataFrame, start_s: float, end_s: float) -> pd.Series:
+    t = pd.to_numeric(df["time_s"], errors="coerce")
+    return (t >= start_s) & (t < end_s)
+
+
+def _coverage_ratio_for_positions(
+    node_g: pd.DataFrame,
+    area: Tuple[float, float],
+    cell_size_m: float,
+) -> float:
+    if node_g.empty:
+        return np.nan
+    pos = node_g[["x_m", "y_m"]].to_numpy(dtype=float)
+    visited = set(cell_ids(pos, area, cell_size_m))
+    total_cells = int(math.ceil(area[0] / cell_size_m)) * int(math.ceil(area[1] / cell_size_m))
+    return float(len(visited) / total_cells) if total_cells > 0 else np.nan
+
+
+def _clip_contacts_to_window(contact_df: pd.DataFrame, start_s: float, end_s: float) -> pd.DataFrame:
+    if contact_df.empty:
+        return contact_df.copy()
+
+    out = contact_df.copy()
+    out["clipped_start_t"] = np.maximum(pd.to_numeric(out["start_t"], errors="coerce"), start_s)
+    out["clipped_end_t"] = np.minimum(pd.to_numeric(out["end_t"], errors="coerce"), end_s)
+    out["clipped_duration_s"] = out["clipped_end_t"] - out["clipped_start_t"]
+    out = out[out["clipped_duration_s"] > 0].copy()
+    return out
+
+
+def _build_run_summary(
+    *,
+    node_df: pd.DataFrame,
+    snap_df: pd.DataFrame,
+    comp_df: pd.DataFrame,
+    contact_df: pd.DataFrame,
+    area: Tuple[float, float],
+    cell_size_m: float,
+    window_name: str,
+    start_s: float,
+    end_s: float,
+) -> pd.DataFrame:
+    snap_window = snap_df[_window_mask(snap_df, start_s, end_s)].copy()
+    node_window = node_df[_window_mask(node_df, start_s, end_s)].copy()
+    comp_window = comp_df[_window_mask(comp_df, start_s, end_s)].copy()
+    contact_window = _clip_contacts_to_window(contact_df, start_s, end_s)
+
+    run_rows = []
+    for run, g in snap_window.groupby("run"):
+        node_g = node_window[node_window["run"] == run]
+        comp_g = comp_window[comp_window["run"] == run]
+        contact_g = contact_window[contact_window["run"] == run]
+        meta = g.iloc[0]
+
+        all_snap_run = snap_df[snap_df["run"] == run].sort_values("time_s")
+        last_total = all_snap_run.iloc[-1] if not all_snap_run.empty else meta
+        last_window = g.sort_values("time_s").iloc[-1]
+
+        contact_duration = (
+            pd.to_numeric(contact_g["clipped_duration_s"], errors="coerce")
+            if "clipped_duration_s" in contact_g.columns
+            else pd.Series(dtype=float)
+        )
+
+        run_rows.append(
+            {
+                "analysis_window": window_name,
+                "window_start_s": float(start_s),
+                "window_end_s": float(end_s),
+                "run": run,
+                "aggregation_label": meta["aggregation_label"],
+                "aggregation": float(meta["aggregation"]),
+                "initial_layout": meta["initial_layout"],
+                "seed": int(meta["seed"]),
+                "mean_degree": float(g["mean_degree"].mean()),
+                "degree_median": float(node_g["degree"].median()) if not node_g.empty else np.nan,
+                "isolated_ratio": float(g["isolated_ratio"].mean()),
+                "lcc_ratio": float(g["lcc_ratio"].mean()),
+                "num_components": float(g["num_components"].mean()),
+                "component_size_median": float(comp_g["component_size"].median()) if not comp_g.empty else np.nan,
+                "window_coverage_ratio": _coverage_ratio_for_positions(node_g, area, cell_size_m),
+                "window_end_cumulative_coverage_ratio": float(last_window["coverage_ratio"]),
+                "final_cumulative_coverage_ratio": float(last_total["coverage_ratio"]),
+                "contact_duration_median_s": float(contact_duration.median()) if not contact_duration.empty else np.nan,
+                "contact_duration_mean_s": float(contact_duration.mean()) if not contact_duration.empty else np.nan,
+                "contacts_observed": int(len(contact_g)),
+                "contacts_censored": int(contact_g["censored"].sum()) if not contact_g.empty else 0,
+            }
+        )
+
+    return pd.DataFrame(run_rows)
+
+
+def _aggregate_summary(run_summary: pd.DataFrame, group_cols: List[str]) -> pd.DataFrame:
+    metric_cols = [
+        "mean_degree",
+        "degree_median",
+        "isolated_ratio",
+        "lcc_ratio",
+        "num_components",
+        "component_size_median",
+        "window_coverage_ratio",
+        "window_end_cumulative_coverage_ratio",
+        "final_cumulative_coverage_ratio",
+        "contact_duration_median_s",
+        "contact_duration_mean_s",
+        "contacts_observed",
+        "contacts_censored",
+    ]
+    cols = [c for c in metric_cols if c in run_summary.columns]
+    return run_summary.groupby(group_cols, as_index=False)[cols].mean(numeric_only=True)
+
+
+def _level_series(values: pd.Series, *, higher_is_high: bool = True) -> pd.Series:
+    labels = ["low", "medium", "high"]
+    vals = pd.to_numeric(values, errors="coerce")
+    valid = vals.dropna().sort_values()
+    if valid.empty:
+        return pd.Series(["unknown"] * len(values), index=values.index)
+
+    ranks = vals.rank(method="dense", ascending=higher_is_high)
+    max_rank = int(ranks.max()) if np.isfinite(ranks.max()) else 1
+    if max_rank == 1:
+        return pd.Series(["similar"] * len(values), index=values.index)
+
+    out = []
+    for rank in ranks:
+        if not np.isfinite(rank):
+            out.append("unknown")
+            continue
+        idx = int(round((float(rank) - 1.0) * (len(labels) - 1) / max(1, max_rank - 1)))
+        out.append(labels[idx])
+    return pd.Series(out, index=values.index)
+
+
+def _add_conclusion_levels(df: pd.DataFrame) -> pd.DataFrame:
+    out = df.copy()
+    out["coverage_level"] = _level_series(out["window_coverage_ratio"], higher_is_high=True)
+    out["connectivity_level"] = _level_series(out["lcc_ratio"], higher_is_high=True)
+    out["partitioning_level"] = _level_series(out["num_components"], higher_is_high=True)
+    out["contact_duration_level"] = _level_series(out["contact_duration_median_s"], higher_is_high=True)
+    out["conclusion_hint"] = out.apply(
+        lambda r: (
+            f"coverage={r['coverage_level']}; "
+            f"connectivity={r['connectivity_level']}; "
+            f"partitioning={r['partitioning_level']}; "
+            f"contacts={r['contact_duration_level']}"
+        ),
+        axis=1,
+    )
+    return out
+
+
+def _write_warmup_effect(out_dir: Path, pre: pd.DataFrame, post: pd.DataFrame) -> None:
+    if pre.empty or post.empty:
+        return
+
+    keys = ["aggregation_label", "aggregation", "initial_layout"]
+    keep_metrics = [
+        "mean_degree",
+        "isolated_ratio",
+        "lcc_ratio",
+        "num_components",
+        "window_coverage_ratio",
+        "contact_duration_median_s",
+    ]
+    left = pre[keys + keep_metrics].copy()
+    right = post[keys + keep_metrics].copy()
+    merged = left.merge(right, on=keys, how="inner", suffixes=("_warmup", "_post_warmup"))
+
+    for metric in keep_metrics:
+        a = f"{metric}_warmup"
+        b = f"{metric}_post_warmup"
+        merged[f"{metric}_delta_post_minus_warmup"] = merged[b] - merged[a]
+        denom = merged[a].replace(0, np.nan)
+        merged[f"{metric}_relative_delta"] = (merged[b] - merged[a]) / denom
+
+    merged.to_csv(out_dir / "warmup_effect_by_condition.csv", index=False)
+
+
 def plot_outputs(out_dir: Path, warmup_s: float) -> None:
     import matplotlib
 
@@ -580,82 +771,121 @@ def summarize(
     comp_df: pd.DataFrame,
     contact_df: pd.DataFrame,
     warmup_s: float,
+    area: Tuple[float, float],
+    cell_size_m: float,
 ) -> None:
-    warm_snap = snap_df[snap_df["time_s"] >= warmup_s].copy()
-    warm_node = node_df[node_df["time_s"] >= warmup_s].copy()
-    warm_comp = comp_df[comp_df["time_s"] >= warmup_s].copy()
-    warm_contacts = contact_df[contact_df["end_t"] > warmup_s].copy()
+    step_s = _time_step_s(snap_df)
+    max_time_s = float(pd.to_numeric(snap_df["time_s"], errors="coerce").max())
+    analysis_end_s = max_time_s + step_s
 
-    run_rows = []
-    for run, g in warm_snap.groupby("run"):
-        node_g = warm_node[warm_node["run"] == run]
-        comp_g = warm_comp[warm_comp["run"] == run]
-        contact_g = warm_contacts[warm_contacts["run"] == run]
-        meta = g.iloc[0]
-        last = snap_df[snap_df["run"] == run].sort_values("time_s").iloc[-1]
-        run_rows.append(
-            {
-                "run": run,
-                "aggregation_label": meta["aggregation_label"],
-                "aggregation": float(meta["aggregation"]),
-                "initial_layout": meta["initial_layout"],
-                "seed": int(meta["seed"]),
-                "mean_degree": float(g["mean_degree"].mean()),
-                "degree_median": float(node_g["degree"].median()) if not node_g.empty else np.nan,
-                "isolated_ratio": float(g["isolated_ratio"].mean()),
-                "lcc_ratio": float(g["lcc_ratio"].mean()),
-                "num_components": float(g["num_components"].mean()),
-                "component_size_median": float(comp_g["component_size"].median()) if not comp_g.empty else np.nan,
-                "final_coverage_ratio": float(last["coverage_ratio"]),
-                "contact_duration_median_s": float(contact_g["duration_s"].median()) if not contact_g.empty else np.nan,
-                "contact_duration_mean_s": float(contact_g["duration_s"].mean()) if not contact_g.empty else np.nan,
-                "contacts_observed": int(len(contact_g)),
-                "contacts_censored": int(contact_g["censored"].sum()) if not contact_g.empty else 0,
-            }
+    post_run = _build_run_summary(
+        node_df=node_df,
+        snap_df=snap_df,
+        comp_df=comp_df,
+        contact_df=contact_df,
+        area=area,
+        cell_size_m=cell_size_m,
+        window_name="post_warmup",
+        start_s=float(warmup_s),
+        end_s=analysis_end_s,
+    )
+    post_run.to_csv(out_dir / "summary_by_run_post_warmup.csv", index=False)
+    post_run.to_csv(out_dir / "summary_by_run.csv", index=False)
+
+    post_condition = _aggregate_summary(
+        post_run,
+        ["analysis_window", "aggregation_label", "aggregation", "initial_layout"],
+    ).sort_values(["aggregation", "initial_layout"])
+    post_condition.to_csv(out_dir / "summary_by_condition_post_warmup.csv", index=False)
+    post_condition.to_csv(out_dir / "summary_by_condition.csv", index=False)
+
+    post_aggregation = _aggregate_summary(
+        post_run,
+        ["analysis_window", "aggregation_label", "aggregation"],
+    ).sort_values("aggregation")
+    post_aggregation.to_csv(out_dir / "summary_by_aggregation_post_warmup.csv", index=False)
+    post_aggregation.to_csv(out_dir / "summary_by_aggregation.csv", index=False)
+
+    if warmup_s > 0:
+        warmup_run = _build_run_summary(
+            node_df=node_df,
+            snap_df=snap_df,
+            comp_df=comp_df,
+            contact_df=contact_df,
+            area=area,
+            cell_size_m=cell_size_m,
+            window_name="warmup",
+            start_s=0.0,
+            end_s=float(warmup_s),
         )
+        warmup_run.to_csv(out_dir / "summary_by_run_warmup.csv", index=False)
+        warmup_condition = _aggregate_summary(
+            warmup_run,
+            ["analysis_window", "aggregation_label", "aggregation", "initial_layout"],
+        ).sort_values(["aggregation", "initial_layout"])
+        warmup_condition.to_csv(out_dir / "summary_by_condition_warmup.csv", index=False)
+        warmup_aggregation = _aggregate_summary(
+            warmup_run,
+            ["analysis_window", "aggregation_label", "aggregation"],
+        ).sort_values("aggregation")
+        warmup_aggregation.to_csv(out_dir / "summary_by_aggregation_warmup.csv", index=False)
+        _write_warmup_effect(out_dir, warmup_condition, post_condition)
 
-    run_summary = pd.DataFrame(run_rows)
-    run_summary.to_csv(out_dir / "summary_by_run.csv", index=False)
-
-    metric_cols = [
-        "mean_degree",
-        "degree_median",
-        "isolated_ratio",
-        "lcc_ratio",
-        "num_components",
-        "component_size_median",
-        "final_coverage_ratio",
-        "contact_duration_median_s",
-        "contact_duration_mean_s",
-        "contacts_observed",
-    ]
-    by_condition = (
-        run_summary.groupby(["aggregation_label", "aggregation", "initial_layout"], as_index=False)[metric_cols]
-        .mean(numeric_only=True)
-        .sort_values(["aggregation", "initial_layout"])
+    conclusion_by_aggregation = _add_conclusion_levels(
+        post_aggregation[
+            [
+                "analysis_window",
+                "aggregation_label",
+                "aggregation",
+                "window_coverage_ratio",
+                "mean_degree",
+                "isolated_ratio",
+                "lcc_ratio",
+                "num_components",
+                "contact_duration_median_s",
+                "contacts_observed",
+            ]
+        ].copy()
     )
-    by_condition.to_csv(out_dir / "summary_by_condition.csv", index=False)
+    conclusion_by_aggregation.to_csv(out_dir / "conclusion_by_aggregation.csv", index=False)
 
-    by_aggregation = (
-        run_summary.groupby(["aggregation_label", "aggregation"], as_index=False)[metric_cols]
-        .mean(numeric_only=True)
-        .sort_values("aggregation")
+    conclusion_by_condition = (
+        post_condition.groupby("initial_layout", group_keys=False)
+        .apply(lambda g: _add_conclusion_levels(g.copy()))
+        .reset_index(drop=True)
     )
-    by_aggregation.to_csv(out_dir / "summary_by_aggregation.csv", index=False)
+    conclusion_by_condition.to_csv(out_dir / "conclusion_by_condition.csv", index=False)
 
-    interpretation = by_aggregation[
+    conclusion_matrix = conclusion_by_aggregation[
         [
             "aggregation_label",
             "aggregation",
-            "final_coverage_ratio",
+            "window_coverage_ratio",
             "mean_degree",
             "isolated_ratio",
             "lcc_ratio",
             "num_components",
             "contact_duration_median_s",
+            "coverage_level",
+            "connectivity_level",
+            "partitioning_level",
+            "contact_duration_level",
+            "conclusion_hint",
         ]
     ].copy()
-    interpretation.to_csv(out_dir / "conclusion_matrix.csv", index=False)
+    conclusion_matrix.to_csv(out_dir / "conclusion_matrix.csv", index=False)
+
+    article_table = conclusion_matrix.rename(
+        columns={
+            "window_coverage_ratio": "post_warmup_coverage_ratio",
+            "mean_degree": "post_warmup_mean_degree",
+            "isolated_ratio": "post_warmup_isolated_ratio",
+            "lcc_ratio": "post_warmup_lcc_ratio",
+            "num_components": "post_warmup_num_partitions",
+            "contact_duration_median_s": "post_warmup_contact_duration_median_s",
+        }
+    )
+    article_table.to_csv(out_dir / "article_conclusion_table.csv", index=False)
 
 
 def write_config(out_dir: Path, params: Dict[str, object]) -> None:
@@ -731,7 +961,7 @@ def main() -> int:
     comp_df.to_csv(out_dir / "component_samples.csv", index=False)
     contact_df.to_csv(out_dir / "contacts.csv", index=False)
 
-    summarize(out_dir, node_df, snap_df, comp_df, contact_df, warmup_s)
+    summarize(out_dir, node_df, snap_df, comp_df, contact_df, warmup_s, area, cell_size_m)
 
     if not args.no_plots:
         plot_outputs(out_dir, warmup_s)
