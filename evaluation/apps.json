@@ -10,7 +10,7 @@
 			"tcpdump_filter": "ether proto 0x4305",
 			"tshark_display_filter": "eth.type==0x4305",
 			"udp_port": 5001,
-			"payload_type_mode": "none"
+			"payload_type_mode": "batadv_packet_type"
 		},
 		"multiunicast": {
 			"binary": "apps/crdt/multiunicast/crdt_multiunicast",
@@ -18,7 +18,7 @@
 			"tcpdump_filter": "ether proto 0x4305",
 			"tshark_display_filter": "eth.type==0x4305",
 			"udp_port": 5001,
-			"payload_type_mode": "none"
+			"payload_type_mode": "batadv_packet_type"
 		},
 		"rapid": {
 			"binary": "apps/crdt/rapid/crdt_rapid",

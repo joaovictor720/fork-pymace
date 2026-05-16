@@ -5,6 +5,7 @@ import sys
 from typing import Iterable, List
 
 from parse_convergence import parse_convergence
+from parse_message_counts import parse_message_counts
 from parse_network import parse_network_overhead
 
 
@@ -57,9 +58,11 @@ def main() -> int:
 
         net = parse_network_overhead(run_dir)
         conv = parse_convergence(run_dir)
+        msg = parse_message_counts(run_dir)
 
         row.update(net)
         row.update(conv)
+        row.update(msg)
 
         if row.get("final_total") and row.get("total_packets") is not None:
             try:

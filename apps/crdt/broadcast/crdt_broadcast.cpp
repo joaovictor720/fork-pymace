@@ -88,6 +88,17 @@ inline double now_ts() {
     return std::chrono::duration<double>(std::chrono::steady_clock::now().time_since_epoch()).count();
 }
 
+static void log_protocol_event(const std::string& node_id, const std::string& event, const std::string& details = "") {
+    std::lock_guard<std::mutex> lk(_event_log_mutex);
+    _event_log << std::fixed << now_ts()
+               << ", event=" << event
+               << ", node=" << node_id;
+    if (!details.empty()) {
+        _event_log << ", " << details;
+    }
+    _event_log << "\n";
+}
+
 void print_config(const node_config& nc) {
     std::cout << "Node: " << nc.id << " Addr: " << nc.listen_addr << "\n";
 }
@@ -158,7 +169,8 @@ void dissemination_loop(
     sockaddr_in broadcast_addr,
     gcounter<int, std::string>& delta_buffer,
     stats& st,
-    double interval
+    double interval,
+    const std::string& node_id
 ) {
     std::string last_payload;
     int retriggers_left = 0;
@@ -210,6 +222,11 @@ void dissemination_loop(
         if (sent > 0) {
             st.sent_msgs++;
             st.sent_bytes += static_cast<int>(sent);
+            std::ostringstream details;
+            details << "mode=broadcast"
+                    << ", reason=" << (has_new ? "new_delta" : "retrigger")
+                    << ", bytes=" << sent;
+            log_protocol_event(node_id, "app_sync_send", details.str());
         }
     }
 }
@@ -250,6 +267,9 @@ void recv_loop(int sockfd, gcounter<int, std::string>& gc, stats& st, const std:
             }
             st.recv_msgs++;
             st.recv_bytes += static_cast<int>(n);
+            std::ostringstream details;
+            details << "mode=broadcast, bytes=" << n;
+            log_protocol_event(node_id, "app_sync_recv", details.str());
         } catch (...) {
             continue;
         }
@@ -363,7 +383,7 @@ int main(int argc, char* argv[]) {
 
     std::thread t_recv(recv_loop, sockfd, std::ref(gc), std::ref(st), nc.id);
     std::thread t_mon(monitor_loop, std::ref(gc), std::ref(st), nc.monitor_interval, nc.log_file);
-    std::thread t_diss(dissemination_loop, sockfd, bcast_addr, std::ref(delta_buffer), std::ref(st), nc.dissemination_interval);
+    std::thread t_diss(dissemination_loop, sockfd, bcast_addr, std::ref(delta_buffer), std::ref(st), nc.dissemination_interval, nc.id);
 
     run_random_mode(nc, gc, delta_buffer);
 

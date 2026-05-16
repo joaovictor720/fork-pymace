@@ -410,4 +410,6 @@ else
   PROCESS_PCAPS_RC=$?
 fi
 
+python3 "$ROOT_DIR/evaluation/parse_message_counts.py" "$RESULT_DIR" --write-run-files >/dev/null || true
+
 finish_and_exit

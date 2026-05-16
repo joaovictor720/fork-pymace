@@ -88,6 +88,17 @@ void print_config(const node_config& nc) {
     std::cout << "\n";
 }
 
+static void log_protocol_event(const std::string& node_id, const std::string& event, const std::string& details = "") {
+    std::lock_guard<std::mutex> lk(_event_log_mutex);
+    _event_log << std::fixed << now_ts()
+               << ", event=" << event
+               << ", node=" << node_id;
+    if (!details.empty()) {
+        _event_log << ", " << details;
+    }
+    _event_log << "\n";
+}
+
 node_config load_config(const std::string& cfg_path, const std::string& id) {
     std::ifstream f(cfg_path);
     json cfg = json::parse(f);
@@ -141,6 +152,7 @@ struct CastEntry {
     double prob;
     std::chrono::steady_clock::time_point when;
     std::vector<char> payload;
+    std::string reason;
 };
 
 class CastQueue {
@@ -251,12 +263,26 @@ static void build_heartbeat_packet(uint64_t peerid, std::vector<char>& out) {
     append_uint64(out, peerid);
 }
 
-static void send_broadcast(const std::vector<char>& pkt, stats& st) {
+static bool send_broadcast(
+    const std::vector<char>& pkt,
+    stats& st,
+    const std::string& node_id,
+    const std::string& event,
+    const std::string& details = ""
+) {
     ssize_t sent = sendto(_sockfd, pkt.data(), pkt.size(), 0, (sockaddr*)&_broadcast_addr, sizeof(_broadcast_addr));
     if (sent > 0) {
         st.sent_msgs++;
         st.sent_bytes += static_cast<int>(sent);
+        std::ostringstream oss;
+        oss << "bytes=" << sent;
+        if (!details.empty()) {
+            oss << ", " << details;
+        }
+        log_protocol_event(node_id, event, oss.str());
+        return true;
     }
+    return false;
 }
 
 static bool cache_exists(uint64_t id) {
@@ -364,7 +390,7 @@ static bool setup_socket_and_peers(const node_config& nc) {
     return true;
 }
 
-void cast_worker(stats& st) {
+void cast_worker(stats& st, const std::string& node_id) {
     std::uniform_int_distribution<int> long_jitter(LONG_JITTER_MIN_MS, LONG_JITTER_MAX_MS);
 
     while (g_running.load()) {
@@ -374,7 +400,12 @@ void cast_worker(stats& st) {
             if (r <= e.prob) {
                 std::vector<char> pkt;
                 build_data_packet(e.msgid, e.payload, pkt);
-                send_broadcast(pkt, st);
+                std::ostringstream details;
+                details << "msgid=" << e.msgid
+                        << ", payload_bytes=" << e.payload.size()
+                        << ", reason=" << (e.reason.empty() ? "cast" : e.reason)
+                        << ", probability=" << e.prob;
+                send_broadcast(pkt, st, node_id, "rapid_data_send", details.str());
             } else {
                 e.when = std::chrono::steady_clock::now() + std::chrono::milliseconds(long_jitter(_rng));
                 e.prob = 1.0;
@@ -386,7 +417,7 @@ void cast_worker(stats& st) {
     }
 }
 
-void gossip_worker(stats& st) {
+void gossip_worker(stats& st, const std::string& node_id) {
     while (g_running.load()) {
         std::this_thread::sleep_for(std::chrono::milliseconds(GOSSIP_INTERVAL_MS));
         if (!g_running.load()) {
@@ -409,24 +440,30 @@ void gossip_worker(stats& st) {
         if (!headers.empty()) {
             std::vector<char> pkt;
             build_gossip_packet(headers, pkt);
-            send_broadcast(pkt, st);
+            std::ostringstream details;
+            details << "entries=" << headers.size();
+            send_broadcast(pkt, st, node_id, "rapid_gossip_send", details.str());
         }
     }
 }
 
-void heartbeat_worker(uint64_t selfid, stats& st) {
+void heartbeat_worker(uint64_t selfid, stats& st, const std::string& node_id) {
     while (g_running.load()) {
         std::vector<char> pkt;
         build_heartbeat_packet(selfid, pkt);
-        send_broadcast(pkt, st);
+        std::ostringstream details;
+        details << "peerid=" << selfid;
+        send_broadcast(pkt, st, node_id, "rapid_heartbeat_send", details.str());
         std::this_thread::sleep_for(std::chrono::milliseconds(HEARTBEAT_INTERVAL_MS));
     }
 }
 
-static void send_request_once(uint64_t msgid, stats& st) {
+static void send_request_once(uint64_t msgid, stats& st, const std::string& node_id) {
     std::vector<char> pkt;
     build_request_packet(msgid, pkt);
-    send_broadcast(pkt, st);
+    std::ostringstream details;
+    details << "msgid=" << msgid;
+    send_broadcast(pkt, st, node_id, "rapid_request_send", details.str());
 }
 
 void recv_loop(int sockfd_local, gcounter<int, std::string>& gc, stats& st, const std::string& node_id) {
@@ -468,8 +505,17 @@ void recv_loop(int sockfd_local, gcounter<int, std::string>& gc, stats& st, cons
 
             const char* payload_ptr = buf + 1 + 8 + 4;
             std::vector<char> payload(payload_ptr, payload_ptr + len);
+            bool is_new = !cache_exists(msgid);
+            {
+                std::ostringstream details;
+                details << "bytes=" << n
+                        << ", msgid=" << msgid
+                        << ", payload_bytes=" << len
+                        << ", new_cache=" << (is_new ? 1 : 0);
+                log_protocol_event(node_id, "rapid_data_recv", details.str());
+            }
 
-            if (!cache_exists(msgid)) {
+            if (is_new) {
                 cache_insert(msgid, payload);
                 try {
                     std::string s(payload.begin(), payload.end());
@@ -502,6 +548,7 @@ void recv_loop(int sockfd_local, gcounter<int, std::string>& gc, stats& st, cons
                     (int)(_uniform_01(_rng) * (SHORT_JITTER_MAX_MS - SHORT_JITTER_MIN_MS) + SHORT_JITTER_MIN_MS)
                 );
                 e.payload = payload;
+                e.reason = "forward";
                 _cast_queue.push(e);
             }
         } else if (type == MT_GOSSIP) {
@@ -513,6 +560,11 @@ void recv_loop(int sockfd_local, gcounter<int, std::string>& gc, stats& st, cons
                 static_cast<unsigned char>(buf[1]) |
                 (static_cast<unsigned char>(buf[2]) << 8)
             );
+            {
+                std::ostringstream details;
+                details << "bytes=" << n << ", entries=" << nn;
+                log_protocol_event(node_id, "rapid_gossip_recv", details.str());
+            }
 
             const char* p = buf + 3;
             for (int i = 0; i < (int)nn; ++i) {
@@ -525,7 +577,7 @@ void recv_loop(int sockfd_local, gcounter<int, std::string>& gc, stats& st, cons
                 if (!cache_exists(hid)) {
                     int jitter = SHORT_JITTER_MIN_MS + (_rng() % (SHORT_JITTER_MAX_MS - SHORT_JITTER_MIN_MS + 1));
                     std::this_thread::sleep_for(std::chrono::milliseconds(jitter));
-                    send_request_once(hid, st);
+                    send_request_once(hid, st, node_id);
                 }
             }
         } else if (type == MT_REQUEST) {
@@ -533,17 +585,31 @@ void recv_loop(int sockfd_local, gcounter<int, std::string>& gc, stats& st, cons
                 continue;
             }
             uint64_t hid = read_uint64(buf + 1);
+            {
+                std::ostringstream details;
+                details << "bytes=" << n << ", msgid=" << hid;
+                log_protocol_event(node_id, "rapid_request_recv", details.str());
+            }
             std::vector<char> payload;
             if (cache_get(hid, payload)) {
                 std::vector<char> pkt;
                 build_data_packet(hid, payload, pkt);
-                send_broadcast(pkt, st);
+                std::ostringstream details;
+                details << "msgid=" << hid
+                        << ", payload_bytes=" << payload.size()
+                        << ", reason=request_response";
+                send_broadcast(pkt, st, node_id, "rapid_data_send", details.str());
             }
         } else if (type == MT_HEARTBEAT) {
             if (n < 1 + 8) {
                 continue;
             }
             uint64_t pid = read_uint64(buf + 1);
+            {
+                std::ostringstream details;
+                details << "bytes=" << n << ", peerid=" << pid;
+                log_protocol_event(node_id, "rapid_heartbeat_recv", details.str());
+            }
             neighbor_seen(pid);
         }
     }
@@ -676,6 +742,7 @@ void local_periodic_dissemination(const node_config& nc, stats& st) {
             e.prob = 1.0;
             e.when = std::chrono::steady_clock::now();
             e.payload = payload;
+            e.reason = "local_new";
             _cast_queue.push(e);
 
             last_local_msgid = msgid;
@@ -689,6 +756,7 @@ void local_periodic_dissemination(const node_config& nc, stats& st) {
                     e.prob = 1.0;
                     e.when = std::chrono::steady_clock::now();
                     e.payload = payload;
+                    e.reason = "local_repeat";
                     _cast_queue.push(e);
                 }
             }
@@ -739,9 +807,9 @@ int main(int argc, char* argv[]) {
     uint64_t selfid = gen_id();
 
     std::thread t_recv(recv_loop, _sockfd, std::ref(gc), std::ref(st), nc.id);
-    std::thread t_cast(cast_worker, std::ref(st));
-    std::thread t_gossip(gossip_worker, std::ref(st));
-    std::thread t_hb(heartbeat_worker, selfid, std::ref(st));
+    std::thread t_cast(cast_worker, std::ref(st), nc.id);
+    std::thread t_gossip(gossip_worker, std::ref(st), nc.id);
+    std::thread t_hb(heartbeat_worker, selfid, std::ref(st), nc.id);
     std::thread t_mon(monitor_loop, std::ref(gc), std::ref(st), nc.monitor_interval, nc.log_file);
     std::thread t_maint(periodic_maintenance);
     std::thread t_local(local_periodic_dissemination, std::cref(nc), std::ref(st));

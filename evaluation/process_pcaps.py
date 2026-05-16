@@ -5,6 +5,7 @@ import glob
 import json
 import os
 import re
+import struct
 import subprocess
 import sys
 from dataclasses import dataclass
@@ -70,10 +71,18 @@ class PcapStats:
     max_len: Optional[int] = None
     payload_type_frames: Dict[int, int] = None  # type: ignore
     payload_type_bytes: Dict[int, int] = None   # type: ignore
+    protocol_type_frames: Dict[str, int] = None  # type: ignore
+    protocol_type_bytes: Dict[str, int] = None   # type: ignore
+    protocol_group_frames: Dict[str, int] = None  # type: ignore
+    protocol_group_bytes: Dict[str, int] = None   # type: ignore
 
     def __post_init__(self) -> None:
         self.payload_type_frames = {}
         self.payload_type_bytes = {}
+        self.protocol_type_frames = {}
+        self.protocol_type_bytes = {}
+        self.protocol_group_frames = {}
+        self.protocol_group_bytes = {}
 
     @property
     def duration_sec(self) -> float:
@@ -106,6 +115,9 @@ def _tshark_fields(payload_mode: str) -> List[str]:
     fields = ["frame.time_epoch", "frame.len"]
     if payload_mode == "first_byte_hex":
         fields.append("data.data")
+    elif payload_mode == "batadv_packet_type":
+        fields.append("batadv.batman.packet_type")
+        fields.append("batadv.unicast_4addr.subtype")
     return fields
 
 
@@ -130,6 +142,172 @@ def _first_byte_from_hex(data_data: str) -> Optional[int]:
         return int(hex_data[0:2], 16)
     except ValueError:
         return None
+
+
+BATADV_TYPE_NAMES = {
+    0x00: "BATADV_IV_OGM",
+    0x01: "BATADV_BCAST",
+    0x02: "BATADV_CODED",
+    0x03: "BATADV_ELP",
+    0x04: "BATADV_OGM2",
+    0x05: "BATADV_MCAST",
+    0x40: "BATADV_UNICAST",
+    0x41: "BATADV_UNICAST_FRAG",
+    0x42: "BATADV_UNICAST_4ADDR",
+    0x43: "BATADV_ICMP",
+    0x44: "BATADV_UNICAST_TVLV",
+}
+
+BATADV_CONTROL_TYPES = {
+    "BATADV_IV_OGM",
+    "BATADV_ELP",
+    "BATADV_OGM2",
+    "BATADV_ICMP",
+    "BATADV_UNICAST_TVLV",
+}
+
+BATADV_DATA_TYPES = {
+    "BATADV_BCAST",
+    "BATADV_CODED",
+    "BATADV_MCAST",
+    "BATADV_UNICAST",
+    "BATADV_UNICAST_FRAG",
+}
+
+BATADV_4ADDR_DATA_SUBTYPE = 0x01
+BATADV_4ADDR_CONTROL_SUBTYPES = {0x02, 0x03, 0x04}
+
+
+def _first_int_field(value: str) -> Optional[int]:
+    if not value:
+        return None
+    for part in re.split(r"[,; ]+", value.strip()):
+        if not part:
+            continue
+        try:
+            return int(part, 0)
+        except ValueError:
+            continue
+    return None
+
+
+def _batadv_type_name(packet_type: int, subtype: Optional[int]) -> str:
+    base = BATADV_TYPE_NAMES.get(packet_type)
+    if base is None:
+        return f"BATADV_RESERVED_0x{packet_type:02x}"
+    if base != "BATADV_UNICAST_4ADDR" or subtype is None:
+        return base
+    if subtype == BATADV_4ADDR_DATA_SUBTYPE:
+        return "BATADV_UNICAST_4ADDR_DATA"
+    if subtype in BATADV_4ADDR_CONTROL_SUBTYPES:
+        return f"BATADV_UNICAST_4ADDR_DAT_{subtype}"
+    return f"BATADV_UNICAST_4ADDR_SUBTYPE_{subtype}"
+
+
+def _batadv_group(type_name: str) -> str:
+    if type_name in BATADV_CONTROL_TYPES or type_name.startswith("BATADV_UNICAST_4ADDR_DAT_"):
+        return "control"
+    if (
+        type_name in BATADV_DATA_TYPES
+        or type_name == "BATADV_UNICAST_4ADDR_DATA"
+        or type_name.startswith("BATADV_UNICAST_4ADDR_SUBTYPE_")
+    ):
+        return "data"
+    if type_name == "BATADV_UNICAST_4ADDR":
+        return "data_or_dat"
+    return "unclassified"
+
+
+def _iter_pcap_frames(pcap_path: str):
+    try:
+        with open(pcap_path, "rb") as f:
+            header = f.read(24)
+            if len(header) < 24:
+                return
+
+            magic = header[:4]
+            if magic in (b"\xd4\xc3\xb2\xa1", b"\x4d\x3c\xb2\xa1"):
+                endian = "<"
+            elif magic in (b"\xa1\xb2\xc3\xd4", b"\xa1\xb2\x3c\x4d"):
+                endian = ">"
+            else:
+                return
+
+            linktype = struct.unpack(endian + "I", header[20:24])[0]
+
+            while True:
+                rec_header = f.read(16)
+                if len(rec_header) == 0:
+                    return
+                if len(rec_header) < 16:
+                    return
+                _ts_sec, _ts_frac, incl_len, _orig_len = struct.unpack(endian + "IIII", rec_header)
+                frame = f.read(incl_len)
+                if len(frame) < incl_len:
+                    return
+                yield linktype, frame
+    except OSError:
+        return
+
+
+def _batadv_payload_offset(linktype: int, frame: bytes) -> Optional[int]:
+    # LINKTYPE_ETHERNET
+    if linktype == 1:
+        if len(frame) < 14:
+            return None
+        offset = 12
+        eth_type = int.from_bytes(frame[offset:offset + 2], "big")
+        offset += 2
+        while eth_type in (0x8100, 0x88A8, 0x9100):
+            if len(frame) < offset + 4:
+                return None
+            eth_type = int.from_bytes(frame[offset + 2:offset + 4], "big")
+            offset += 4
+        if eth_type != 0x4305:
+            return None
+        return offset
+
+    # LINKTYPE_LINUX_SLL
+    if linktype == 113:
+        if len(frame) < 16:
+            return None
+        eth_type = int.from_bytes(frame[14:16], "big")
+        return 16 if eth_type == 0x4305 else None
+
+    # LINKTYPE_LINUX_SLL2
+    if linktype == 276:
+        if len(frame) < 20:
+            return None
+        eth_type = int.from_bytes(frame[0:2], "big")
+        return 20 if eth_type == 0x4305 else None
+
+    return None
+
+
+def _batadv_counts_from_pcap(pcap_path: str) -> Tuple[Dict[str, int], Dict[str, int], Dict[str, int], Dict[str, int]]:
+    type_frames: Dict[str, int] = {}
+    group_frames: Dict[str, int] = {}
+    type_bytes: Dict[str, int] = {}
+    group_bytes: Dict[str, int] = {}
+
+    for linktype, frame in _iter_pcap_frames(pcap_path):
+        payload_offset = _batadv_payload_offset(linktype, frame)
+        if payload_offset is None or len(frame) <= payload_offset:
+            continue
+
+        packet_type = frame[payload_offset]
+        subtype = None
+        if packet_type == 0x42 and len(frame) > payload_offset + 16:
+            subtype = frame[payload_offset + 16]
+
+        type_name = _batadv_type_name(packet_type, subtype)
+        group = _batadv_group(type_name)
+        type_frames[type_name] = type_frames.get(type_name, 0) + 1
+        group_frames[group] = group_frames.get(group, 0) + 1
+        type_bytes[type_name] = type_bytes.get(type_name, 0) + len(frame)
+        group_bytes[group] = group_bytes.get(group, 0) + len(frame)
+
+    return type_frames, type_bytes, group_frames, group_bytes
 
 
 def compute_metrics_allow_partial(pcap_path: str, dfilt: str, payload_mode: str) -> Tuple[PcapStats, int, str]:
@@ -176,10 +354,29 @@ def compute_metrics_allow_partial(pcap_path: str, dfilt: str, payload_mode: str)
             if message_type is not None:
                 stats.payload_type_frames[message_type] = stats.payload_type_frames.get(message_type, 0) + 1
                 stats.payload_type_bytes[message_type] = stats.payload_type_bytes.get(message_type, 0) + ln
+        elif payload_mode == "batadv_packet_type":
+            packet_type = _first_int_field(parts[2].strip() if len(parts) > 2 else "")
+            subtype = _first_int_field(parts[3].strip() if len(parts) > 3 else "")
+            if packet_type is not None:
+                type_name = _batadv_type_name(packet_type, subtype)
+                group = _batadv_group(type_name)
+                stats.protocol_type_frames[type_name] = stats.protocol_type_frames.get(type_name, 0) + 1
+                stats.protocol_type_bytes[type_name] = stats.protocol_type_bytes.get(type_name, 0) + ln
+                stats.protocol_group_frames[group] = stats.protocol_group_frames.get(group, 0) + 1
+                stats.protocol_group_bytes[group] = stats.protocol_group_bytes.get(group, 0) + ln
 
     assert proc.stderr is not None
     stderr = proc.stderr.read()
     rc = proc.wait()
+
+    if payload_mode == "batadv_packet_type":
+        raw_type_frames, raw_type_bytes, raw_group_frames, raw_group_bytes = _batadv_counts_from_pcap(pcap_path)
+        if raw_type_frames:
+            stats.protocol_type_frames = raw_type_frames
+            stats.protocol_type_bytes = raw_type_bytes
+            stats.protocol_group_frames = raw_group_frames
+            stats.protocol_group_bytes = raw_group_bytes
+
     return stats, rc, stderr.strip()
 
 
@@ -264,6 +461,10 @@ def main() -> int:
                 "tshark_error",
                 "payload_type_frames_json",
                 "payload_type_bytes_json",
+                "protocol_type_frames_json",
+                "protocol_type_bytes_json",
+                "protocol_group_frames_json",
+                "protocol_group_bytes_json",
             ]
         )
 
@@ -307,6 +508,10 @@ def main() -> int:
                         "",
                         "{}",
                         "{}",
+                        "{}",
+                        "{}",
+                        "{}",
+                        "{}",
                     ]
                 )
                 fjsonl.write(
@@ -345,6 +550,10 @@ def main() -> int:
 
             payload_type_frames_json = json.dumps(stats.payload_type_frames, sort_keys=True)
             payload_type_bytes_json = json.dumps(stats.payload_type_bytes, sort_keys=True)
+            protocol_type_frames_json = json.dumps(stats.protocol_type_frames, sort_keys=True)
+            protocol_type_bytes_json = json.dumps(stats.protocol_type_bytes, sort_keys=True)
+            protocol_group_frames_json = json.dumps(stats.protocol_group_frames, sort_keys=True)
+            protocol_group_bytes_json = json.dumps(stats.protocol_group_bytes, sort_keys=True)
 
             writer.writerow(
                 [
@@ -366,6 +575,10 @@ def main() -> int:
                     err,
                     payload_type_frames_json,
                     payload_type_bytes_json,
+                    protocol_type_frames_json,
+                    protocol_type_bytes_json,
+                    protocol_group_frames_json,
+                    protocol_group_bytes_json,
                 ]
             )
 
@@ -389,6 +602,10 @@ def main() -> int:
                 "tcpdump": tcpdump_stats,
                 "payload_type_frames": stats.payload_type_frames,
                 "payload_type_bytes": stats.payload_type_bytes,
+                "protocol_type_frames": stats.protocol_type_frames,
+                "protocol_type_bytes": stats.protocol_type_bytes,
+                "protocol_group_frames": stats.protocol_group_frames,
+                "protocol_group_bytes": stats.protocol_group_bytes,
             }
             fjsonl.write(json.dumps(detail, sort_keys=True) + "\n")
 
@@ -413,6 +630,15 @@ def main() -> int:
                         netlog_payload[f"PAYLOAD_MT_{message_type}_FRAMES"] = count
                     for message_type, value in stats.payload_type_bytes.items():
                         netlog_payload[f"PAYLOAD_MT_{message_type}_BYTES"] = value
+                elif payload_mode == "batadv_packet_type":
+                    for message_type, count in stats.protocol_type_frames.items():
+                        netlog_payload[f"BATADV_{message_type}_FRAMES"] = count
+                    for message_type, value in stats.protocol_type_bytes.items():
+                        netlog_payload[f"BATADV_{message_type}_BYTES"] = value
+                    for group, count in stats.protocol_group_frames.items():
+                        netlog_payload[f"BATADV_GROUP_{group.upper()}_FRAMES"] = count
+                    for group, value in stats.protocol_group_bytes.items():
+                        netlog_payload[f"BATADV_GROUP_{group.upper()}_BYTES"] = value
                 append_to_netlog(netlog, netlog_payload)
 
             if args.delete and status in ("ok", "ok_truncated", "empty"):
