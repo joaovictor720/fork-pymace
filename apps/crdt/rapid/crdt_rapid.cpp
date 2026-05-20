@@ -1,64 +1,65 @@
-#include <iostream>
-#include <fstream>
-#include <thread>
-#include <chrono>
-#include <atomic>
-#include <vector>
-#include <string>
-#include <random>
-#include <map>
-#include <csignal>
-#include <cstring>
-#include <cerrno>
-#include <nlohmann/json.hpp>
 #include <arpa/inet.h>
-#include <sys/socket.h>
-#include <unistd.h>
+#include <atomic>
+#include <cerrno>
+#include <chrono>
+#include <cstdint>
+#include <cstdlib>
+#include <cstring>
+#include <fstream>
+#include <iostream>
 #include <mutex>
-#include <condition_variable>
-#include <sstream>
-#include <algorithm>
-#include <unordered_map>
+#include <nlohmann/json.hpp>
+#include <random>
+#include <string>
+#include <sys/socket.h>
+#include <thread>
+#include <unistd.h>
+#include <vector>
 
-#include "/home/mace/git/fork-pymace/apps/crdt/common/delta-crdts.cc"
+#include "lib/rapid.hpp"
+#include "../common/delta-crdts.cc"
 
 using json = nlohmann::json;
 
 constexpr size_t MSG_MAX = 8192;
-static const double BETA = 2.5;
-static const int CACHE_TTL = 60;
-static const int HEARTBEAT_INTERVAL_MS = 1000;
-static const int GOSSIP_INTERVAL_MS = 1000;
-static const int SHORT_JITTER_MIN_MS = 10;
-static const int SHORT_JITTER_MAX_MS = 40;
-static const int LONG_JITTER_MIN_MS = 200;
-static const int LONG_JITTER_MAX_MS = 600;
-static const int PORT_DEFAULT = 9000;
+constexpr int PORT_DEFAULT = 9000;
+constexpr double RAPID_BETA = 2.5;
+constexpr int RAPID_CACHE_TTL_SEC = 60;
+constexpr int RAPID_HEARTBEAT_INTERVAL_MS = 1000;
+constexpr int RAPID_GOSSIP_INTERVAL_MS = 1000;
+constexpr int RAPID_SHORT_JITTER_MIN_MS = 10;
+constexpr int RAPID_SHORT_JITTER_MAX_MS = 40;
+constexpr int RAPID_LONG_JITTER_MIN_MS = 200;
+constexpr int RAPID_LONG_JITTER_MAX_MS = 600;
 
 static std::atomic<bool> g_running{true};
 
 std::mutex _gc_mutex;
+std::mutex _pending_mutex;
+std::mutex _event_log_mutex;
+std::mutex _rapid_mutex;
 
 gcounter<int, std::string> _pending_state;
 bool _has_pending = false;
 
-std::mutex _pending_mutex;
-
-std::mutex _event_log_mutex;
 std::ofstream _event_log;
+
+int _sockfd = -1;
+sockaddr_in _broadcast_addr{};
+int _listen_port = PORT_DEFAULT;
 
 struct node_config {
     std::string id;
     std::string listen_addr;
     std::vector<std::string> peers;
-    double ops_per_sec;
-    int duration;
-    std::string distribution;
-    int seed;
+    double ops_per_sec{1.0};
+    int duration{10};
+    std::string distribution{"uniform"};
+    int seed{0};
     std::string log_file;
-    double monitor_interval;
-    double cooldown;
-    double dissemination_interval;
+    double monitor_interval{1.0};
+    double cooldown{10.0};
+    double dissemination_interval{0.5};
 };
 
 struct stats {
@@ -82,7 +83,7 @@ void print_config(const node_config& nc) {
     std::cout << "monitor_interval: " << nc.monitor_interval << "\n";
     std::cout << "dissemination_interval: " << nc.dissemination_interval << "\n";
     std::cout << "peers: ";
-    for (auto& p : nc.peers) {
+    for (const auto& p : nc.peers) {
         std::cout << p << " ";
     }
     std::cout << "\n";
@@ -119,203 +120,38 @@ node_config load_config(const std::string& cfg_path, const std::string& id) {
     }
     nc.log_file = log_dir + "node_" + id + ".log";
 
-    nc.cooldown = cfg.value("cooldown", 10);
+    nc.cooldown = cfg.value("cooldown", 10.0);
     nc.dissemination_interval = cfg.value("dissemination_interval", 0.5);
     return nc;
 }
 
-enum MsgType : uint8_t {
-    MT_DATA = 1,
-    MT_GOSSIP = 2,
-    MT_REQUEST = 3,
-    MT_HEARTBEAT = 4
-};
-
-struct CacheEntry {
-    std::chrono::steady_clock::time_point t;
-    std::vector<char> payload;
-};
-
-struct CastEntry {
-    uint64_t msgid;
-    double prob;
-    std::chrono::steady_clock::time_point when;
-    std::vector<char> payload;
-};
-
-class CastQueue {
-private:
-    std::vector<CastEntry> q_;
-    std::mutex mu_;
-    std::condition_variable cv_;
-
-public:
-    void push(const CastEntry& e) {
-        {
-            std::lock_guard<std::mutex> lg(mu_);
-            q_.push_back(e);
+static rapid::NodeId to_rapid_node_id(const std::string& id) {
+    try {
+        size_t used = 0;
+        unsigned long long parsed = std::stoull(id, &used, 10);
+        if (used == id.size()) {
+            return static_cast<rapid::NodeId>(parsed + 1);
         }
-        cv_.notify_one();
+    } catch (...) {
     }
 
-    bool pop_due(CastEntry& out) {
-        std::unique_lock<std::mutex> lk(mu_);
-        if (q_.empty()) {
-            cv_.wait_for(lk, std::chrono::milliseconds(50));
-        }
-        auto now = std::chrono::steady_clock::now();
-        for (auto it = q_.begin(); it != q_.end(); ++it) {
-            if (it->when <= now) {
-                out = *it;
-                q_.erase(it);
-                return true;
-            }
-        }
-        return false;
-    }
-};
-
-CastQueue _cast_queue;
-std::unordered_map<uint64_t, CacheEntry> _cache;
-std::mutex _cache_mutex;
-std::unordered_map<uint64_t, std::chrono::steady_clock::time_point> _neighbors;
-std::mutex _neighbors_mutex;
-
-int _sockfd = -1;
-sockaddr_in _broadcast_addr;
-int _listen_port = PORT_DEFAULT;
-
-std::mt19937_64 _rng((uint64_t)std::chrono::steady_clock::now().time_since_epoch().count());
-std::uniform_real_distribution<double> _uniform_01(0.0, 1.0);
-
-static void append_uint64(std::vector<char>& v, uint64_t x) {
-    for (int i = 0; i < 8; ++i) {
-        v.push_back(static_cast<char>((x >> (i * 8)) & 0xFF));
-    }
+    rapid::NodeId hashed = static_cast<rapid::NodeId>(std::hash<std::string>{}(id));
+    return hashed == rapid::kUnknownNode ? 1 : hashed;
 }
 
-static void append_uint32(std::vector<char>& v, uint32_t x) {
-    for (int i = 0; i < 4; ++i) {
-        v.push_back(static_cast<char>((x >> (i * 8)) & 0xFF));
-    }
-}
-
-static uint64_t read_uint64(const char* p) {
-    uint64_t x = 0;
-    for (int i = 0; i < 8; ++i) {
-        x |= (static_cast<uint64_t>(static_cast<unsigned char>(p[i])) << (i * 8));
-    }
-    return x;
-}
-
-static uint32_t read_uint32(const char* p) {
-    uint32_t x = 0;
-    for (int i = 0; i < 4; ++i) {
-        x |= (static_cast<uint32_t>(static_cast<unsigned char>(p[i])) << (i * 8));
-    }
-    return x;
-}
-
-static uint64_t gen_id() {
-    return _rng();
-}
-
-static void build_data_packet(uint64_t msgid, const std::vector<char>& payload, std::vector<char>& out) {
-    out.clear();
-    out.push_back(static_cast<char>(MT_DATA));
-    append_uint64(out, msgid);
-    append_uint32(out, static_cast<uint32_t>(payload.size()));
-    out.insert(out.end(), payload.begin(), payload.end());
-}
-
-static void build_gossip_packet(const std::vector<uint64_t>& headers, std::vector<char>& out) {
-    out.clear();
-    out.push_back(static_cast<char>(MT_GOSSIP));
-    uint16_t n = static_cast<uint16_t>(headers.size());
-    out.push_back(static_cast<char>(n & 0xFF));
-    out.push_back(static_cast<char>((n >> 8) & 0xFF));
-    for (uint64_t h : headers) {
-        append_uint64(out, h);
-    }
-}
-
-static void build_request_packet(uint64_t msgid, std::vector<char>& out) {
-    out.clear();
-    out.push_back(static_cast<char>(MT_REQUEST));
-    append_uint64(out, msgid);
-}
-
-static void build_heartbeat_packet(uint64_t peerid, std::vector<char>& out) {
-    out.clear();
-    out.push_back(static_cast<char>(MT_HEARTBEAT));
-    append_uint64(out, peerid);
-}
-
-static void send_broadcast(const std::vector<char>& pkt, stats& st) {
-    ssize_t sent = sendto(_sockfd, pkt.data(), pkt.size(), 0, (sockaddr*)&_broadcast_addr, sizeof(_broadcast_addr));
-    if (sent > 0) {
-        st.sent_msgs++;
-        st.sent_bytes += static_cast<int>(sent);
-    }
-}
-
-static bool cache_exists(uint64_t id) {
-    std::lock_guard<std::mutex> lg(_cache_mutex);
-    return _cache.find(id) != _cache.end();
-}
-
-static void cache_insert(uint64_t id, const std::vector<char>& payload) {
-    std::lock_guard<std::mutex> lg(_cache_mutex);
-    CacheEntry e;
-    e.t = std::chrono::steady_clock::now();
-    e.payload = payload;
-    _cache[id] = std::move(e);
-}
-
-static bool cache_get(uint64_t id, std::vector<char>& out_payload) {
-    std::lock_guard<std::mutex> lg(_cache_mutex);
-    auto it = _cache.find(id);
-    if (it == _cache.end()) {
-        return false;
-    }
-    out_payload = it->second.payload;
-    return true;
-}
-
-static void cache_cleanup() {
-    std::lock_guard<std::mutex> lg(_cache_mutex);
-    auto now = std::chrono::steady_clock::now();
-    for (auto it = _cache.begin(); it != _cache.end();) {
-        auto age = std::chrono::duration_cast<std::chrono::seconds>(now - it->second.t).count();
-        if (age > CACHE_TTL) {
-            it = _cache.erase(it);
-        } else {
-            ++it;
-        }
-    }
-}
-
-static void neighbor_seen(uint64_t id) {
-    std::lock_guard<std::mutex> lg(_neighbors_mutex);
-    _neighbors[id] = std::chrono::steady_clock::now();
-}
-
-static int neighbor_count() {
-    std::lock_guard<std::mutex> lg(_neighbors_mutex);
-    return static_cast<int>(_neighbors.size());
-}
-
-static void neighbor_cleanup() {
-    std::lock_guard<std::mutex> lg(_neighbors_mutex);
-    auto now = std::chrono::steady_clock::now();
-    for (auto it = _neighbors.begin(); it != _neighbors.end();) {
-        auto age = std::chrono::duration_cast<std::chrono::seconds>(now - it->second).count();
-        if (age > 5) {
-            it = _neighbors.erase(it);
-        } else {
-            ++it;
-        }
-    }
+static rapid::Config make_rapid_config(const node_config& nc) {
+    rapid::Config cfg;
+    cfg.node_id = to_rapid_node_id(nc.id);
+    cfg.seed = static_cast<std::uint64_t>(nc.seed);
+    cfg.beta = RAPID_BETA;
+    cfg.cache_ttl = std::chrono::seconds(RAPID_CACHE_TTL_SEC);
+    cfg.gossip_interval = std::chrono::milliseconds(RAPID_GOSSIP_INTERVAL_MS);
+    cfg.heartbeat_interval = std::chrono::milliseconds(RAPID_HEARTBEAT_INTERVAL_MS);
+    cfg.short_jitter_min = std::chrono::milliseconds(RAPID_SHORT_JITTER_MIN_MS);
+    cfg.short_jitter_max = std::chrono::milliseconds(RAPID_SHORT_JITTER_MAX_MS);
+    cfg.long_jitter_min = std::chrono::milliseconds(RAPID_LONG_JITTER_MIN_MS);
+    cfg.long_jitter_max = std::chrono::milliseconds(RAPID_LONG_JITTER_MAX_MS);
+    return cfg;
 }
 
 static void set_socket_timeouts(int sockfd) {
@@ -360,76 +196,46 @@ static bool setup_socket_and_peers(const node_config& nc) {
     broadcast.sin_port = htons(static_cast<uint16_t>(_listen_port));
     broadcast.sin_addr.s_addr = INADDR_BROADCAST;
     _broadcast_addr = broadcast;
-
     return true;
 }
 
-void cast_worker(stats& st) {
-    std::uniform_int_distribution<int> long_jitter(LONG_JITTER_MIN_MS, LONG_JITTER_MAX_MS);
-
-    while (g_running.load()) {
-        CastEntry e;
-        if (_cast_queue.pop_due(e)) {
-            double r = _uniform_01(_rng);
-            if (r <= e.prob) {
-                std::vector<char> pkt;
-                build_data_packet(e.msgid, e.payload, pkt);
-                send_broadcast(pkt, st);
-            } else {
-                e.when = std::chrono::steady_clock::now() + std::chrono::milliseconds(long_jitter(_rng));
-                e.prob = 1.0;
-                _cast_queue.push(e);
-            }
-        } else {
-            std::this_thread::sleep_for(std::chrono::milliseconds(5));
-        }
+static void send_broadcast(const rapid::Bytes& pkt, stats& st) {
+    ssize_t sent = sendto(_sockfd,
+                          pkt.data(),
+                          pkt.size(),
+                          0,
+                          (sockaddr*)&_broadcast_addr,
+                          sizeof(_broadcast_addr));
+    if (sent > 0) {
+        st.sent_msgs++;
+        st.sent_bytes += static_cast<int>(sent);
     }
 }
 
-void gossip_worker(stats& st) {
-    while (g_running.load()) {
-        std::this_thread::sleep_for(std::chrono::milliseconds(GOSSIP_INTERVAL_MS));
-        if (!g_running.load()) {
-            break;
-        }
-
-        std::vector<uint64_t> headers;
+static void deliver_crdt_payload(gcounter<int, std::string>& gc,
+                                 const std::string& node_id,
+                                 const rapid::MessageId&,
+                                 const rapid::Bytes& payload) {
+    try {
+        std::string s(payload.begin(), payload.end());
+        auto recv_gc = gcounter<int, std::string>::deserialize(s);
+        int total = 0;
         {
-            std::lock_guard<std::mutex> lg(_cache_mutex);
-            int taken = 0;
-            for (auto& kv : _cache) {
-                headers.push_back(kv.first);
-                taken++;
-                if (taken >= 50) {
-                    break;
-                }
-            }
+            std::unique_lock<std::mutex> lg(_gc_mutex);
+            gc.join(recv_gc);
+            total = gc.read();
         }
-
-        if (!headers.empty()) {
-            std::vector<char> pkt;
-            build_gossip_packet(headers, pkt);
-            send_broadcast(pkt, st);
+        {
+            std::lock_guard<std::mutex> lk(_event_log_mutex);
+            _event_log << std::fixed << now_ts()
+                       << ", event=op_apply, node=" << node_id
+                       << ", total=" << total << "\n";
         }
+    } catch (...) {
     }
 }
 
-void heartbeat_worker(uint64_t selfid, stats& st) {
-    while (g_running.load()) {
-        std::vector<char> pkt;
-        build_heartbeat_packet(selfid, pkt);
-        send_broadcast(pkt, st);
-        std::this_thread::sleep_for(std::chrono::milliseconds(HEARTBEAT_INTERVAL_MS));
-    }
-}
-
-static void send_request_once(uint64_t msgid, stats& st) {
-    std::vector<char> pkt;
-    build_request_packet(msgid, pkt);
-    send_broadcast(pkt, st);
-}
-
-void recv_loop(int sockfd_local, gcounter<int, std::string>& gc, stats& st, const std::string& node_id) {
+void recv_loop(int sockfd_local, rapid::Node& rapid_node, stats& st) {
     char buf[MSG_MAX];
     sockaddr_in src{};
     socklen_t srclen = sizeof(src);
@@ -454,98 +260,21 @@ void recv_loop(int sockfd_local, gcounter<int, std::string>& gc, stats& st, cons
         st.recv_msgs++;
         st.recv_bytes += static_cast<int>(n);
 
-        uint8_t type = static_cast<uint8_t>(buf[0]);
+        rapid::Bytes packet(static_cast<size_t>(n));
+        std::memcpy(packet.data(), buf, static_cast<size_t>(n));
 
-        if (type == MT_DATA) {
-            if (n < 1 + 8 + 4) {
-                continue;
-            }
-            uint64_t msgid = read_uint64(buf + 1);
-            uint32_t len = read_uint32(buf + 1 + 8);
-            if (1 + 8 + 4 + (ssize_t)len > n) {
-                continue;
-            }
+        std::lock_guard<std::mutex> lk(_rapid_mutex);
+        rapid_node.receive(packet, rapid::kUnknownNode, rapid::Clock::now());
+    }
+}
 
-            const char* payload_ptr = buf + 1 + 8 + 4;
-            std::vector<char> payload(payload_ptr, payload_ptr + len);
-
-            if (!cache_exists(msgid)) {
-                cache_insert(msgid, payload);
-                try {
-                    std::string s(payload.begin(), payload.end());
-                    auto recv_gc = gcounter<int, std::string>::deserialize(s);
-                    int total = 0;
-                    {
-                        std::unique_lock<std::mutex> lg(_gc_mutex);
-                        gc.join(recv_gc);
-                        total = gc.read();
-                    }
-                    {
-                        std::lock_guard<std::mutex> lk(_event_log_mutex);
-                        _event_log << std::fixed << now_ts()
-                                   << ", event=op_apply, node=" << node_id
-                                   << ", total=" << total << "\n";
-                    }
-                } catch (...) {
-                }
-
-                int ncount = neighbor_count();
-                double pr = BETA / std::max(1, ncount);
-                if (pr > 1.0) {
-                    pr = 1.0;
-                }
-
-                CastEntry e;
-                e.msgid = msgid;
-                e.prob = pr;
-                e.when = std::chrono::steady_clock::now() + std::chrono::milliseconds(
-                    (int)(_uniform_01(_rng) * (SHORT_JITTER_MAX_MS - SHORT_JITTER_MIN_MS) + SHORT_JITTER_MIN_MS)
-                );
-                e.payload = payload;
-                _cast_queue.push(e);
-            }
-        } else if (type == MT_GOSSIP) {
-            if (n < 1 + 2) {
-                continue;
-            }
-
-            uint16_t nn = static_cast<uint16_t>(
-                static_cast<unsigned char>(buf[1]) |
-                (static_cast<unsigned char>(buf[2]) << 8)
-            );
-
-            const char* p = buf + 3;
-            for (int i = 0; i < (int)nn; ++i) {
-                if (p + 8 > buf + n) {
-                    break;
-                }
-                uint64_t hid = read_uint64(p);
-                p += 8;
-
-                if (!cache_exists(hid)) {
-                    int jitter = SHORT_JITTER_MIN_MS + (_rng() % (SHORT_JITTER_MAX_MS - SHORT_JITTER_MIN_MS + 1));
-                    std::this_thread::sleep_for(std::chrono::milliseconds(jitter));
-                    send_request_once(hid, st);
-                }
-            }
-        } else if (type == MT_REQUEST) {
-            if (n < 1 + 8) {
-                continue;
-            }
-            uint64_t hid = read_uint64(buf + 1);
-            std::vector<char> payload;
-            if (cache_get(hid, payload)) {
-                std::vector<char> pkt;
-                build_data_packet(hid, payload, pkt);
-                send_broadcast(pkt, st);
-            }
-        } else if (type == MT_HEARTBEAT) {
-            if (n < 1 + 8) {
-                continue;
-            }
-            uint64_t pid = read_uint64(buf + 1);
-            neighbor_seen(pid);
+void rapid_tick_loop(rapid::Node& rapid_node) {
+    while (g_running.load()) {
+        {
+            std::lock_guard<std::mutex> lk(_rapid_mutex);
+            rapid_node.tick(rapid::Clock::now());
         }
+        std::this_thread::sleep_for(std::chrono::milliseconds(5));
     }
 }
 
@@ -558,8 +287,13 @@ void monitor_loop(gcounter<int, std::string>& gc, stats& st, double interval, co
             break;
         }
 
-        int local = gc.local();
-        int total = gc.read();
+        int local = 0;
+        int total = 0;
+        {
+            std::unique_lock<std::mutex> lg(_gc_mutex);
+            local = gc.local();
+            total = gc.read();
+        }
 
         log << std::fixed << now_ts()
             << ", local=" << local << ", total=" << total
@@ -571,20 +305,9 @@ void monitor_loop(gcounter<int, std::string>& gc, stats& st, double interval, co
     }
 }
 
-void periodic_maintenance() {
-    while (g_running.load()) {
-        cache_cleanup();
-        neighbor_cleanup();
-        std::this_thread::sleep_for(std::chrono::seconds(5));
-    }
-}
-
 void run_random_mode(const node_config& nc, gcounter<int, std::string>& gc) {
-    double ops_per_sec = nc.ops_per_sec;
-    double duration = nc.duration;
-
     std::default_random_engine gen(nc.seed);
-    std::exponential_distribution<double> expd(ops_per_sec);
+    std::exponential_distribution<double> expd(nc.ops_per_sec);
     std::uniform_int_distribution<int> inc_dist(1, 1);
 
     gcounter<int, std::string> local_since_last;
@@ -592,7 +315,7 @@ void run_random_mode(const node_config& nc, gcounter<int, std::string>& gc) {
     auto start = std::chrono::steady_clock::now();
     while (g_running.load()) {
         double elapsed = std::chrono::duration<double>(std::chrono::steady_clock::now() - start).count();
-        if (elapsed > duration) {
+        if (elapsed > nc.duration) {
             break;
         }
 
@@ -637,14 +360,15 @@ void run_random_mode(const node_config& nc, gcounter<int, std::string>& gc) {
     }
 }
 
-void local_periodic_dissemination(const node_config& nc, stats& st) {
-    uint64_t last_local_msgid = 0;
+void local_periodic_dissemination(const node_config& nc, rapid::Node& rapid_node) {
+    rapid::MessageId last_local_msgid;
     bool has_last = false;
 
     auto next = std::chrono::steady_clock::now();
 
     while (g_running.load()) {
-        next += std::chrono::duration_cast<std::chrono::steady_clock::duration>(std::chrono::duration<double>(nc.dissemination_interval));
+        next += std::chrono::duration_cast<std::chrono::steady_clock::duration>(
+            std::chrono::duration<double>(nc.dissemination_interval));
         std::this_thread::sleep_until(next);
 
         if (!g_running.load()) {
@@ -653,7 +377,6 @@ void local_periodic_dissemination(const node_config& nc, stats& st) {
 
         gcounter<int, std::string> to_send;
         bool has_new = false;
-
         {
             std::lock_guard<std::mutex> lk(_pending_mutex);
             if (_has_pending) {
@@ -664,35 +387,19 @@ void local_periodic_dissemination(const node_config& nc, stats& st) {
             }
         }
 
-        if (has_new) {
-            std::string ser = to_send.serialize();
-            std::vector<char> payload(ser.begin(), ser.end());
-            uint64_t msgid = gen_id();
-
-            cache_insert(msgid, payload);
-
-            CastEntry e;
-            e.msgid = msgid;
-            e.prob = 1.0;
-            e.when = std::chrono::steady_clock::now();
-            e.payload = payload;
-            _cast_queue.push(e);
-
-            last_local_msgid = msgid;
-            has_last = true;
-        } else {
+        if (!has_new) {
             if (has_last) {
-                std::vector<char> payload;
-                if (cache_get(last_local_msgid, payload)) {
-                    CastEntry e;
-                    e.msgid = last_local_msgid;
-                    e.prob = 1.0;
-                    e.when = std::chrono::steady_clock::now();
-                    e.payload = payload;
-                    _cast_queue.push(e);
-                }
+                std::lock_guard<std::mutex> lk(_rapid_mutex);
+                rapid_node.rebroadcast(last_local_msgid, rapid::Clock::now());
             }
+            continue;
         }
+
+        std::string ser = to_send.serialize();
+        rapid::Bytes payload(ser.begin(), ser.end());
+        std::lock_guard<std::mutex> lk(_rapid_mutex);
+        last_local_msgid = rapid_node.publish(payload, rapid::Clock::now());
+        has_last = true;
     }
 }
 
@@ -736,15 +443,18 @@ int main(int argc, char* argv[]) {
     }
 
     gcounter<int, std::string> gc(nc.id);
-    uint64_t selfid = gen_id();
+    rapid::Node rapid_node(make_rapid_config(nc));
+    rapid_node.set_send_callback([&st](const rapid::Bytes& pkt) {
+        send_broadcast(pkt, st);
+    });
+    rapid_node.set_deliver_callback([&gc, &nc](const rapid::MessageId& id, const rapid::Bytes& payload) {
+        deliver_crdt_payload(gc, nc.id, id, payload);
+    });
 
-    std::thread t_recv(recv_loop, _sockfd, std::ref(gc), std::ref(st), nc.id);
-    std::thread t_cast(cast_worker, std::ref(st));
-    std::thread t_gossip(gossip_worker, std::ref(st));
-    std::thread t_hb(heartbeat_worker, selfid, std::ref(st));
+    std::thread t_recv(recv_loop, _sockfd, std::ref(rapid_node), std::ref(st));
+    std::thread t_rapid(rapid_tick_loop, std::ref(rapid_node));
     std::thread t_mon(monitor_loop, std::ref(gc), std::ref(st), nc.monitor_interval, nc.log_file);
-    std::thread t_maint(periodic_maintenance);
-    std::thread t_local(local_periodic_dissemination, std::cref(nc), std::ref(st));
+    std::thread t_local(local_periodic_dissemination, std::cref(nc), std::ref(rapid_node));
 
     run_random_mode(nc, gc);
 
@@ -764,20 +474,11 @@ int main(int argc, char* argv[]) {
     if (t_local.joinable()) {
         t_local.join();
     }
-    if (t_maint.joinable()) {
-        t_maint.join();
-    }
     if (t_mon.joinable()) {
         t_mon.join();
     }
-    if (t_hb.joinable()) {
-        t_hb.join();
-    }
-    if (t_gossip.joinable()) {
-        t_gossip.join();
-    }
-    if (t_cast.joinable()) {
-        t_cast.join();
+    if (t_rapid.joinable()) {
+        t_rapid.join();
     }
     if (t_recv.joinable()) {
         t_recv.join();
