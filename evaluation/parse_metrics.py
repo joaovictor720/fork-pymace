@@ -37,16 +37,27 @@ def main() -> int:
 
     for run_dir in iter_run_dirs(root):
         status_path = run_dir / "run_status.json"
-        if not status_path.exists():
-            continue
+        net = parse_network_overhead(run_dir)
+        conv = parse_convergence(run_dir)
 
-        try:
-            run_status = json.loads(status_path.read_text(encoding="utf-8"))
-        except Exception:
-            continue
+        run_status = {}
+        if status_path.exists():
+            try:
+                run_status = json.loads(status_path.read_text(encoding="utf-8"))
+            except Exception:
+                continue
 
-        if not run_status.get("analyzable", False):
-            continue
+            if not run_status.get("analyzable", False):
+                continue
+        else:
+            # Legacy runs from older harness versions may not have run_status.json.
+            if not net or not conv:
+                continue
+            run_status = {
+                "status": "legacy_missing_run_status",
+                "analyzable": True,
+                "pymace": {"rc": None},
+            }
 
         row = {
             "run": run_dir.name,
@@ -54,9 +65,6 @@ def main() -> int:
             "pymace_rc": run_status.get("pymace", {}).get("rc"),
             "analyzable": run_status.get("analyzable"),
         }
-
-        net = parse_network_overhead(run_dir)
-        conv = parse_convergence(run_dir)
 
         row.update(net)
         row.update(conv)

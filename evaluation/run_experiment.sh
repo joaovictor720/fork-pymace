@@ -45,6 +45,7 @@ if [[ -z "${SCENARIO:-}" || -z "${APP:-}" || -z "${RUNS:-}" ]]; then
 fi
 
 ROOT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
+RESULTS_ROOT="${PYMACE_RESULTS_ROOT:-$ROOT_DIR/results}"
 SCENARIO_JSON_PATH="$ROOT_DIR/scenarios/$SCENARIO/scenario.json"
 
 if [[ ! -f "$SCENARIO_JSON_PATH" ]]; then
@@ -199,7 +200,7 @@ if [[ ${#VARIANTS[@]} -eq 0 ]]; then
 fi
 
 for VARIANT in "${VARIANTS[@]}"; do
-  VARIANT_RESULTS_DIR="$ROOT_DIR/results/$VARIANT/$APP"
+  VARIANT_RESULTS_DIR="$RESULTS_ROOT/$VARIANT/$APP"
   VARIANT_SC_DIR="$ROOT_DIR/scenarios/$VARIANT"
 
   prepare_variant_results_dir "$VARIANT_RESULTS_DIR"

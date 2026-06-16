@@ -77,17 +77,28 @@ def mean_ci(series, confidence=0.95):
 def keep_existing_cols(df_, cols):
     return [c for c in cols if c in df_.columns]
 
+
+def copy_constant_cfg_columns(row, group_df):
+    for col in group_df.columns:
+        if not (col.startswith("cfg_") or col.startswith("meta_")):
+            continue
+        values = group_df[col].dropna().unique()
+        if len(values) == 1:
+            row[col] = values[0]
+
 # -----------------------------
 # 3) Decide agrupamento por cenário
 # -----------------------------
-def grouping_cols(scenario_name):
+def grouping_cols(scenario_name, scenario_df=None):
     s = str(scenario_name)
 
     # seus cenários do artigo
     if s.startswith("density_") or s.startswith("area_"):
         # queremos X em densidade (nodes/km^2), independentemente do que varia no JSON
-        if "density" in df.columns:
-            return ["scenario", "algorithm", "density"]
+        if scenario_df is not None and "density" in scenario_df.columns:
+            density_series = pd.to_numeric(scenario_df["density"], errors="coerce")
+            if density_series.notna().any():
+                return ["scenario", "algorithm", "density"]
         return ["scenario", "algorithm", "nodes"]
 
     if s.startswith("scalability_"):
@@ -114,7 +125,7 @@ def grouping_cols(scenario_name):
 rows = []
 
 for scenario_name, df_s in df.groupby("scenario"):
-    GROUP_COLS = grouping_cols(scenario_name)
+    GROUP_COLS = grouping_cols(scenario_name, df_s)
 
     GROUP_COLS = keep_existing_cols(df_s, GROUP_COLS)
     if not GROUP_COLS:
@@ -127,6 +138,7 @@ for scenario_name, df_s in df.groupby("scenario"):
             keys = (keys,)
 
         row = dict(zip(GROUP_COLS, keys))
+        copy_constant_cfg_columns(row, g)
         row["runs_total"] = len(g)
 
         row["success_rate"] = pd.to_numeric(g.get("converged"), errors="coerce").mean()
@@ -219,7 +231,7 @@ if cap_path.exists():
     # pooled por nó
     cap_node_rows = []
     for scenario_name, cap_s in cap.groupby("scenario"):
-        GROUP_COLS = grouping_cols(scenario_name)
+        GROUP_COLS = grouping_cols(scenario_name, cap_s)
         GROUP_COLS = keep_existing_cols(cap_s, GROUP_COLS)
         if not GROUP_COLS:
             continue
@@ -244,7 +256,7 @@ if cap_path.exists():
     cap_run_rows = []
     if "run" in cap.columns:
         for scenario_name, cap_s in cap.groupby("scenario"):
-            GROUP_COLS = grouping_cols(scenario_name)
+            GROUP_COLS = grouping_cols(scenario_name, cap_s)
             GROUP_COLS = keep_existing_cols(cap_s, GROUP_COLS)
             if not GROUP_COLS or "run" not in cap_s.columns:
                 continue

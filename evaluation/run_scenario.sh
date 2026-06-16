@@ -37,12 +37,13 @@ if [[ -z "$SCENARIO" || -z "$APP" || -z "$RUN_ID" ]]; then
 fi
 
 ROOT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
+RESULTS_ROOT="${PYMACE_RESULTS_ROOT:-$ROOT_DIR/results}"
 SCRIPT_CWD="$(pwd -P)"
 
 SCENARIO_DIR="$ROOT_DIR/scenarios/$SCENARIO"
 SCENARIO_SPEC="$SCENARIO_DIR/scenario.json"
 
-RESULT_DIR="$ROOT_DIR/results/$SCENARIO/$APP/$RUN_ID"
+RESULT_DIR="$RESULTS_ROOT/$SCENARIO/$APP/$RUN_ID"
 NODE_CFG="$RESULT_DIR/node_config.json"
 MACE_JSON="$RESULT_DIR/mace.json"
 RUN_STATUS="$RESULT_DIR/run_status.json"
