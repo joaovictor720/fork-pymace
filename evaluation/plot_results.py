@@ -48,7 +48,9 @@ PALETTE = {
     "broadcast": "#1f77b4",   # blue
     "rapid": "#9467bd",       # purple
     "multiunicast": "#2ca02c", # green
-    "trickle": "#d62728"      # red
+    "trickle": "#d62728",     # red
+    "trickle_overhead": "#d62728",
+    "trickle_latency": "#8c564b"
 }
 
 LINESTYLES = {
@@ -56,6 +58,8 @@ LINESTYLES = {
     "broadcast": "-",
     "rapid": "-.",
     "trickle": ":",
+    "trickle_overhead": ":",
+    "trickle_latency": "--",
 }
 
 MARKERS = {
@@ -63,6 +67,8 @@ MARKERS = {
     "broadcast": "o",
     "rapid": "^",
     "trickle": "D",
+    "trickle_overhead": "D",
+    "trickle_latency": "P",
 }
 
 HATCHES = {
@@ -70,6 +76,8 @@ HATCHES = {
     "broadcast": "\\\\",
     "rapid": "xx",
     "trickle": "..",
+    "trickle_overhead": "..",
+    "trickle_latency": "++",
 }
 
 LABELS_ALGO = {
@@ -77,6 +85,8 @@ LABELS_ALGO = {
     "multiunicast": "Best-effort Multicast",
     "rapid": "Gossip-based Multicast",
     "trickle": "Trickle",
+    "trickle_overhead": "Trickle (Overhead-opt)",
+    "trickle_latency": "Trickle (Latency-opt)",
 }
 
 Y_LABELS = {
@@ -104,6 +114,8 @@ LEGEND_LABELS_SHORT = {
     "broadcast": "Flooding",
     "rapid": "RAPID",
     "trickle": "Trickle",
+    "trickle_overhead": "Trickle Overhead",
+    "trickle_latency": "Trickle Latency",
 }
 
 def _legend_fontsize_pt():
@@ -209,7 +221,14 @@ def _finalize_layout(fig):
     fig.subplots_adjust(left=0.16, right=0.98, bottom=0.16, top=0.96)
 
 def _algo_order(df: pd.DataFrame, algo_col: str):
-    desired_order = ("multiunicast", "broadcast", "rapid", "trickle")
+    desired_order = (
+        "multiunicast",
+        "broadcast",
+        "rapid",
+        "trickle_overhead",
+        "trickle_latency",
+        "trickle",
+    )
     present = set(df[algo_col].dropna().unique())
     algo_order = [a for a in desired_order if a in present]
     if not algo_order:

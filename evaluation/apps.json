@@ -6,6 +6,9 @@
 	"apps": {
 		"broadcast": {
 			"binary": "apps/crdt/broadcast/crdt_broadcast",
+			"algorithm": "broadcast",
+			"algorithm_base": "broadcast",
+			"label": "Flooding Multicast",
 			"net_setup": "batman",
 			"tcpdump_filter": "ether proto 0x4305",
 			"tshark_display_filter": "eth.type==0x4305",
@@ -14,6 +17,9 @@
 		},
 		"multiunicast": {
 			"binary": "apps/crdt/multiunicast/crdt_multiunicast",
+			"algorithm": "multiunicast",
+			"algorithm_base": "multiunicast",
+			"label": "Best-effort Multicast",
 			"net_setup": "batman",
 			"tcpdump_filter": "ether proto 0x4305",
 			"tshark_display_filter": "eth.type==0x4305",
@@ -22,6 +28,14 @@
 		},
 		"rapid": {
 			"binary": "apps/crdt/rapid/crdt_rapid",
+			"algorithm": "rapid",
+			"algorithm_base": "rapid",
+			"label": "RAPID",
+			"metadata": {
+				"beta": 2.5,
+				"gossip_interval_ms": 1000,
+				"heartbeat_interval_ms": 1000
+			},
 			"net_setup": "ip",
 			"tcpdump_filter": "udp port 5001",
 			"tshark_display_filter": "udp.port==5001",
@@ -30,6 +44,51 @@
 		},
 		"trickle": {
 			"binary": "apps/crdt/trickle/crdt_trickle",
+			"algorithm": "trickle",
+			"algorithm_base": "trickle",
+			"label": "Trickle",
+			"net_setup": "ip",
+			"tcpdump_filter": "udp port 5001",
+			"tshark_display_filter": "udp.port==5001",
+			"udp_port": 5001,
+			"payload_type_mode": "first_byte_hex"
+		},
+		"trickle_overhead": {
+			"binary": "apps/crdt/trickle/crdt_trickle",
+			"algorithm": "trickle_overhead",
+			"algorithm_base": "trickle",
+			"label": "Trickle (Overhead-opt)",
+			"metadata": {
+				"optimization_target": "overhead",
+				"trickle_param_signature": "k=1,imax=16,d=2",
+				"d_value": 2
+			},
+			"node_config_overrides": {
+				"diss_per_sec": 2.0,
+				"trickle_k": 1,
+				"trickle_imax_ticks": 16
+			},
+			"net_setup": "ip",
+			"tcpdump_filter": "udp port 5001",
+			"tshark_display_filter": "udp.port==5001",
+			"udp_port": 5001,
+			"payload_type_mode": "first_byte_hex"
+		},
+		"trickle_latency": {
+			"binary": "apps/crdt/trickle/crdt_trickle",
+			"algorithm": "trickle_latency",
+			"algorithm_base": "trickle",
+			"label": "Trickle (Latency-opt)",
+			"metadata": {
+				"optimization_target": "latency",
+				"trickle_param_signature": "k=1,imax=16,d=1",
+				"d_value": 1
+			},
+			"node_config_overrides": {
+				"diss_per_sec": 1.0,
+				"trickle_k": 1,
+				"trickle_imax_ticks": 16
+			},
 			"net_setup": "ip",
 			"tcpdump_filter": "udp port 5001",
 			"tshark_display_filter": "udp.port==5001",

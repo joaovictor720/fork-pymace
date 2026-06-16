@@ -358,7 +358,7 @@ if ! python3 "$ROOT_DIR/evaluation/generate_scenario.py" "$SCENARIO_DIR" "$APP" 
   fail_setup
 fi
 
-if ! python3 "$ROOT_DIR/evaluation/generate_node_config.py" "$SCENARIO_SPEC" "$NODE_CFG" "$RESULT_DIR"; then
+if ! python3 "$ROOT_DIR/evaluation/generate_node_config.py" "$SCENARIO_SPEC" "$APP" "$NODE_CFG" "$RESULT_DIR"; then
   echo "[ERROR] Failed to generate node_config.json" >&2
   fail_setup
 fi

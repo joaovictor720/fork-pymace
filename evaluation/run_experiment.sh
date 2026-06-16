@@ -77,6 +77,45 @@ copy_variant_metadata() {
   fi
 }
 
+write_app_metadata() {
+  local app="$1"
+  local variant_results_dir="$2"
+
+  python3 - "$ROOT_DIR" "$app" "$variant_results_dir" <<'PY'
+import json
+import sys
+from pathlib import Path
+
+root_dir = Path(sys.argv[1])
+app_name = sys.argv[2]
+variant_results_dir = Path(sys.argv[3])
+
+apps_path = root_dir / "evaluation" / "apps.json"
+cfg = json.loads(apps_path.read_text(encoding="utf-8"))
+apps = cfg.get("apps", {})
+app_cfg = apps.get(app_name)
+
+if not isinstance(app_cfg, dict):
+    raise SystemExit(f"[ERROR] App not found in apps.json: {app_name}")
+
+payload = {
+    "app_name": app_name,
+    "algorithm": app_cfg.get("algorithm", app_name),
+    "algorithm_base": app_cfg.get("algorithm_base", app_cfg.get("algorithm", app_name)),
+    "label": app_cfg.get("label", app_name),
+    "metadata": app_cfg.get("metadata", {}),
+    "node_config_overrides": app_cfg.get("node_config_overrides", {}),
+    "binary": app_cfg.get("binary"),
+    "net_setup": app_cfg.get("net_setup"),
+    "udp_port": app_cfg.get("udp_port"),
+    "payload_type_mode": app_cfg.get("payload_type_mode"),
+}
+
+out_path = variant_results_dir / "app_metadata.json"
+out_path.write_text(json.dumps(payload, indent=2) + "\n", encoding="utf-8")
+PY
+}
+
 write_variant_status() {
   local variant="$1"
   local app="$2"
@@ -205,6 +244,7 @@ for VARIANT in "${VARIANTS[@]}"; do
 
   prepare_variant_results_dir "$VARIANT_RESULTS_DIR"
   copy_variant_metadata "$VARIANT_SC_DIR" "$VARIANT_RESULTS_DIR"
+  write_app_metadata "$APP" "$VARIANT_RESULTS_DIR"
 
   EXPECTED_RUN_IDS=()
   for RUN in $(seq 1 "$RUNS"); do

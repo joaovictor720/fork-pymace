@@ -80,7 +80,12 @@ def keep_existing_cols(df_, cols):
 
 def copy_constant_cfg_columns(row, group_df):
     for col in group_df.columns:
-        if not (col.startswith("cfg_") or col.startswith("meta_")):
+        if not (
+            col.startswith("cfg_")
+            or col.startswith("meta_")
+            or col.startswith("appmeta_")
+            or col in {"app_name", "algorithm_base", "algorithm_label"}
+        ):
             continue
         values = group_df[col].dropna().unique()
         if len(values) == 1:

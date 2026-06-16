@@ -1,14 +1,25 @@
 import json
 import sys
+from pathlib import Path
 
 scenario_path = sys.argv[1]
-out_path = sys.argv[2]
-result_dir = sys.argv[3]
+app_name = sys.argv[2]
+out_path = sys.argv[3]
+result_dir = sys.argv[4]
 
 with open(scenario_path, "r", encoding="utf-8") as f:
     sc = json.load(f)
 
+root = Path(__file__).resolve().parent.parent
+apps_path = root / "evaluation" / "apps.json"
+apps_cfg = json.loads(apps_path.read_text(encoding="utf-8"))
+app_cfg = apps_cfg.get("apps", {}).get(app_name, {})
+
 node_cfg = sc["node_config"].copy()
+overrides = app_cfg.get("node_config_overrides", {})
+if isinstance(overrides, dict):
+    node_cfg.update(overrides)
+
 node_count = sc["nodes"]["count"]
 
 udp_port = int(node_cfg.get("udp_port", 5001))

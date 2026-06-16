@@ -39,6 +39,30 @@ def _find_metadata_file(variant_dir: Path, filename: str):
     return None
 
 
+def _read_app_metadata(app_dir: Path):
+    data = _load_json(app_dir / "app_metadata.json")
+    return data if isinstance(data, dict) else {}
+
+
+def _read_effective_node_config(app_dir: Path):
+    for run_dir in sorted(app_dir.glob("run_*")):
+        cfg = _load_json(run_dir / "node_config.json")
+        if isinstance(cfg, dict):
+            return cfg
+    return {}
+
+
+def _scalar_items(payload, prefix: str):
+    out = {}
+    if not isinstance(payload, dict):
+        return out
+
+    for key, value in payload.items():
+        if isinstance(value, (str, int, float, bool)) or value is None:
+            out[f"{prefix}{key}"] = value
+    return out
+
+
 def _apply_variant_params(base_scenario, variant_meta):
     if not isinstance(base_scenario, dict):
         return {}
@@ -146,6 +170,32 @@ def _read_variant_scenario_params(variant_dir: Path):
     return out
 
 
+def _read_app_params(app_dir: Path):
+    out = {}
+    app_name = app_dir.name
+    app_meta = _read_app_metadata(app_dir)
+    effective_cfg = _read_effective_node_config(app_dir)
+
+    out["app_name"] = app_name
+    out["algorithm"] = app_meta.get("algorithm", app_name)
+    out["algorithm_base"] = app_meta.get("algorithm_base", out["algorithm"])
+    out["algorithm_label"] = app_meta.get("label", out["algorithm"])
+
+    out.update(_scalar_items(app_meta.get("metadata", {}), "appmeta_"))
+    out.update(_scalar_items(effective_cfg, "cfg_"))
+
+    return out
+
+
+def _iter_app_dirs(variant_dir: Path):
+    for entry in sorted(variant_dir.iterdir()):
+        if not entry.is_dir():
+            continue
+        if entry.name.startswith("run_"):
+            continue
+        yield entry
+
+
 rows = []
 cap_rows = []
 
@@ -159,34 +209,34 @@ for scenario_dir in ROOT.rglob("*__expanded"):
             continue
 
         variant = variant_dir.name
-        extra = _read_variant_scenario_params(variant_dir)
+        variant_extra = _read_variant_scenario_params(variant_dir)
 
-        for algo in ["broadcast", "rapid", "multiunicast", "trickle"]:
-            base = variant_dir / algo
+        for base in _iter_app_dirs(variant_dir):
+            app_extra = _read_app_params(base)
+            extra = dict(variant_extra)
+            extra.update(app_extra)
+
             csv_path = base / "summary.csv"
             if csv_path.exists():
                 df = pd.read_csv(csv_path)
                 df["scenario"] = scenario
                 df["variant"] = variant
-                df["algorithm"] = algo
                 for k, v in extra.items():
                     df[k] = v
                 rows.append(df)
 
-            if base.exists() and base.is_dir():
-                for run_dir in sorted(base.glob("run_*")):
-                    cov_path = run_dir / "coverage_nodes.csv"
-                    if not cov_path.exists():
-                        continue
+            for run_dir in sorted(base.glob("run_*")):
+                cov_path = run_dir / "coverage_nodes.csv"
+                if not cov_path.exists():
+                    continue
 
-                    cdf = pd.read_csv(cov_path)
-                    cdf["scenario"] = scenario
-                    cdf["variant"] = variant
-                    cdf["algorithm"] = algo
-                    cdf["run"] = run_dir.name
-                    for k, v in extra.items():
-                        cdf[k] = v
-                    cap_rows.append(cdf)
+                cdf = pd.read_csv(cov_path)
+                cdf["scenario"] = scenario
+                cdf["variant"] = variant
+                cdf["run"] = run_dir.name
+                for k, v in extra.items():
+                    cdf[k] = v
+                cap_rows.append(cdf)
 
 if rows:
     all_df = pd.concat(rows, ignore_index=True)
