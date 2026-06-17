@@ -5,9 +5,6 @@ import random
 from pathlib import Path
 from typing import Any, Dict, List, Tuple
 
-APPLICATION_START_DELAY = 30
-
-
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         description="Generate a pymace scenario from evaluation/scenario.json plus evaluation/apps.json."
@@ -136,7 +133,6 @@ def main() -> None:
             f"/bin/bash -lc \""
             f"ulimit -c 0; "
             f"set -x; "
-            f"sleep {APPLICATION_START_DELAY}; "
             f"{base_net_setup}"
             f"RESULT_DIR=\\$(grep '\\\"log_dir\\\"' __CRDT_NODE_CONFIG__ | "
             f"sed -E 's/.*\\\"log_dir\\\"[[:space:]]*:[[:space:]]*\\\"([^\\\"]+)\\\".*/\\1/'); "
@@ -158,6 +154,11 @@ def main() -> None:
             f"GPS_PID=\\$!; "
             f"echo \\\"GPS_PID=\\$GPS_PID\\\" >> \\\"\\$LOG_FILE\\\"; "
             f"echo \\\"GPS_FILE=\\$GPS_FILE\\\" >> \\\"\\$LOG_FILE\\\"; "
+            f"START_TS=\\\"${{PYMACE_START_TS:-}}\\\"; "
+            f"echo \\\"PYMACE_START_TS=\\$START_TS\\\" >> \\\"\\$LOG_FILE\\\"; "
+            f"if [ -n \\\"\\$START_TS\\\" ]; then "
+            f"/usr/bin/python3 -c 'import os,time; s=float(os.environ.get(\"PYMACE_START_TS\", \"0\") or 0); time.sleep(max(0.0, s - time.time()))'; "
+            f"fi; "
             f"__CRDT_BIN__ -id {i} -config __CRDT_NODE_CONFIG__; "
             f"APP_RC=\\$?; "
             f"echo \\\"APP_RC=\\$APP_RC\\\" >> \\\"\\$LOG_FILE\\\"; "

@@ -94,6 +94,7 @@ class Scenario():
       self.number_of_nodes = scenario_json['settings']['number_of_nodes']
       self.username = scenario_json['settings']['username']
       self.runtime = scenario_json['settings']['runtime']
+      self.start_delay = float(scenario_json['settings'].get('start_delay', 0))
       self.report_folder = scenario_json['settings']['report_folder']
       self.disks_folder = scenario_json['settings']['disks_folder']
       self.dump = True if scenario_json['settings']['dump'] == "True" else False
@@ -281,6 +282,8 @@ class Scenario():
     Args:
         session (_type_): _description_
     """
+    app_start_ts = time.time() + max(0.0, self.start_delay)
+
     for node in self.mace_nodes:
       for function in node.function:
         if function == 'terminal':
@@ -301,7 +304,7 @@ class Scenario():
           self.etcd_cluster[node.name]["disk"] = disk
           self.etcd_cluster[node.name]["id"] = node.corenode.id
         else:
-          self.custom_application(session, node.corenode.id, function)
+          self.custom_application(session, node.corenode.id, function, app_start_ts)
       node.tracer.start()
 
     for node in self.mace_nodes:
@@ -424,7 +427,7 @@ class Scenario():
                       "-e",
                       shell], stdin=subprocess.PIPE, shell=False)
 
-  def custom_application(self, session, i, application):
+  def custom_application(self, session, i, application, start_ts=None):
     """_summary_
 
     Args:
@@ -436,6 +439,8 @@ class Scenario():
     shell = shell.split(" ")
     shell.append("-c")
     command = application
+    if start_ts is not None:
+      command = f"PYMACE_START_TS={start_ts:.6f} {command}"
     shell.append(command)
     node = subprocess.Popen(shell, stdin=subprocess.PIPE, shell=False)
 
