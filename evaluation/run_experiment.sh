@@ -3,11 +3,12 @@ set -uo pipefail
 
 usage() {
   echo "Usage:"
-  echo "./run_experiment.sh --scenario <name> --app <app_name> --runs N [--keep-going]"
+  echo "./run_experiment.sh --scenario <name> --app <app_name> --runs N [--variants v1,v2,...] [--keep-going]"
   echo "Alias: --algorithm <app_name>"
 }
 
 KEEP_GOING=false
+VARIANTS_CSV=""
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
@@ -21,6 +22,10 @@ while [[ $# -gt 0 ]]; do
       ;;
     --runs)
       RUNS="$2"
+      shift 2
+      ;;
+    --variants)
+      VARIANTS_CSV="$2"
       shift 2
       ;;
     --keep-going)
@@ -228,6 +233,7 @@ echo "=== Experiment ==="
 echo "Scenario    : $SCENARIO"
 echo "App         : $APP"
 echo "Runs        : $RUNS"
+echo "Variants    : ${VARIANTS_CSV:-all}"
 echo "Keep going  : $KEEP_GOING"
 echo "==============="
 
@@ -235,6 +241,32 @@ mapfile -t VARIANTS < <(python3 "$ROOT_DIR/evaluation/expand_experiments.py" "$S
 
 if [[ ${#VARIANTS[@]} -eq 0 ]]; then
   echo "[ERROR] No variants returned for scenario: $SCENARIO"
+  exit 1
+fi
+
+if [[ -n "$VARIANTS_CSV" ]]; then
+  declare -A WANTED_VARIANTS=()
+  IFS=',' read -r -a RAW_WANTED_VARIANTS <<< "$VARIANTS_CSV"
+  for raw_variant in "${RAW_WANTED_VARIANTS[@]}"; do
+    variant_trimmed="$(echo "$raw_variant" | xargs)"
+    [[ -n "$variant_trimmed" ]] || continue
+    WANTED_VARIANTS["$variant_trimmed"]=1
+    WANTED_VARIANTS["${SCENARIO}__expanded/$variant_trimmed"]=1
+  done
+
+  FILTERED_VARIANTS=()
+  for variant in "${VARIANTS[@]}"; do
+    variant_name="${variant##*/}"
+    if [[ -n "${WANTED_VARIANTS[$variant]:-}" || -n "${WANTED_VARIANTS[$variant_name]:-}" ]]; then
+      FILTERED_VARIANTS+=("$variant")
+    fi
+  done
+
+  VARIANTS=("${FILTERED_VARIANTS[@]}")
+fi
+
+if [[ ${#VARIANTS[@]} -eq 0 ]]; then
+  echo "[ERROR] No matching variants selected for scenario: $SCENARIO"
   exit 1
 fi
 
