@@ -49,6 +49,10 @@ class VirtualGPS:
       pass
     if self.virtual_gps_thread is not None and self.virtual_gps_thread.is_alive():
       self.virtual_gps_thread.join(timeout = 2)
+    try:
+      os.remove(self.socket_path)
+    except OSError:
+      pass
 
   def _interface_listener(self):
     #this section is a synchronizer so that all nodes can start ROUGHLY at the same time
@@ -66,40 +70,56 @@ class VirtualGPS:
       traceback.print_exc()
     except:
       traceback.print_exc()
-    while self.state != "DISABLED":
-      try:
-        conn, addr = gps_socket.accept()
-      except socket.timeout:
-        continue
-      except OSError:
-        if self.state == "DISABLED":
-          break
-        traceback.print_exc()
-        continue
-      lengthbuf = conn.recv(4)
-      if not lengthbuf:
-        conn.close()
-        continue
-      length, = struct.unpack('!I', lengthbuf)
-      data = b''
-      while length:
-        newbuf = conn.recv(length)
-        if not newbuf: return None
-        data += newbuf
-        length -= len(newbuf)
-      #data = conn.recv(65500)
-      response = self.interface_callback(data)
-      #print(response)
-      payload = pickle.dumps(response)
-      length = len(payload)
-      conn.sendall(struct.pack('!I', length))
-      conn.sendall(payload)
-      conn.close()
-    gps_socket.close()
     try:
-      os.remove(self.socket_path)
-    except OSError:
-      pass
+      while self.state != "DISABLED":
+        conn = None
+        try:
+          conn, addr = gps_socket.accept()
+        except socket.timeout:
+          continue
+        except OSError:
+          if self.state == "DISABLED":
+            break
+          traceback.print_exc()
+          continue
+
+        try:
+          lengthbuf = conn.recv(4)
+          if not lengthbuf:
+            continue
+
+          length, = struct.unpack('!I', lengthbuf)
+          data = b''
+          while length:
+            newbuf = conn.recv(length)
+            if not newbuf:
+              data = None
+              break
+            data += newbuf
+            length -= len(newbuf)
+
+          if data is None:
+            continue
+
+          response = self.interface_callback(data)
+          payload = pickle.dumps(response)
+          payload_len = len(payload)
+          conn.sendall(struct.pack('!I', payload_len))
+          conn.sendall(payload)
+        except BrokenPipeError:
+          pass
+        finally:
+          if conn is not None:
+            try:
+              conn.close()
+            except OSError:
+              pass
+    finally:
+      gps_socket.close()
+      try:
+        os.remove(self.socket_path)
+      except OSError:
+        pass
 
   def emmit_to_gps_socket(self, data):
     gps = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)

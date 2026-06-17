@@ -52,6 +52,8 @@ fi
 ROOT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
 RESULTS_ROOT="${PYMACE_RESULTS_ROOT:-$ROOT_DIR/results}"
 SCENARIO_JSON_PATH="$ROOT_DIR/scenarios/$SCENARIO/scenario.json"
+RUN_BARRIER_ATTEMPTS=20
+RUN_BARRIER_SLEEP_S=1
 
 if [[ ! -f "$SCENARIO_JSON_PATH" ]]; then
   echo "[ERROR] Scenario file not found: $SCENARIO_JSON_PATH"
@@ -67,6 +69,54 @@ prepare_variant_results_dir() {
   fi
 
   mkdir -p "$variant_results_dir"
+}
+
+clear_stale_runtime_artifacts() {
+  rm -f /tmp/node*_gps.sock /tmp/pymace.sock.node* 2>/dev/null || true
+}
+
+run_cleanup_barrier() {
+  local barrier_label="$1"
+  local attempt
+  local residual_links=""
+  local residual_sockets=""
+
+  echo "[INFO] Cleanup barrier: $barrier_label"
+
+  for attempt in $(seq 1 "$RUN_BARRIER_ATTEMPTS"); do
+    if command -v core-cleanup >/dev/null 2>&1; then
+      core-cleanup >/dev/null 2>&1 || true
+    fi
+
+    clear_stale_runtime_artifacts
+
+    residual_links="$(
+      ip -o link show 2>/dev/null | grep -E 'veth|ctrl|pycore|vethe|vetha|b\.[0-9]+\.[0-9]+' || true
+    )"
+    residual_sockets="$(
+      find /tmp -maxdepth 1 \( -name 'node*_gps.sock' -o -name 'pymace.sock.node*' \) -print 2>/dev/null || true
+    )"
+
+    if [[ -z "$residual_links" && -z "$residual_sockets" ]]; then
+      if [[ "$attempt" -gt 1 ]]; then
+        echo "[INFO] Cleanup barrier settled after $attempt attempts"
+      fi
+      return 0
+    fi
+
+    sleep "$RUN_BARRIER_SLEEP_S"
+  done
+
+  echo "[ERROR] Cleanup barrier did not settle: $barrier_label" >&2
+  if [[ -n "$residual_links" ]]; then
+    echo "[ERROR] Residual links:" >&2
+    echo "$residual_links" >&2
+  fi
+  if [[ -n "$residual_sockets" ]]; then
+    echo "[ERROR] Residual sockets:" >&2
+    echo "$residual_sockets" >&2
+  fi
+  return 1
 }
 
 copy_variant_metadata() {
@@ -278,6 +328,10 @@ for VARIANT in "${VARIANTS[@]}"; do
   copy_variant_metadata "$VARIANT_SC_DIR" "$VARIANT_RESULTS_DIR"
   write_app_metadata "$APP" "$VARIANT_RESULTS_DIR"
 
+  if ! run_cleanup_barrier "before $VARIANT / $APP"; then
+    exit 1
+  fi
+
   EXPECTED_RUN_IDS=()
   for RUN in $(seq 1 "$RUNS"); do
     EXPECTED_RUN_IDS+=("$(printf "run_%03d" "$RUN")")
@@ -306,6 +360,10 @@ for VARIANT in "${VARIANTS[@]}"; do
 
     if [[ "$RUN_ANALYZABLE" != "true" && "$KEEP_GOING" != "true" ]]; then
       echo "[ERROR] Aborting after non-analyzable run: $VARIANT / $RUN_ID"
+      exit 1
+    fi
+
+    if ! run_cleanup_barrier "after $VARIANT / $RUN_ID"; then
       exit 1
     fi
   done
