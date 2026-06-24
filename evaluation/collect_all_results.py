@@ -68,7 +68,7 @@ for scenario_dir in ROOT.glob("*__expanded"):
         variant = variant_dir.name
         extra = _read_variant_scenario_params(variant_dir)
 
-        for algo in ["broadcast", "rapid", "multiunicast"]:
+        for algo in ["broadcast", "rapid", "multiunicast", "trickle"]:
             base = variant_dir / algo
             csv_path = base / "summary.csv"
             if csv_path.exists():
