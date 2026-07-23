@@ -1,6 +1,8 @@
 #ifndef RAPID_RAPID_HPP
 #define RAPID_RAPID_HPP
 
+#include "../common.hpp"
+
 #include <chrono>
 #include <cstddef>
 #include <cstdint>
@@ -9,10 +11,11 @@
 #include <string>
 #include <vector>
 
+namespace gossip {
 namespace rapid {
 
-using Bytes = std::vector<std::uint8_t>;
-using PeerId = std::uint64_t;
+using gossip::Bytes;
+using gossip::PeerId;
 
 struct Config {
     PeerId local_peer_id{1};
@@ -91,5 +94,6 @@ private:
 };
 
 }  // namespace rapid
+}  // namespace gossip
 
 #endif  // RAPID_RAPID_HPP

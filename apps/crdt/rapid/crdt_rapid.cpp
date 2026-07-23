@@ -14,10 +14,10 @@
 #include <vector>
 
 #include "../common/delta-crdts.cc"
-#include "../common/lib_rapid/rapid.hpp"
+#include "../common/lib_gossip/gossip.hpp"
 
 using json = nlohmann::json;
-using rapid::Rapid;
+using gossip::rapid::Rapid;
 
 namespace {
 
@@ -121,17 +121,20 @@ NodeConfig load_config(const std::string& path, const std::string& id) {
     return config;
 }
 
-rapid::PeerId to_peer_id(const std::string& id) {
+gossip::rapid::PeerId to_peer_id(const std::string& id) {
     try {
         std::size_t used = 0;
         const auto parsed = std::stoull(id, &used, 10);
-        if (used == id.size() && parsed < std::numeric_limits<rapid::PeerId>::max()) {
-            return static_cast<rapid::PeerId>(parsed + 1);
+        if (used == id.size() &&
+            parsed < std::numeric_limits<gossip::rapid::PeerId>::max()) {
+            return static_cast<gossip::rapid::PeerId>(parsed + 1);
         }
     } catch (...) {
     }
 
-    auto hashed = static_cast<rapid::PeerId>(std::hash<std::string>{}(id));
+    auto hashed =
+        static_cast<gossip::rapid::PeerId>(
+            std::hash<std::string>{}(id));
     return hashed == 0 ? 1 : hashed;
 }
 
@@ -153,8 +156,8 @@ bool parse_port(const std::string& address, std::uint16_t& port) {
     }
 }
 
-rapid::Config make_rapid_config(const NodeConfig& app_config) {
-    rapid::Config config;
+gossip::rapid::Config make_rapid_config(const NodeConfig& app_config) {
+    gossip::rapid::Config config;
     config.local_peer_id = to_peer_id(app_config.id);
     config.bind_address = "0.0.0.0";
     config.broadcast_address = app_config.broadcast_address;
@@ -217,7 +220,7 @@ void write_monitor_sample(std::ofstream& log,
         total = counter.read();
     }
 
-    const rapid::Stats stats = rapid.stats();
+    const gossip::rapid::Stats stats = rapid.stats();
     log << std::fixed << now_ts()
         << ", local=" << local << ", total=" << total
         << ", sent_msgs=" << stats.sent_packets
@@ -305,7 +308,7 @@ void run_random_mode(const NodeConfig& config, gcounter<int, std::string>& count
 }
 
 void local_periodic_dissemination(const NodeConfig& config, Rapid& rapid) {
-    rapid::Bytes last_payload;
+    gossip::rapid::Bytes last_payload;
     bool has_last_payload = false;
     auto next = std::chrono::steady_clock::now();
 
@@ -421,7 +424,7 @@ int main(int argc, char* argv[]) {
         delivery_thread.join();
     }
 
-    const rapid::Stats final_stats = rapid.stats();
+    const gossip::rapid::Stats final_stats = rapid.stats();
     if (final_stats.delivery_queue_overflows > 0 || final_stats.socket_errors > 0) {
         std::cerr << "RAPID diagnostics: delivery_queue_overflows="
                   << final_stats.delivery_queue_overflows

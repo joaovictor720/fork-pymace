@@ -5,8 +5,8 @@
 #include <iostream>
 #include <string>
 
-using rapid::Config;
-using rapid::Rapid;
+using gossip::rapid::Config;
+using gossip::rapid::Rapid;
 
 int main() {
     Config first_config;
@@ -35,7 +35,7 @@ int main() {
     });
 
     const std::string text = "hello";
-    rapid::Bytes payload(text.begin(), text.end());
+    gossip::rapid::Bytes payload(text.begin(), text.end());
     if (!first.disseminate(std::move(payload))) {
         std::cerr << "disseminate(): " << first.last_error() << "\n";
         first.stop();

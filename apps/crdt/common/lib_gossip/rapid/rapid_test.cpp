@@ -9,9 +9,9 @@
 #include <unistd.h>
 
 using namespace std::chrono_literals;
-using rapid::Bytes;
-using rapid::Config;
-using rapid::Rapid;
+using gossip::rapid::Bytes;
+using gossip::rapid::Config;
+using gossip::rapid::Rapid;
 
 namespace {
 
@@ -26,7 +26,7 @@ void require(bool condition, const std::string& message) {
     }
 }
 
-Config local_config(std::uint16_t port, rapid::PeerId peer_id) {
+Config local_config(std::uint16_t port, gossip::rapid::PeerId peer_id) {
     Config config;
     config.local_peer_id = peer_id;
     config.port = port;
@@ -121,7 +121,7 @@ void test_delivery_queue_overflow(std::uint16_t port) {
     }
 
     const auto deadline = std::chrono::steady_clock::now() + 2s;
-    rapid::Stats snapshot;
+    gossip::rapid::Stats snapshot;
     do {
         snapshot = receiver.stats();
         if (snapshot.delivered_messages + snapshot.delivery_queue_overflows >= kMessages) {

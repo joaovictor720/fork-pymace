@@ -18,6 +18,7 @@
 #include <unistd.h>
 #include <utility>
 
+namespace gossip {
 namespace rapid {
 namespace {
 
@@ -912,3 +913,4 @@ std::string Rapid::last_error() const {
 }
 
 }  // namespace rapid
+}  // namespace gossip

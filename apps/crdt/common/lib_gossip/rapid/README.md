@@ -9,9 +9,9 @@ tracking and recovery state. It has no dependency on CRDT code.
 ```cpp
 #include "rapid.hpp"
 
-using rapid::Rapid;
+using gossip::rapid::Rapid;
 
-rapid::Config config;
+gossip::rapid::Config config;
 config.local_peer_id = 1;
 config.bind_address = "0.0.0.0";
 config.broadcast_address = "255.255.255.255";
@@ -22,7 +22,7 @@ if (!rapid.start()) {
     // rapid.last_error() describes the startup failure.
 }
 
-rapid::Bytes payload{/* application bytes */};
+gossip::rapid::Bytes payload{/* application bytes */};
 rapid.disseminate(std::move(payload));
 
 while (auto message = rapid.receive()) {
@@ -69,8 +69,8 @@ From the repository root:
 
 ```sh
 g++ -std=c++17 -pthread \
-  apps/crdt/common/lib_rapid/example.cpp \
-  apps/crdt/common/lib_rapid/rapid.cpp \
+  apps/crdt/common/lib_gossip/rapid/example.cpp \
+  apps/crdt/common/lib_gossip/rapid/rapid.cpp \
   -o /tmp/rapid_example
 /tmp/rapid_example
 ```
