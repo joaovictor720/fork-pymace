@@ -48,6 +48,7 @@ struct ReceivedMessage {
 
 struct Stats {
     std::uint64_t disseminated_messages{0};
+    std::uint64_t explicit_retransmissions{0};
     std::uint64_t sent_packets{0};
     std::uint64_t received_packets{0};
     std::uint64_t sent_bytes{0};
@@ -57,18 +58,43 @@ struct Stats {
     std::uint64_t malformed_packets{0};
     std::uint64_t socket_errors{0};
     std::uint64_t rejected_disseminations{0};
+    std::uint64_t rejected_retransmissions{0};
     std::uint64_t delivery_queue_overflows{0};
     std::size_t cached_messages{0};
     std::size_t known_neighbors{0};
     std::size_t pending_deliveries{0};
 };
 
+// Opaque reference to one logical message created by disseminate().
+//
+// A handle belongs to the Rapid instance that created it and remains usable
+// only while that instance still has the message in its cache.
+class MessageHandle {
+public:
+    MessageHandle(const MessageHandle&) = default;
+    MessageHandle& operator=(const MessageHandle&) = default;
+    MessageHandle(MessageHandle&&) noexcept = default;
+    MessageHandle& operator=(MessageHandle&&) noexcept = default;
+
+private:
+    MessageHandle(const std::shared_ptr<const std::uint8_t>& owner,
+                  std::uint64_t message_id)
+        : owner_(owner), message_id_(message_id) {
+    }
+
+    std::weak_ptr<const std::uint8_t> owner_;
+    std::uint64_t message_id_{0};
+
+    friend class Rapid;
+};
+
 // High-level facade for one independent RAPID protocol instance.
 //
 // Each call to disseminate() creates a new logical message for the whole
-// dissemination domain. receive() blocks until a remote message is available
-// or stop() is called. All protocol timers, sockets, workers and caches are
-// owned by the instance.
+// dissemination domain and returns a handle for that message. retransmit()
+// sends the same logical message again with the same protocol identifier.
+// receive() blocks until a remote message is available or stop() is called.
+// All protocol timers, sockets, workers and caches are owned by the instance.
 class Rapid {
 public:
     explicit Rapid(Config config);
@@ -80,7 +106,8 @@ public:
     Rapid& operator=(Rapid&&) = delete;
 
     bool start();
-    bool disseminate(Bytes payload);
+    std::optional<MessageHandle> disseminate(Bytes payload);
+    bool retransmit(const MessageHandle& message);
     std::optional<ReceivedMessage> receive();
     void stop();
 
@@ -90,6 +117,7 @@ public:
 
 private:
     class Impl;
+    std::shared_ptr<const std::uint8_t> handle_owner_;
     std::unique_ptr<Impl> impl_;
 };
 

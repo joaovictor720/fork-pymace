@@ -6,6 +6,20 @@ tracking and recovery state. It has no dependency on CRDT code.
 
 ## Application API
 
+### Facade at a glance
+
+| Method | Meaning |
+| --- | --- |
+| `Rapid(Config)` | Creates one independent protocol instance. It does not open the socket yet. |
+| `start()` | Opens the socket and starts the protocol workers. |
+| `disseminate(Bytes)` | Creates a **new logical message**, sends it, and returns an opaque `MessageHandle`. |
+| `retransmit(handle)` | Sends the **same logical message** again with the same RAPID identifier. |
+| `receive()` | Blocks until a new remote logical message is available or the instance is stopped. |
+| `stop()` | Stops workers, closes the socket and wakes blocked receivers. |
+| `is_running()` | Reports whether the instance is running. |
+| `stats()` | Returns a snapshot of protocol, queue and network counters. |
+| `last_error()` | Describes the last rejected operation on this instance. |
+
 ```cpp
 #include "rapid.hpp"
 
@@ -23,7 +37,16 @@ if (!rapid.start()) {
 }
 
 gossip::rapid::Bytes payload{/* application bytes */};
-rapid.disseminate(std::move(payload));
+auto message_handle = rapid.disseminate(std::move(payload));
+if (!message_handle) {
+    // rapid.last_error() describes why the message was rejected.
+}
+
+// Optional: repeat the network transmission without creating a new logical
+// message. Receivers that already cached it suppress it as a duplicate.
+if (message_handle && !rapid.retransmit(*message_handle)) {
+    // The handle may have expired from the cache.
+}
 
 while (auto message = rapid.receive()) {
     // receive() blocks until a remote message is available or stop() is called.
@@ -33,12 +56,51 @@ while (auto message = rapid.receive()) {
 rapid.stop();
 ```
 
-Each call to `disseminate()` creates a new logical message whose dissemination
-domain is the entire swarm. The call returns after the local RAPID instance
-accepts the message; it does not wait for remote delivery. RAPID suppresses
-network duplicates while a message remains in its cache. Two calls with
-byte-identical payloads are still two distinct logical messages. Locally
-disseminated messages are not returned by that same instance's `receive()`.
+### New messages and retransmissions
+
+`disseminate()` and `retransmit()` deliberately express different application
+intent:
+
+```cpp
+auto first = rapid.disseminate(bytes);
+auto second = rapid.disseminate(bytes);  // New ID: a second logical message.
+
+rapid.retransmit(*first);                // Same ID as first.
+```
+
+Each successful `disseminate()` call creates a new RAPID identifier, even when
+its bytes equal an earlier payload. Byte equality cannot define message
+identity: an application may intentionally publish the same bytes twice.
+
+`retransmit()` accepts only a `MessageHandle` returned by the same `Rapid`
+instance. It retrieves the cached payload and schedules another `DATA` packet
+with the original identifier. It does not create another logical message, does
+not cause a receiver that already knows the identifier to deliver the payload
+again, and does not refresh the cache TTL. The call fails after the cache entry
+expires, when the handle belongs to another instance, or when the instance is
+not running.
+
+This distinction reproduces the periodic behavior of the CRDT application used
+in the publication. That application accumulates all local deltas produced
+between two triggers:
+
+```cpp
+std::optional<gossip::rapid::MessageHandle> last_message;
+
+if (has_new_delta) {
+    last_message = rapid.disseminate(serialize(delta));
+} else if (last_message) {
+    rapid.retransmit(*last_message);
+}
+```
+
+One or more accumulated operations therefore create one new logical message.
+An empty interval retransmits the previous message instead of assigning a new
+identifier to the same CRDT payload.
+
+Both sending methods return after the local instance accepts the operation;
+they do not wait for remote delivery. Locally disseminated messages are not
+returned by that same instance's `receive()`.
 
 `receive()` consumes a library-owned, bounded delivery queue. Its capacity is
 set by `delivery_queue_capacity`. When the queue is full, the protocol keeps
@@ -85,6 +147,9 @@ Protocol defaults match the current published application: `beta = 2.5`,
 10–40 ms short jitter, 200–600 ms long jitter and at most 50 message headers
 per gossip packet.
 
-`Stats` also reports packet/byte counters, malformed and duplicate packets,
-socket errors, rejected disseminations, cache size, known neighbors and pending
+`Stats::disseminated_messages` counts newly created logical messages, while
+`Stats::explicit_retransmissions` counts successful `retransmit()` calls.
+`rejected_disseminations` and `rejected_retransmissions` distinguish failures
+of the two operations. `Stats` also reports packet/byte counters, malformed and
+duplicate packets, socket errors, cache size, known neighbors and pending
 deliveries.

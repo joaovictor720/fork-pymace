@@ -284,18 +284,18 @@ public:
         return true;
     }
 
-    bool disseminate(Bytes payload) {
+    std::optional<MessageId> disseminate(Bytes payload) {
         std::lock_guard<std::mutex> lifecycle_lock(lifecycle_mutex_);
         if (!running_.load()) {
             counters_.rejected_disseminations.fetch_add(1);
             set_error("disseminate() requires a running Rapid instance");
-            return false;
+            return std::nullopt;
         }
         if (payload.size() > std::numeric_limits<std::uint32_t>::max() ||
             payload.size() > config_.max_packet_size - kDataHeaderSize) {
             counters_.rejected_disseminations.fetch_add(1);
             set_error("payload exceeds max_packet_size");
-            return false;
+            return std::nullopt;
         }
 
         const auto now = Clock::now();
@@ -314,6 +314,37 @@ public:
 
         counters_.disseminated_messages.fetch_add(1);
         enqueue_cast(CastType::Data, id, std::move(payload), 1.0, now);
+        clear_error();
+        return id;
+    }
+
+    bool retransmit(MessageId id, bool handle_belongs_to_instance) {
+        std::lock_guard<std::mutex> lifecycle_lock(lifecycle_mutex_);
+        if (!running_.load()) {
+            counters_.rejected_retransmissions.fetch_add(1);
+            set_error("retransmit() requires a running Rapid instance");
+            return false;
+        }
+        if (!handle_belongs_to_instance) {
+            counters_.rejected_retransmissions.fetch_add(1);
+            set_error("message handle does not belong to this Rapid instance");
+            return false;
+        }
+
+        Bytes payload;
+        {
+            std::lock_guard<std::mutex> cache_lock(cache_mutex_);
+            const auto cached = cache_.find(id);
+            if (cached == cache_.end()) {
+                counters_.rejected_retransmissions.fetch_add(1);
+                set_error("message handle is no longer present in the RAPID cache");
+                return false;
+            }
+            payload = cached->second.payload;
+        }
+
+        counters_.explicit_retransmissions.fetch_add(1);
+        enqueue_cast(CastType::Data, id, std::move(payload), 1.0, Clock::now());
         clear_error();
         return true;
     }
@@ -349,6 +380,8 @@ public:
     Stats stats() const {
         Stats snapshot;
         snapshot.disseminated_messages = counters_.disseminated_messages.load();
+        snapshot.explicit_retransmissions =
+            counters_.explicit_retransmissions.load();
         snapshot.sent_packets = counters_.sent_packets.load();
         snapshot.received_packets = counters_.received_packets.load();
         snapshot.sent_bytes = counters_.sent_bytes.load();
@@ -358,6 +391,8 @@ public:
         snapshot.malformed_packets = counters_.malformed_packets.load();
         snapshot.socket_errors = counters_.socket_errors.load();
         snapshot.rejected_disseminations = counters_.rejected_disseminations.load();
+        snapshot.rejected_retransmissions =
+            counters_.rejected_retransmissions.load();
         snapshot.delivery_queue_overflows = counters_.delivery_queue_overflows.load();
         {
             std::lock_guard<std::mutex> lock(cache_mutex_);
@@ -410,6 +445,7 @@ private:
 
     struct Counters {
         std::atomic<std::uint64_t> disseminated_messages{0};
+        std::atomic<std::uint64_t> explicit_retransmissions{0};
         std::atomic<std::uint64_t> sent_packets{0};
         std::atomic<std::uint64_t> received_packets{0};
         std::atomic<std::uint64_t> sent_bytes{0};
@@ -419,6 +455,7 @@ private:
         std::atomic<std::uint64_t> malformed_packets{0};
         std::atomic<std::uint64_t> socket_errors{0};
         std::atomic<std::uint64_t> rejected_disseminations{0};
+        std::atomic<std::uint64_t> rejected_retransmissions{0};
         std::atomic<std::uint64_t> delivery_queue_overflows{0};
     };
 
@@ -879,7 +916,8 @@ private:
 };
 
 Rapid::Rapid(Config config)
-    : impl_(std::make_unique<Impl>(std::move(config))) {
+    : handle_owner_(std::make_shared<const std::uint8_t>(0)),
+      impl_(std::make_unique<Impl>(std::move(config))) {
 }
 
 Rapid::~Rapid() = default;
@@ -888,8 +926,19 @@ bool Rapid::start() {
     return impl_->start();
 }
 
-bool Rapid::disseminate(Bytes payload) {
-    return impl_->disseminate(std::move(payload));
+std::optional<MessageHandle> Rapid::disseminate(Bytes payload) {
+    const auto message_id = impl_->disseminate(std::move(payload));
+    if (!message_id) {
+        return std::nullopt;
+    }
+    return MessageHandle(handle_owner_, *message_id);
+}
+
+bool Rapid::retransmit(const MessageHandle& message) {
+    const auto owner = message.owner_.lock();
+    return impl_->retransmit(
+        message.message_id_,
+        owner && owner == handle_owner_);
 }
 
 std::optional<ReceivedMessage> Rapid::receive() {

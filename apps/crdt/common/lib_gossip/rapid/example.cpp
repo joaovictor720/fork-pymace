@@ -36,7 +36,8 @@ int main() {
 
     const std::string text = "hello";
     gossip::rapid::Bytes payload(text.begin(), text.end());
-    if (!first.disseminate(std::move(payload))) {
+    const auto message_handle = first.disseminate(std::move(payload));
+    if (!message_handle) {
         std::cerr << "disseminate(): " << first.last_error() << "\n";
         first.stop();
         second.stop();
@@ -53,6 +54,15 @@ int main() {
     const auto message = received.get();
     if (message) {
         std::cout << std::string(message->payload.begin(), message->payload.end()) << "\n";
+    }
+
+    // This sends the same logical message with the same protocol identifier.
+    // A receiver that already cached it suppresses it as a duplicate.
+    if (!first.retransmit(*message_handle)) {
+        std::cerr << "retransmit(): " << first.last_error() << "\n";
+        first.stop();
+        second.stop();
+        return 1;
     }
 
     first.stop();

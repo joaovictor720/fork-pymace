@@ -8,6 +8,7 @@
 #include <limits>
 #include <mutex>
 #include <nlohmann/json.hpp>
+#include <optional>
 #include <random>
 #include <string>
 #include <thread>
@@ -17,6 +18,7 @@
 #include "../common/lib_gossip/gossip.hpp"
 
 using json = nlohmann::json;
+using gossip::rapid::MessageHandle;
 using gossip::rapid::Rapid;
 
 namespace {
@@ -227,10 +229,14 @@ void write_monitor_sample(std::ofstream& log,
         << ", recv_msgs=" << stats.received_packets
         << ", sent_bytes=" << stats.sent_bytes
         << ", recv_bytes=" << stats.received_bytes
+        << ", disseminated_messages=" << stats.disseminated_messages
+        << ", explicit_retransmissions=" << stats.explicit_retransmissions
         << ", delivery_queue_overflows=" << stats.delivery_queue_overflows
         << ", rejected_disseminations=" << stats.rejected_disseminations
+        << ", rejected_retransmissions=" << stats.rejected_retransmissions
         << ", socket_errors=" << stats.socket_errors
         << ", malformed_packets=" << stats.malformed_packets
+        << ", cached_messages=" << stats.cached_messages
         << ", known_neighbors=" << stats.known_neighbors
         << ", pending_deliveries=" << stats.pending_deliveries
         << "\n";
@@ -308,8 +314,7 @@ void run_random_mode(const NodeConfig& config, gcounter<int, std::string>& count
 }
 
 void local_periodic_dissemination(const NodeConfig& config, Rapid& rapid) {
-    gossip::rapid::Bytes last_payload;
-    bool has_last_payload = false;
+    std::optional<MessageHandle> last_message;
     auto next = std::chrono::steady_clock::now();
 
     while (g_running.load()) {
@@ -334,15 +339,24 @@ void local_periodic_dissemination(const NodeConfig& config, Rapid& rapid) {
 
         if (has_new_payload) {
             const std::string serialized = to_send.serialize();
-            last_payload.assign(serialized.begin(), serialized.end());
-            has_last_payload = true;
-        }
-
-        // The application owns the periodic trigger. By the Rapid facade
-        // contract, every trigger is a new logical message, even when the
-        // latest CRDT payload is byte-identical to the previous one.
-        if (has_last_payload && !rapid.disseminate(last_payload) && g_running.load()) {
-            std::cerr << "RAPID dissemination rejected: " << rapid.last_error() << "\n";
+            gossip::rapid::Bytes payload(serialized.begin(), serialized.end());
+            auto message = rapid.disseminate(std::move(payload));
+            if (message) {
+                last_message = std::move(*message);
+            } else if (g_running.load()) {
+                std::cerr
+                    << "RAPID dissemination rejected: "
+                    << rapid.last_error() << "\n";
+            }
+        } else if (last_message &&
+                   !rapid.retransmit(*last_message) &&
+                   g_running.load()) {
+            std::cerr
+                << "RAPID retransmission rejected: "
+                << rapid.last_error() << "\n";
+            // The published application also stopped sending an old message
+            // after its cache entry expired.
+            last_message.reset();
         }
     }
 }
@@ -425,9 +439,13 @@ int main(int argc, char* argv[]) {
     }
 
     const gossip::rapid::Stats final_stats = rapid.stats();
-    if (final_stats.delivery_queue_overflows > 0 || final_stats.socket_errors > 0) {
+    if (final_stats.delivery_queue_overflows > 0 ||
+        final_stats.rejected_retransmissions > 0 ||
+        final_stats.socket_errors > 0) {
         std::cerr << "RAPID diagnostics: delivery_queue_overflows="
                   << final_stats.delivery_queue_overflows
+                  << ", rejected_retransmissions="
+                  << final_stats.rejected_retransmissions
                   << ", socket_errors=" << final_stats.socket_errors << "\n";
     }
 
