@@ -26,9 +26,9 @@ enum class StateRelation {
 // Application-defined semantics for the state maintained through Trickle.
 //
 // The adapter does not transfer ownership of application state to the
-// protocol. It only exposes a serialized summary, compares a received summary
-// with the current local state and builds application bytes for an outdated
-// peer. These methods are called by Trickle workers and must be thread-safe.
+// protocol. It exposes a serialized summary, compares a received summary,
+// builds application bytes for an outdated peer and applies received update
+// bytes. These methods are called by Trickle workers and must be thread-safe.
 class StateAdapter {
 public:
     virtual ~StateAdapter() = default;
@@ -36,6 +36,7 @@ public:
     virtual Bytes summary() const = 0;
     virtual StateRelation compare(const Bytes& remote_summary) const = 0;
     virtual Bytes make_update(const Bytes& remote_summary) const = 0;
+    virtual bool apply_update(PeerId sender, const Bytes& update) = 0;
 };
 
 struct Config {
@@ -57,6 +58,7 @@ struct Config {
 struct ReceivedUpdate {
     PeerId sender{0};
     Bytes payload;
+    bool state_changed{false};
 };
 
 struct Stats {
@@ -89,10 +91,11 @@ struct Stats {
 
 // High-level facade for one independent Trickle protocol instance.
 //
-// notify_state_changed() resets the Trickle interval after the application
-// changes its local state. receive() blocks until application update bytes are
-// available or stop() is called. The application applies those bytes and calls
-// notify_state_changed() only when they actually changed the local state.
+// notify_state_changed() resets the Trickle interval after a local application
+// change. Remote updates are applied synchronously through StateAdapter before
+// the protocol processes another packet. receive() only reports updates that
+// have already been applied and blocks until one is available or stop() is
+// called.
 class Trickle {
 public:
     Trickle(Config config, StateAdapter& adapter);

@@ -100,10 +100,12 @@ public:
         return update;
     }
 
-    bool apply(const Bytes& update) {
+    bool apply_update(
+        gossip::PeerId,
+        const Bytes& update) override {
         std::lock_guard<std::mutex> lock(mutex_);
         if (update.size() != values_.size()) {
-            return false;
+            throw std::invalid_argument("different vector sizes");
         }
 
         bool changed = false;
@@ -114,6 +116,11 @@ public:
             }
         }
         return changed;
+    }
+
+    void set(std::size_t index, std::uint8_t value) {
+        std::lock_guard<std::mutex> lock(mutex_);
+        values_.at(index) = value;
     }
 
     Bytes values() const {
@@ -178,12 +185,10 @@ void test_dissemination_and_shutdown(std::uint16_t port) {
             "receive returned shutdown instead of an update");
     require(update->sender == 1,
             "the update did not expose its sender");
-    require(second_state.apply(update->payload),
-            "the received update did not change local state");
-    require(second.notify_state_changed(),
-            "a remotely applied state change was rejected");
+    require(update->state_changed,
+            "the update notification did not report a state change");
     require(second_state.values() == Bytes({3, 0}),
-            "the second state did not converge");
+            "receive exposed the update before applying it");
 
     require(wait_until(
                 [&] {
@@ -217,25 +222,19 @@ void test_incomparable_states(std::uint16_t port) {
     require(second.notify_state_changed(),
             "second incomparable state change was rejected");
 
-    auto receive_and_apply = [](Trickle& trickle,
-                                VectorState& state) {
+    auto receive_notification = [](Trickle& trickle) {
         auto update = trickle.receive();
-        if (update && state.apply(update->payload)) {
-            trickle.notify_state_changed();
-        }
-        return update.has_value();
+        return update && update->state_changed;
     };
 
     auto first_received = std::async(
         std::launch::async,
-        receive_and_apply,
-        std::ref(first),
-        std::ref(first_state));
+        receive_notification,
+        std::ref(first));
     auto second_received = std::async(
         std::launch::async,
-        receive_and_apply,
-        std::ref(second),
-        std::ref(second_state));
+        receive_notification,
+        std::ref(second));
 
     require(first_received.wait_for(2s) ==
                 std::future_status::ready &&
@@ -255,7 +254,7 @@ void test_incomparable_states(std::uint16_t port) {
 }
 
 void test_delivery_queue_overflow(std::uint16_t port) {
-    VectorState sender_state(Bytes{5});
+    VectorState sender_state(Bytes{0});
     VectorState receiver_state(Bytes{0});
     Config sender_config = local_config(port, 30, 303);
     Config receiver_config = local_config(port, 40, 404);
@@ -265,19 +264,27 @@ void test_delivery_queue_overflow(std::uint16_t port) {
     Trickle receiver(receiver_config, receiver_state);
     require(sender.start(), "overflow sender failed to start");
     require(receiver.start(), "overflow receiver failed to start");
-    require(sender.notify_state_changed(),
-            "overflow sender state change was rejected");
+    for (std::uint8_t value = 1; value <= 3; ++value) {
+        sender_state.set(0, value);
+        require(sender.notify_state_changed(),
+                "overflow sender state change was rejected");
+        require(wait_until(
+                    [&] {
+                        return receiver_state.values() ==
+                               Bytes({value});
+                    },
+                    2s),
+                "the receiver state was gated by its notification queue");
+    }
 
-    require(wait_until(
-                [&] {
-                    return receiver.stats().delivery_queue_overflows > 0;
-                },
-                2s),
+    require(receiver.stats().delivery_queue_overflows > 0,
             "a slow consumer did not report delivery queue overflow");
 
     const auto snapshot = receiver.stats();
     require(snapshot.pending_deliveries == 1,
             "the bounded delivery queue retained an unexpected count");
+    require(receiver_state.values() == Bytes({3}),
+            "a full notification queue prevented state convergence");
 
     sender.stop();
     receiver.stop();

@@ -494,7 +494,9 @@ private:
                 handle_summary(decoded.payload);
             } else {
                 counters_.received_updates.fetch_add(1);
-                deliver_update(decoded.sender, std::move(decoded.payload));
+                apply_and_deliver_update(
+                    decoded.sender,
+                    std::move(decoded.payload));
             }
         }
     }
@@ -610,7 +612,26 @@ private:
         return true;
     }
 
-    void deliver_update(PeerId sender, Bytes payload) {
+    void apply_and_deliver_update(PeerId sender, Bytes payload) {
+        bool state_changed = false;
+        try {
+            state_changed = adapter_.apply_update(sender, payload);
+        } catch (const std::exception& error) {
+            counters_.adapter_errors.fetch_add(1);
+            set_error(
+                std::string("StateAdapter::apply_update(): ") +
+                error.what());
+            return;
+        } catch (...) {
+            counters_.adapter_errors.fetch_add(1);
+            set_error("StateAdapter::apply_update() failed");
+            return;
+        }
+
+        if (state_changed) {
+            reset_interval();
+        }
+
         std::lock_guard<std::mutex> delivery_lock(delivery_mutex_);
         if (delivery_queue_.size() >= config_.delivery_queue_capacity) {
             counters_.delivery_queue_overflows.fetch_add(1);
@@ -618,7 +639,10 @@ private:
         }
 
         delivery_queue_.push_back(
-            ReceivedUpdate{sender, std::move(payload)});
+            ReceivedUpdate{
+                sender,
+                std::move(payload),
+                state_changed});
         counters_.delivered_updates.fetch_add(1);
         delivery_cv_.notify_one();
     }

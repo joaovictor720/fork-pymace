@@ -325,6 +325,12 @@ public:
         return state_.make_update(remote_summary);
     }
 
+    bool apply_update(
+        gossip::PeerId,
+        const gossip::Bytes& update) override {
+        return state_.apply(update).changed;
+    }
+
 private:
     ReplicatedGCounter& state_;
 };
@@ -531,22 +537,15 @@ void delivery_loop(Trickle& trickle,
                    ReplicatedGCounter& state,
                    const std::string& node_id) {
     while (auto message = trickle.receive()) {
-        try {
-            const auto result = state.apply(message->payload);
-            if (!result.changed) {
-                continue;
-            }
-
-            log_apply(node_id, result.total);
-            if (trickle.notify_state_changed()) {
-                log_protocol_event(
-                    node_id,
-                    "trickle_reset",
-                    "reason=update_received");
-            }
-        } catch (...) {
-            // Invalid application bytes do not affect protocol workers or state.
+        if (!message->state_changed) {
+            continue;
         }
+
+        log_apply(node_id, state.snapshot().total);
+        log_protocol_event(
+            node_id,
+            "trickle_reset",
+            "reason=update_received");
     }
 }
 

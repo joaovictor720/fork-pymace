@@ -42,8 +42,8 @@ public:
 | `Trickle(config, adapter)` | Creates one independent protocol instance. The adapter remains owned by the application and must outlive the `Trickle` object. |
 | `~Trickle()` | Stops the instance when necessary and releases protocol resources. |
 | `start()` | Validates configuration, opens the UDP socket and starts protocol workers. Returns `false` on failure. |
-| `notify_state_changed()` | Tells Trickle that the application state changed and resets the interval to `minimum_interval`. It does not send synchronously. |
-| `receive()` | Blocks until remote update bytes are available. Returns `std::nullopt` after shutdown and queue draining. |
+| `notify_state_changed()` | Tells Trickle that the application changed the state locally and resets the interval to `minimum_interval`. It does not send synchronously. Do not call it for remote updates: the library handles those resets. |
+| `receive()` | Blocks until a notification about an already-applied remote update is available. Returns `std::nullopt` after shutdown and queue draining. |
 | `stop()` | Stops timers and network workers and wakes blocked receivers. Safe to call more than once. |
 | `is_running()` | Reports whether the instance is currently running. |
 | `stats()` | Returns a snapshot of protocol counters and current interval state. |
@@ -64,6 +64,7 @@ public:
     virtual Bytes summary() const = 0;
     virtual StateRelation compare(const Bytes& remote_summary) const = 0;
     virtual Bytes make_update(const Bytes& remote_summary) const = 0;
+    virtual bool apply_update(PeerId sender, const Bytes& update) = 0;
 };
 ```
 
@@ -84,10 +85,13 @@ enum class StateRelation {
 struct ReceivedUpdate {
     PeerId sender;
     Bytes payload;
+    bool state_changed;
 };
 ```
 
 `Bytes` is `std::vector<std::uint8_t>` and `PeerId` is `std::uint64_t`.
+`state_changed` is the result already returned by
+`StateAdapter::apply_update()`.
 
 ## Minimal usage
 
@@ -110,10 +114,10 @@ state.change();
 trickle.notify_state_changed();
 
 while (auto update = trickle.receive()) {
-    // The application interprets and applies its own bytes.
-    if (state.apply(update->payload)) {
-        // Notify only when local state actually advanced.
-        trickle.notify_state_changed();
+    // The adapter has already applied the update. This loop observes it and
+    // keeps the bounded notification queue drained.
+    if (update->state_changed) {
+        application_observe_new_state();
     }
 }
 
@@ -146,16 +150,31 @@ public:
         return state_.serialize_update_for(remote);
     }
 
+    bool apply_update(
+        gossip::PeerId sender,
+        const gossip::Bytes& update) override {
+        return state_.apply_remote_update(sender, update);
+    }
+
 private:
     ApplicationState& state_;
 };
 ```
 
-The three adapter methods answer:
+The four adapter methods answer:
 
 1. What compact metadata represents the current state?
 2. How does remote knowledge compare with local knowledge?
 3. Which application bytes can advance that remote state?
+4. How are received application bytes applied, and did they actually advance
+   local state?
+
+`apply_update()` runs synchronously in the network receive worker. It must
+fully validate and apply the update before returning. Return `true` only when
+the local state changed; Trickle then resets the interval to
+`minimum_interval` before processing another incoming packet. Returning
+`false` identifies a valid update that was already known or otherwise caused
+no change. Throwing rejects the update and records an adapter error.
 
 The library reacts to `compare()` as follows:
 
@@ -179,39 +198,46 @@ For each interval `I`, Trickle:
 4. otherwise suppresses the redundant summary;
 5. doubles `I` at the end of the interval, up to `maximum_interval`.
 
-New local information, a newer remote summary or incomparable state resets the
-interval to `minimum_interval`. Receiving update bytes does not reset the
-interval by itself because the library cannot know whether they changed
-application state. The application applies them and then calls
-`notify_state_changed()` when appropriate.
+New local information, a newer remote summary, incomparable state or a remote
+update for which `apply_update()` returns `true` resets the interval to
+`minimum_interval`.
+
+Use `notify_state_changed()` only after state changes made outside the adapter,
+such as a local application operation. Updates received by Trickle are applied
+and reported to the timer internally.
 
 ## Concurrency and lifetime
 
 The adapter and referenced application state must outlive `Trickle`.
 
-`summary()`, `compare()` and `make_update()` run on protocol workers. They must
-be thread-safe with local application mutations, return promptly and validate
-remote summary bytes before using them. They should not call blocking Trickle
-operations.
+`summary()`, `compare()`, `make_update()` and `apply_update()` run on protocol
+workers. They must be thread-safe with local application mutations, return
+promptly and validate remote bytes before using them. They should not call
+blocking Trickle operations.
 
 Public lifecycle operations and `stats()` are thread-safe. `stop()` wakes a
 thread blocked in `receive()`.
 
 ## Receiving updates
 
-`receive()` consumes a library-owned queue whose capacity is configured by
-`delivery_queue_capacity`.
+Trickle applies every valid update through `StateAdapter::apply_update()`
+before it puts a notification in the library-owned queue consumed by
+`receive()`. Consequently, correctness and protocol progress do not depend on
+how quickly the application calls `receive()`.
 
-When this queue is full, network reception and protocol timing continue, but
-the update cannot be delivered locally. The condition increments
+The notification queue capacity is configured by
+`delivery_queue_capacity`. When it is full, only the notification is dropped:
+the update has already been applied and any necessary interval reset has
+already happened. The condition increments
 `Stats::delivery_queue_overflows`; it is never silent.
 
 Already queued updates are returned after `stop()`. When the queue becomes
 empty, `receive()` returns `std::nullopt`.
 
-Trickle can send the same semantic update more than once. Applications should
-ignore updates that do not advance state or attach identifiers when an
-operation cannot safely be repeated.
+Trickle can receive the same semantic update more than once. `apply_update()`
+must recognize a repeated update as unchanged, or the application's update
+encoding must carry enough identity to recognize it. This does not require a
+CRDT; it is a consequence of gossip communication allowing retransmission.
 
 ## Configuration
 
@@ -243,7 +269,7 @@ struct Config {
 | `maximum_interval` | `Imax`, upper bound for interval doubling. |
 | `seed` | Random seed; zero selects a non-deterministic seed. |
 | `max_packet_size` | Maximum complete UDP packet accepted and emitted. |
-| `delivery_queue_capacity` | Maximum updates waiting for the application. |
+| `delivery_queue_capacity` | Maximum already-applied update notifications waiting for the application. |
 
 Invalid configuration makes `start()` return `false` and records an explanation
 in `last_error()`.
@@ -263,7 +289,7 @@ struct Stats {
     std::uint64_t received_summaries;
     std::uint64_t sent_updates;
     std::uint64_t received_updates;
-    std::uint64_t delivered_updates;
+    std::uint64_t delivered_updates; // notifications queued for receive()
 
     std::uint64_t consistent_summaries;
     std::uint64_t suppressed_summaries;
@@ -288,9 +314,9 @@ protocol action.
 
 ## Network model
 
-Each packet is a one-hop UDP broadcast. State crosses multiple hops because
-nodes that apply an update call `notify_state_changed()` and subsequently
-participate with their new summary.
+Each packet is a one-hop UDP broadcast. State crosses multiple hops because a
+node applies a received update synchronously, resets its interval when the
+state changed and subsequently participates with its new summary.
 
 Participants in the same dissemination domain need distinct, non-zero peer
 identifiers and compatible ports, broadcast setup, serialization and state

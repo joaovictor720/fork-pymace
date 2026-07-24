@@ -222,6 +222,12 @@ public:
         return state_.make_update(remote_summary);
     }
 
+    bool apply_update(
+        gossip::PeerId,
+        const Bytes& update) override {
+        return state_.apply_update(update);
+    }
+
 private:
     GCounterState& state_;
 };
@@ -237,15 +243,9 @@ gossip::trickle::Config local_config(
     return config;
 }
 
-bool receive_one(Trickle& trickle, GCounterState& state) {
+bool receive_one(Trickle& trickle) {
     const auto update = trickle.receive();
-    if (!update) {
-        return false;
-    }
-    if (state.apply_update(update->payload)) {
-        return trickle.notify_state_changed();
-    }
-    return true;
+    return update && update->state_changed;
 }
 
 }  // namespace
@@ -271,8 +271,7 @@ int main() {
     auto second_receive = std::async(
         std::launch::async,
         receive_one,
-        std::ref(second),
-        std::ref(second_state));
+        std::ref(second));
     if (second_receive.wait_for(2s) != std::future_status::ready ||
         !second_receive.get()) {
         std::cerr << "Second replica did not receive the update\n";
@@ -287,8 +286,7 @@ int main() {
     auto first_receive = std::async(
         std::launch::async,
         receive_one,
-        std::ref(first),
-        std::ref(first_state));
+        std::ref(first));
     if (first_receive.wait_for(2s) != std::future_status::ready ||
         !first_receive.get()) {
         std::cerr << "First replica did not receive the update\n";
