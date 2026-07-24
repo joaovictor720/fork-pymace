@@ -1,4 +1,5 @@
 import json
+from datetime import datetime
 from pathlib import Path
 
 import numpy as np
@@ -16,6 +17,7 @@ OUTPUT_DIR = Path("results/plots")
 OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
 
 OUTPUT_FORMATS = ("pdf",)
+RUN_TIMESTAMP = datetime.now().strftime("%Y%m%d_%H%M%S")
 
 # ==========================
 # FIGURE SIZING (PHYSICAL) vs FONT SIZING (POINTS)
@@ -152,7 +154,7 @@ def _scenario_prefix(s: str):
 
 def _save_figure(fig, base_filename_no_ext: str):
     for ext in OUTPUT_FORMATS:
-        out_path = OUTPUT_DIR / f"{base_filename_no_ext}.{ext}"
+        out_path = OUTPUT_DIR / f"{base_filename_no_ext}_{RUN_TIMESTAMP}.{ext}"
         fig.savefig(out_path, bbox_inches="tight", dpi=DPI)
         print(f"[OK] Saved: {out_path}")
 
