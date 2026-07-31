@@ -10,7 +10,11 @@
 			"tcpdump_filter": "ether proto 0x4305",
 			"tshark_display_filter": "eth.type==0x4305",
 			"udp_port": 5001,
-			"payload_type_mode": "none"
+			"payload_type_mode": "none",
+			"frame_classification": {
+				"mode": "batadv",
+				"application_udp_ports": [5001]
+			}
 		},
 		"multiunicast": {
 			"binary": "apps/crdt/multiunicast/crdt_multiunicast",
@@ -18,7 +22,11 @@
 			"tcpdump_filter": "ether proto 0x4305",
 			"tshark_display_filter": "eth.type==0x4305",
 			"udp_port": 5001,
-			"payload_type_mode": "none"
+			"payload_type_mode": "none",
+			"frame_classification": {
+				"mode": "batadv",
+				"application_udp_ports": [5001]
+			}
 		},
 		"rapid": {
 			"binary": "apps/crdt/rapid/crdt_rapid",
@@ -26,7 +34,18 @@
 			"tcpdump_filter": "udp port 5001",
 			"tshark_display_filter": "udp.port==5001",
 			"udp_port": 5001,
-			"payload_type_mode": "first_byte_hex"
+			"payload_type_mode": "first_byte_hex",
+			"frame_classification": {
+				"mode": "protocol_type_byte",
+				"payload_types": [1],
+				"control_types": [2, 3, 4],
+				"type_names": {
+					"1": "DATA",
+					"2": "GOSSIP",
+					"3": "REQUEST",
+					"4": "HEARTBEAT"
+				}
+			}
 		},
 		"trickle": {
 			"binary": "apps/crdt/trickle/crdt_trickle",
@@ -34,7 +53,16 @@
 			"tcpdump_filter": "udp port 5001",
 			"tshark_display_filter": "udp.port==5001",
 			"udp_port": 5001,
-			"payload_type_mode": "first_byte_hex"
+			"payload_type_mode": "first_byte_hex",
+			"frame_classification": {
+				"mode": "protocol_type_byte",
+				"payload_types": [2],
+				"control_types": [1],
+				"type_names": {
+					"1": "SUMMARY",
+					"2": "UPDATE"
+				}
+			}
 		},
 		"usfdx3": {
 			"binary": "apps/crdt/usfdx3/crdt_usfdx3",
@@ -42,7 +70,11 @@
 			"tcpdump_filter": "udp port 5001",
 			"tshark_display_filter": "udp.port==5001",
 			"udp_port": 5001,
-			"payload_type_mode": "none"
+			"payload_type_mode": "none",
+			"frame_classification": {
+				"mode": "all_payload",
+				"type_name": "USFD_DELTA"
+			}
 		},
 		"usfdx1": {
 			"binary": "apps/crdt/usfdx1/crdt_usfdx1",
@@ -50,7 +82,11 @@
 			"tcpdump_filter": "udp port 5001",
 			"tshark_display_filter": "udp.port==5001",
 			"udp_port": 5001,
-			"payload_type_mode": "none"
+			"payload_type_mode": "none",
+			"frame_classification": {
+				"mode": "all_payload",
+				"type_name": "USFD_DELTA"
+			}
 		}
 	}
 }

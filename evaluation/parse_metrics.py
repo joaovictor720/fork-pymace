@@ -19,6 +19,23 @@ for run_dir in sorted(root.iterdir()):
     net = parse_network_overhead(run_dir)
     conv = parse_convergence(run_dir)
 
+    classification_status = net.get("classification_status")
+    if classification_status == "warning_unclassified":
+        print(
+            "[WARN] "
+            f"{run_dir}: {net.get('total_unclassified_packets', 0)} "
+            "frames could not be classified as payload or control; "
+            "see the diagnostic JSON fields in summary.csv.",
+            file=sys.stderr,
+        )
+    elif classification_status == "error_classification_residual":
+        print(
+            "[WARN] "
+            f"{run_dir}: packet breakdown is invalid "
+            f"(classification_residual={net.get('classification_residual')}).",
+            file=sys.stderr,
+        )
+
     row.update(net)
     row.update(conv)
 

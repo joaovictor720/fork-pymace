@@ -77,6 +77,21 @@ def mean_ci(series, confidence=0.95):
 def keep_existing_cols(df_, cols):
     return [c for c in cols if c in df_.columns]
 
+def numeric_col(df_, col):
+    """Return an aligned numeric Series without inventing values for old CSVs."""
+    if col not in df_.columns:
+        return pd.Series(np.nan, index=df_.index, dtype=float)
+    return pd.to_numeric(df_[col], errors="coerce")
+
+def add_mean_ci(row, prefix, series):
+    mc = mean_ci(series)
+    row[f"{prefix}_mean"] = mc["mean"]
+    row[f"{prefix}_ci_low"] = mc["ci_low"]
+    row[f"{prefix}_ci_high"] = mc["ci_high"]
+    row[f"{prefix}_std"] = mc["std"]
+    row[f"{prefix}_n"] = int(mc["n"])
+    return mc
+
 # -----------------------------
 # 3) Decide agrupamento por cenário
 # -----------------------------
@@ -166,6 +181,138 @@ for scenario_name, df_s in df.groupby("scenario"):
         row["pkt_total_mean"] = tot["mean"]
         row["pkt_total_ci_low"] = tot["ci_low"]
         row["pkt_total_ci_high"] = tot["ci_high"]
+        row["pkt_total_std"] = tot["std"]
+        row["pkt_total_n"] = int(tot["n"])
+
+        # Packet breakdown.  All components and the matching total use one
+        # shared mask, so their means have the same run population and closure
+        # remains meaningful. Missing values in historical results stay
+        # missing; they are never interpreted as zero traffic.
+        total_packets = numeric_col(g, "total_packets")
+        payload_packets = numeric_col(g, "total_payload_packets")
+        control_packets = numeric_col(g, "total_control_packets")
+        unclassified_packets = numeric_col(g, "total_unclassified_packets")
+        residual = numeric_col(g, "classification_residual")
+
+        if "classification_status" in g.columns:
+            classification_status = (
+                g["classification_status"].fillna("unavailable").astype(str).str.strip().str.lower()
+            )
+        else:
+            classification_status = pd.Series("unavailable", index=g.index, dtype=object)
+
+        components_present = pd.concat(
+            [payload_packets, control_packets, unclassified_packets], axis=1
+        ).notna().all(axis=1)
+        residual_present = residual.notna()
+        total_present = total_packets.notna()
+        computed_residual = (
+            total_packets - payload_packets - control_packets - unclassified_packets
+        )
+
+        status_invalid = classification_status.isin(
+            {"error_classification_residual", "invalid"}
+        )
+        invalid_mask = status_invalid | (
+            total_present
+            & components_present
+            & (
+                (residual_present & residual.ne(0))
+                | computed_residual.ne(0)
+            )
+        )
+        valid_mask = (
+            total_present
+            & components_present
+            & residual_present
+            & classification_status.isin({"ok", "warning_unclassified"})
+            & residual.eq(0)
+            & computed_residual.eq(0)
+        )
+
+        g_breakdown = g.loc[valid_mask]
+        payload_valid = payload_packets.loc[valid_mask]
+        control_valid = control_packets.loc[valid_mask]
+        unclassified_valid = unclassified_packets.loc[valid_mask]
+        total_valid = total_packets.loc[valid_mask]
+        residual_valid = residual.loc[valid_mask]
+
+        add_mean_ci(row, "pkt_payload", payload_valid)
+        add_mean_ci(row, "pkt_control", control_valid)
+        add_mean_ci(row, "pkt_unclassified", unclassified_valid)
+        add_mean_ci(row, "pkt_classified_total", total_valid)
+        residual_mc = mean_ci(residual_valid)
+        row["pkt_classification_residual_mean"] = residual_mc["mean"]
+        row["pkt_classification_residual_n"] = int(residual_mc["n"])
+
+        # Per-node variants are kept for analyses that normalize different
+        # scenario sizes. They use exactly the same run mask as total counts.
+        add_mean_ci(
+            row, "pkt_payload_node", numeric_col(g, "avg_payload_per_node").loc[valid_mask]
+        )
+        add_mean_ci(
+            row, "pkt_control_node", numeric_col(g, "avg_control_per_node").loc[valid_mask]
+        )
+        add_mean_ci(
+            row,
+            "pkt_unclassified_node",
+            numeric_col(g, "avg_unclassified_per_node").loc[valid_mask],
+        )
+
+        row["pkt_breakdown_n"] = int(valid_mask.sum())
+        row["pkt_breakdown_invalid_n"] = int(invalid_mask.sum())
+        row["pkt_breakdown_unavailable_n"] = int(
+            (total_present & ~valid_mask & ~invalid_mask).sum()
+        )
+        row["pkt_breakdown_warning_n"] = int(
+            (
+                valid_mask
+                & (
+                    classification_status.eq("warning_unclassified")
+                    | unclassified_packets.gt(0)
+                )
+            ).sum()
+        )
+
+        residual_candidates = residual.loc[residual_present]
+        row["pkt_classification_residual_max_abs"] = (
+            residual_candidates.abs().max() if not residual_candidates.empty else np.nan
+        )
+
+        component_mean_sum = (
+            row["pkt_payload_mean"]
+            + row["pkt_control_mean"]
+            + row["pkt_unclassified_mean"]
+        )
+        closure_error = row["pkt_classified_total_mean"] - component_mean_sum
+        row["pkt_breakdown_closure_error"] = closure_error
+        row["pkt_breakdown_closure_ok"] = bool(
+            row["pkt_breakdown_n"] > 0
+            and np.isfinite(closure_error)
+            and np.isclose(closure_error, 0.0, rtol=0.0, atol=1e-9)
+        )
+
+        sources = []
+        if "packet_breakdown_source" in g_breakdown.columns:
+            sources = sorted(
+                {
+                    str(v).strip()
+                    for v in g_breakdown["packet_breakdown_source"].dropna()
+                    if str(v).strip()
+                }
+            )
+        row["pkt_breakdown_source"] = "+".join(sources) if sources else np.nan
+
+        if row["pkt_breakdown_invalid_n"] > 0:
+            row["pkt_classification_status"] = "invalid"
+        elif row["pkt_breakdown_n"] == 0:
+            row["pkt_classification_status"] = "unavailable"
+        elif row["pkt_breakdown_n"] != row["pkt_total_n"]:
+            row["pkt_classification_status"] = "partial"
+        elif row["pkt_breakdown_warning_n"] > 0:
+            row["pkt_classification_status"] = "warning_unclassified"
+        else:
+            row["pkt_classification_status"] = "ok"
 
         rx_tx = mean_ci(g.get("rx_to_tx_ratio"))
         row["rx_tx_mean"] = rx_tx["mean"]

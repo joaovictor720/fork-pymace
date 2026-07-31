@@ -1,5 +1,4 @@
 import json
-from datetime import datetime
 from pathlib import Path
 
 import numpy as np
@@ -7,6 +6,7 @@ import pandas as pd
 import matplotlib.pyplot as plt
 import matplotlib.ticker as mticker
 from matplotlib.ticker import ScalarFormatter
+from matplotlib.patches import Patch
 import seaborn as sns
 from matplotlib.lines import Line2D
 
@@ -17,7 +17,6 @@ OUTPUT_DIR = Path("results/plots")
 OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
 
 OUTPUT_FORMATS = ("pdf",)
-RUN_TIMESTAMP = datetime.now().strftime("%Y%m%d_%H%M%S")
 
 # ==========================
 # FIGURE SIZING (PHYSICAL) vs FONT SIZING (POINTS)
@@ -96,6 +95,12 @@ Y_LABELS = {
     "pkt_total": "Total Packets",
 }
 
+PACKET_CLASS_STYLES = {
+    "payload": {"alpha": 0.98, "hatch": ""},
+    "control": {"alpha": 0.52, "hatch": "///"},
+    "unclassified": {"color": "#d9d9d9", "alpha": 0.98, "hatch": "xx"},
+}
+
 COLS = {
     "scenario": "scenario",
     "algorithm": "algorithm",
@@ -105,6 +110,22 @@ COLS = {
     "cap_node_mean": "cap_node_mean",
     "cap_node_ci_low": "cap_node_ci_low",
     "cap_node_ci_high": "cap_node_ci_high",
+}
+
+PACKET_BREAKDOWN_COLS = {
+    "payload": "pkt_payload_mean",
+    "control": "pkt_control_mean",
+    "unclassified": "pkt_unclassified_mean",
+    "total": "pkt_total_mean",
+    "total_ci_low": "pkt_total_ci_low",
+    "total_ci_high": "pkt_total_ci_high",
+    "classified_total": "pkt_classified_total_mean",
+    "residual": "pkt_classification_residual_mean",
+    "residual_max_abs": "pkt_classification_residual_max_abs",
+    "breakdown_n": "pkt_breakdown_n",
+    "invalid_n": "pkt_breakdown_invalid_n",
+    "unavailable_n": "pkt_breakdown_unavailable_n",
+    "status": "pkt_classification_status",
 }
 
 # ==========================
@@ -166,7 +187,7 @@ def _scenario_prefix(s: str):
 
 def _save_figure(fig, base_filename_no_ext: str):
     for ext in OUTPUT_FORMATS:
-        out_path = OUTPUT_DIR / f"{base_filename_no_ext}_{RUN_TIMESTAMP}.{ext}"
+        out_path = OUTPUT_DIR / f"{base_filename_no_ext}.{ext}"
         fig.savefig(out_path, bbox_inches="tight", dpi=DPI)
         print(f"[OK] Saved: {out_path}")
 
@@ -229,6 +250,56 @@ def _algo_order(df: pd.DataFrame, algo_col: str):
     if not algo_order:
         algo_order = list(df[algo_col].dropna().unique())
     return algo_order
+
+def _packet_count_close(a, b):
+    if not (np.isfinite(a) and np.isfinite(b)):
+        return False
+    return bool(np.isclose(a, b, rtol=1e-9, atol=1e-6))
+
+def _packet_breakdown_row(row):
+    numeric_keys = tuple(k for k in PACKET_BREAKDOWN_COLS if k != "status")
+    values = {
+        key: pd.to_numeric(pd.Series([row.get(PACKET_BREAKDOWN_COLS[key])]), errors="coerce").iloc[0]
+        for key in numeric_keys
+    }
+    status = str(row.get(PACKET_BREAKDOWN_COLS["status"], "")).strip().lower()
+    reasons = []
+    if status not in {"ok", "warning_unclassified"}:
+        reasons.append(f"status={status or 'missing'}")
+    if not all(np.isfinite(v) for v in values.values()):
+        reasons.append("missing/non-numeric aggregate")
+        return values, reasons
+    parts = values["payload"] + values["control"] + values["unclassified"]
+    if min(values["payload"], values["control"], values["unclassified"], values["total"]) < -1e-6:
+        reasons.append("negative packet count")
+    if values["breakdown_n"] <= 0:
+        reasons.append("no classified runs")
+    if values["invalid_n"] > 0 or values["unavailable_n"] > 0:
+        reasons.append(
+            f"invalid/unavailable runs={values['invalid_n']:g}/{values['unavailable_n']:g}"
+        )
+    if not _packet_count_close(parts, values["classified_total"]):
+        reasons.append(f"components={parts:g} != classified total={values['classified_total']:g}")
+    if not _packet_count_close(values["classified_total"], values["total"]):
+        reasons.append(
+            f"classified total={values['classified_total']:g} != existing total={values['total']:g}"
+        )
+    if not _packet_count_close(values["residual"], 0.0) or not _packet_count_close(
+        values["residual_max_abs"], 0.0
+    ):
+        reasons.append("non-zero classification residual")
+    if not values["total_ci_low"] <= values["total"] <= values["total_ci_high"]:
+        reasons.append("invalid total CI")
+    return values, reasons
+
+def _stacked_bar_geometry(algo_count: int, algo_index: int, x_pos):
+    if algo_count <= 1:
+        width = 0.58
+        return width, x_pos
+    group_width = 0.82
+    width = group_width / algo_count
+    first_center = -group_width / 2 + width / 2
+    return width, x_pos + first_center + algo_index * width
 
 # ==========================
 # LEGENDS
@@ -384,6 +455,34 @@ def _apply_bar_legend_auto(ax, algo_order, *, prefer="upper"):
         fontsize=fs,
     )
 
+def _apply_packet_breakdown_legend(ax, algo_order):
+    handles = [
+        Patch(
+            facecolor=PALETTE.get(algo, "gray"),
+            edgecolor="black",
+            label=LEGEND_LABELS_SHORT.get(algo, algo),
+        )
+        for algo in algo_order
+    ]
+    handles += [
+        Patch(facecolor="#777777", edgecolor="black", label="Payload"),
+        Patch(
+            facecolor="#777777", edgecolor="black",
+            alpha=PACKET_CLASS_STYLES["control"]["alpha"],
+            hatch=PACKET_CLASS_STYLES["control"]["hatch"],
+            label="Control",
+        ),
+    ]
+    ax.legend(
+        handles=handles, loc="lower center", bbox_to_anchor=(0.5, 1.02),
+        ncol=3, frameon=True, framealpha=0.92,
+        borderaxespad=0.0,
+        handlelength=1.1,
+        handletextpad=0.6,
+        labelspacing=0.25,
+        fontsize=_legend_fontsize_pt(),
+    )
+
 # ==========================
 # PLOTS
 # ==========================
@@ -470,6 +569,91 @@ def plot_bar_with_ci(
     elif y_axis_mode == "thousands_sci":
         _apply_thousands_sci(ax)
 
+    _finalize_layout(fig)
+    _save_figure(fig, base_filename_no_ext)
+    plt.close(fig)
+
+def plot_packets_by_class(
+    df: pd.DataFrame,
+    x: str,
+    algo_col: str,
+    xlabel: str,
+    ylabel: str,
+    base_filename_no_ext: str,
+):
+    """Plot the existing packet total as an honest semantic decomposition."""
+    fig, ax = _new_fig_ax()
+    algo_order = _algo_order(df, algo_col)
+    x_values = sorted(pd.to_numeric(df[x], errors="coerce").dropna().unique())
+    x_pos = np.arange(len(x_values))
+    annotations = []
+    plotted = 0
+    for i, algo in enumerate(algo_order):
+        subset = df[df[algo_col] == algo].copy()
+        if subset[x].duplicated().any():
+            print(
+                f"[WARN] Duplicate packet-breakdown rows for algorithm={algo!r}, "
+                f"{x}={subset.loc[subset[x].duplicated(keep=False), x].tolist()}; "
+                f"skipping this algorithm in {base_filename_no_ext}."
+            )
+            continue
+        metrics = pd.DataFrame({x: x_values}).merge(subset, on=x, how="left")
+        width, positions = _stacked_bar_geometry(len(algo_order), i, x_pos)
+        color = PALETTE.get(algo, "gray")
+        for row_index, row in metrics.iterrows():
+            values, reasons = _packet_breakdown_row(row)
+            if reasons:
+                print(
+                    f"[WARN] Skipping packet-breakdown datapoint algorithm={algo!r}, "
+                    f"{x}={row[x]!r} in {base_filename_no_ext}: " + "; ".join(reasons)
+                )
+                continue
+            position = float(positions[row_index])
+            payload = max(float(values["payload"]), 0.0)
+            control = max(float(values["control"]), 0.0)
+            unclassified = max(float(values["unclassified"]), 0.0)
+            total = float(values["total"])
+            bottoms = (0.0, payload, payload + control)
+            heights = (payload, control, unclassified)
+            for packet_class, bottom, height in zip(PACKET_CLASS_STYLES, bottoms, heights):
+                style = PACKET_CLASS_STYLES[packet_class]
+                ax.bar(
+                    position, height, width, bottom=bottom,
+                    color=style.get("color", color), edgecolor=color if packet_class == "unclassified" else "black",
+                    linewidth=1.1 if packet_class == "unclassified" else 0.85,
+                    alpha=style["alpha"], hatch=style["hatch"],
+                )
+            ax.errorbar(
+                position, total,
+                yerr=np.array([[total - values["total_ci_low"]], [values["total_ci_high"] - total]]),
+                fmt="none", capsize=4, ecolor="black", elinewidth=1.0, alpha=0.9,
+            )
+            if unclassified > 0 and total > 0:
+                percent = 100.0 * unclassified / total
+                annotations.append((position, payload + control + 0.5 * unclassified, percent))
+                print(
+                    f"[WARN] Unclassified packets: algorithm={algo!r}, {x}={row[x]!r}, "
+                    f"share={percent:.2f}% in {base_filename_no_ext}."
+                )
+            plotted += 1
+    if plotted == 0:
+        plt.close(fig)
+        print(f"[WARN] No valid packet-breakdown datapoints for {base_filename_no_ext}; skipping plot.")
+        return
+    ax.set_xticks(x_pos)
+    ax.set_xticklabels(_format_xticks(x_values))
+    ax.set_xlabel(xlabel, labelpad=6)
+    ax.set_ylabel(ylabel, labelpad=6)
+    ax.grid(True, axis="y", linestyle=":", alpha=0.6)
+    _apply_thousands_sci(ax)
+    for position, segment_center, percent in annotations:
+        ax.text(
+            position, segment_center, f"{percent:.1f}%", ha="center", va="center",
+            fontsize=6.5 * FONT_SCALE,
+            color="#222222",
+            bbox={"boxstyle": "round,pad=0.12", "facecolor": "white", "edgecolor": "none", "alpha": 0.78},
+        )
+    _apply_packet_breakdown_legend(ax, algo_order)
     _finalize_layout(fig)
     _save_figure(fig, base_filename_no_ext)
     plt.close(fig)
@@ -574,6 +758,37 @@ for prefix in prefixes:
         )
     else:
         print(f"[WARN] Missing total-packets columns for prefix={prefix!r}; skipping packets plot.")
+
+    # PACKET BREAKDOWN: a separate figure; the existing total-packets plot above is unchanged.
+    missing_breakdown = [c for c in PACKET_BREAKDOWN_COLS.values() if c not in df_p.columns]
+    valid_breakdown_status = pd.Series(False, index=df_p.index)
+    if not missing_breakdown:
+        valid_breakdown_status = (
+            df_p[PACKET_BREAKDOWN_COLS["status"]]
+            .astype(str)
+            .str.strip()
+            .str.lower()
+            .isin({"ok", "warning_unclassified"})
+        )
+    if not missing_breakdown and valid_breakdown_status.any():
+        plot_packets_by_class(
+            df=df_p,
+            x=xcol,
+            algo_col=COLS["algorithm"],
+            xlabel=xlabel,
+            ylabel=Y_LABELS["pkt_total"],
+            base_filename_no_ext=f"{prefix}__total_packets_by_class",
+        )
+    elif not missing_breakdown:
+        print(
+            f"[WARN] Packet breakdown unavailable for every datapoint in prefix={prefix!r}; "
+            "skipping packet-breakdown plot."
+        )
+    else:
+        print(
+            f"[WARN] Missing packet-breakdown columns ({', '.join(missing_breakdown)}) "
+            f"for prefix={prefix!r}; skipping packet-breakdown plot."
+        )
 
     # CAPACITY (line)
     if _has_cols(df_p, [COLS["cap_node_mean"], COLS["cap_node_ci_low"], COLS["cap_node_ci_high"]]):
