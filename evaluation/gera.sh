@@ -1,3 +1,6 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
 cd /home/mace/git/fork-pymace
 
 # 0) (Opcional) limpar agregados/plots antigos
@@ -6,8 +9,16 @@ rm -f results/plots/*.png
 
 # 1) Reparse: gerar summary.csv em cada (scenario__expanded/variant/app)
 # (usa parse_metrics.py que percorre run_* e escreve summary.csv no diretório pai)
-for d in results/*__expanded/*/{broadcast,rapid,multiunicast,trickle}; do
-  [ -d "$d" ] || continue
+python3 - <<'PY' | while IFS=$'\t' read -r app d; do
+import json
+from pathlib import Path
+
+apps = json.loads(Path("evaluation/apps.json").read_text(encoding="utf-8")).get("apps", {})
+for app in apps:
+    for d in sorted(Path("results").glob(f"*__expanded/*/{app}")):
+        if d.is_dir():
+            print(f"{app}\t{d}")
+PY
   python3 evaluation/parse_metrics.py "$d" >/dev/null || echo "[WARN] parse_metrics falhou em $d"
 done
 

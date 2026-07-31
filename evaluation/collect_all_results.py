@@ -1,7 +1,21 @@
 import pandas as pd
 from pathlib import Path
+import json
 
 ROOT = Path("/home/mace/git/fork-pymace/results")
+REPO_ROOT = Path("/home/mace/git/fork-pymace")
+
+
+def _load_algorithms():
+    apps_path = REPO_ROOT / "evaluation" / "apps.json"
+    try:
+        cfg = json.loads(apps_path.read_text(encoding="utf-8"))
+        apps = cfg.get("apps", {})
+        if isinstance(apps, dict) and apps:
+            return list(apps.keys())
+    except Exception:
+        pass
+    return ["broadcast", "rapid", "multiunicast", "trickle", "usfdx1", "usfdx3"]
 
 
 def _read_variant_scenario_params(variant_dir: Path):
@@ -57,6 +71,7 @@ def _read_variant_scenario_params(variant_dir: Path):
 
 rows = []
 cap_rows = []
+algorithms = _load_algorithms()
 
 for scenario_dir in ROOT.glob("*__expanded"):
     scenario = scenario_dir.name.replace("__expanded", "")
@@ -68,7 +83,7 @@ for scenario_dir in ROOT.glob("*__expanded"):
         variant = variant_dir.name
         extra = _read_variant_scenario_params(variant_dir)
 
-        for algo in ["broadcast", "rapid", "multiunicast", "trickle"]:
+        for algo in algorithms:
             base = variant_dir / algo
             csv_path = base / "summary.csv"
             if csv_path.exists():

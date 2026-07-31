@@ -72,6 +72,11 @@ net_setup = str(app_cfg.get("net_setup", "ip")).lower()
 tcpdump_filter = str(app_cfg.get("tcpdump_filter", "")).strip()
 
 node_cfg = sc.get("node_config", {})
+ip_iface = "eth0"
+if net_setup != "batman":
+    ip_iface = str(
+        node_cfg.get("usfd_interface", node_cfg.get("interface", "eth0"))
+    ).strip() or "eth0"
 duration_s = float(node_cfg.get("duration", 10))
 cooldown_s = float(node_cfg.get("cooldown", 10))
 
@@ -112,7 +117,7 @@ for i, (x, y) in enumerate(positions):
         )
     else:
         base_net_setup = (
-            f"sudo ip link set up dev eth0; "
+            f"sudo ip link set up dev {ip_iface}; "
         )
 
     function = [
@@ -131,7 +136,7 @@ for i, (x, y) in enumerate(positions):
         f"echo \\\"APP={app}\\\" > \\\"\\$LOG_FILE\\\"; "
 
         # tcpdump com timeout
-        f"sudo timeout -s INT {CAPTURE_SEC} tcpdump -i eth0 -w \\\"\\$PCAP_FILE\\\" "
+        f"sudo timeout -s INT {CAPTURE_SEC} tcpdump -i {ip_iface} -w \\\"\\$PCAP_FILE\\\" "
         f"'{tcpdump_filter}' >/dev/null 2>\\\"\\$TCPDUMP_ERR\\\" & "
         f"TCPDUMP_PID=\\$!; "
         f"echo \\\"TCPDUMP_PID=\\$TCPDUMP_PID\\\" >> \\\"\\$LOG_FILE\\\"; "

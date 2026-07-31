@@ -35,6 +35,22 @@
 			"tshark_display_filter": "udp.port==5001",
 			"udp_port": 5001,
 			"payload_type_mode": "first_byte_hex"
+		},
+		"usfdx3": {
+			"binary": "apps/crdt/usfdx3/crdt_usfdx3",
+			"net_setup": "ip",
+			"tcpdump_filter": "udp port 5001",
+			"tshark_display_filter": "udp.port==5001",
+			"udp_port": 5001,
+			"payload_type_mode": "none"
+		},
+		"usfdx1": {
+			"binary": "apps/crdt/usfdx1/crdt_usfdx1",
+			"net_setup": "ip",
+			"tcpdump_filter": "udp port 5001",
+			"tshark_display_filter": "udp.port==5001",
+			"udp_port": 5001,
+			"payload_type_mode": "none"
 		}
 	}
 }
