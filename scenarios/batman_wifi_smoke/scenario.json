@@ -1,0 +1,35 @@
+{
+  "name": "batman_wifi_smoke",
+  "simulation": {
+    "duration": 55,
+    "start_delay": 5,
+    "area": { "x": 100, "y": 100 }
+  },
+  "nodes": {
+    "count": 2,
+    "distribution": "grid",
+    "seed": 22
+  },
+  "mobility": {
+    "model": "random_waypoint",
+    "pause": 0,
+    "speed": [0.0, 0.0]
+  },
+  "network": {
+    "routing": "batman",
+    "hardif_behavior": "emulated_wifi",
+    "bandwidth": "11000000",
+    "range": 160,
+    "delay": 5,
+    "jitter": 0,
+    "error": 0
+  },
+  "node_config": {
+    "udp_port": 5001,
+    "ops_per_sec": 1.0,
+    "diss_per_sec": 1.0,
+    "monitor_interval": 1,
+    "duration": 10,
+    "cooldown": 10
+  }
+}

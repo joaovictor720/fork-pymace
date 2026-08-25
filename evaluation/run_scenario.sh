@@ -25,6 +25,43 @@ mkdir -p "$RESULT_DIR"
 }
 
 # -------------------------------
+# Select batman-adv hard-interface behavior on the host
+# -------------------------------
+BATMAN_CONFIG="$(
+  python3 - "$SCENARIO_SPEC" <<'PY'
+import json
+import sys
+
+with open(sys.argv[1], encoding="utf-8") as stream:
+    scenario = json.load(stream)
+
+network = scenario.get("network", {})
+routing = str(network.get("routing", "none")).strip().lower()
+behavior = str(network.get("hardif_behavior", "native")).strip().lower()
+
+allowed = {"native", "emulated_wifi"}
+if behavior not in allowed:
+    raise SystemExit(
+        "[ERROR] network.hardif_behavior must be native or "
+        f"emulated_wifi, got: {behavior!r}"
+    )
+
+print(f"{routing}\t{behavior}")
+PY
+)"
+
+IFS=$'\t' read -r NETWORK_ROUTING HARDIF_BEHAVIOR <<< "$BATMAN_CONFIG"
+
+if [[ "$NETWORK_ROUTING" == "batman" ]]; then
+  BATADV_TOOLS="$ROOT_DIR/kernel/batman-adv-emulated-wifi"
+  sudo "$BATADV_TOOLS/module-control.sh" ensure "$HARDIF_BEHAVIOR"
+  python3 "$BATADV_TOOLS/module_status.py" \
+    --requested-mode "$HARDIF_BEHAVIOR" \
+    --require-match \
+    > "$RESULT_DIR/batman_module.json"
+fi
+
+# -------------------------------
 # Resolve binary from evaluation/apps.json
 # -------------------------------
 export ROOT_DIR

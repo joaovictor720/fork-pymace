@@ -1,0 +1,143 @@
+diff --git a/net/batman-adv/bat_v_elp.c b/net/batman-adv/bat_v_elp.c
+index 2614a9c..805a48e 100644
+--- a/net/batman-adv/bat_v_elp.c
++++ b/net/batman-adv/bat_v_elp.c
+@@ -81,7 +81,8 @@ static u32 batadv_v_elp_get_throughput(struct batadv_hardif_neigh_node *neigh)
+ 	/* if this is a wireless device, then ask its throughput through
+ 	 * cfg80211 API
+ 	 */
+-	if (batadv_is_wifi_hardif(hard_iface)) {
++	if (batadv_is_wifi_hardif(hard_iface) &&
++	    !batadv_is_emulated_wifi_hardif(hard_iface)) {
+ 		if (!batadv_is_cfg80211_hardif(hard_iface))
+ 			/* unsupported WiFi driver version */
+ 			goto default_throughput;
+@@ -135,10 +136,16 @@ static u32 batadv_v_elp_get_throughput(struct batadv_hardif_neigh_node *neigh)
+ 	 */
+ 	if (ret == 0 && link_settings.base.autoneg == AUTONEG_ENABLE) {
+ 		/* link characteristics might change over time */
+-		if (link_settings.base.duplex == DUPLEX_FULL)
+-			hard_iface->bat_v.flags |= BATADV_FULL_DUPLEX;
+-		else
+-			hard_iface->bat_v.flags &= ~BATADV_FULL_DUPLEX;
++		/* An emulated WiFi hardif deliberately keeps WiFi's half-duplex
++		 * policy while reusing the pre-existing Ethernet throughput
++		 * lookup.
++		 */
++		if (!batadv_is_emulated_wifi_hardif(hard_iface)) {
++			if (link_settings.base.duplex == DUPLEX_FULL)
++				hard_iface->bat_v.flags |= BATADV_FULL_DUPLEX;
++			else
++				hard_iface->bat_v.flags &= ~BATADV_FULL_DUPLEX;
++		}
+ 
+ 		throughput = link_settings.base.speed;
+ 		if (throughput && throughput != SPEED_UNKNOWN)
+diff --git a/net/batman-adv/hard-interface.c b/net/batman-adv/hard-interface.c
+index afb5228..94fd8da 100644
+--- a/net/batman-adv/hard-interface.c
++++ b/net/batman-adv/hard-interface.c
+@@ -20,6 +20,7 @@
+ #include <linux/list.h>
+ #include <linux/mutex.h>
+ #include <linux/netdevice.h>
++#include <linux/moduleparam.h>
+ #include <linux/printk.h>
+ #include <linux/rculist.h>
+ #include <linux/rtnetlink.h>
+@@ -41,6 +42,11 @@
+ #include "sysfs.h"
+ #include "translation-table.h"
+ 
++static bool batadv_emulated_wifi;
++module_param_named(emulated_wifi, batadv_emulated_wifi, bool, 0444);
++MODULE_PARM_DESC(emulated_wifi,
++		 "apply generic WiFi policies to non-wireless hard interfaces");
++
+ /**
+  * batadv_hardif_release() - release hard interface from lists and queue for
+  *  free after rcu grace period
+@@ -325,7 +331,7 @@ static u32 batadv_wifi_flags_evaluate(struct net_device *net_device)
+ 
+ 	real_netdev = batadv_get_real_netdevice(net_device);
+ 	if (!real_netdev)
+-		return wifi_flags;
++		goto emulated_wifi;
+ 
+ 	if (real_netdev == net_device)
+ 		goto out;
+@@ -338,6 +344,15 @@ static u32 batadv_wifi_flags_evaluate(struct net_device *net_device)
+ 
+ out:
+ 	dev_put(real_netdev);
++
++emulated_wifi:
++	/* Preserve real WiFi detection when available. The opt-in emulation is
++	 * only a fallback for netdevs such as CORE's VETH interfaces and must
++	 * never claim to provide cfg80211 station information.
++	 */
++	if (!wifi_flags && batadv_emulated_wifi)
++		wifi_flags |= BATADV_HARDIF_WIFI_EMULATED;
++
+ 	return wifi_flags;
+ }
+ 
+@@ -359,11 +374,27 @@ bool batadv_is_cfg80211_hardif(struct batadv_hard_iface *hard_iface)
+ 	return !!(hard_iface->wifi_flags & allowed_flags);
+ }
+ 
++/**
++ * batadv_is_emulated_wifi_hardif() - check for explicit WiFi emulation
++ * @hard_iface: the device to check
++ *
++ * Return: true if generic WiFi policies were explicitly requested for a
++ * non-wireless netdev, false otherwise.
++ */
++bool batadv_is_emulated_wifi_hardif(struct batadv_hard_iface *hard_iface)
++{
++	if (!hard_iface)
++		return false;
++
++	return !!(hard_iface->wifi_flags & BATADV_HARDIF_WIFI_EMULATED);
++}
++
+ /**
+  * batadv_is_wifi_hardif() - check if the given hardif is a wifi interface
+  * @hard_iface: the device to check
+  *
+- * Return: true if the net device is a 802.11 wireless device, false otherwise.
++ * Return: true if the hard interface is real WiFi or uses emulated WiFi
++ * policies, false otherwise.
+  */
+ bool batadv_is_wifi_hardif(struct batadv_hard_iface *hard_iface)
+ {
+diff --git a/net/batman-adv/hard-interface.h b/net/batman-adv/hard-interface.h
+index bbb8a6f..5c89660 100644
+--- a/net/batman-adv/hard-interface.h
++++ b/net/batman-adv/hard-interface.h
+@@ -93,6 +93,7 @@ extern struct notifier_block batadv_hard_if_notifier;
+ 
+ struct net_device *batadv_get_real_netdev(struct net_device *net_device);
+ bool batadv_is_cfg80211_hardif(struct batadv_hard_iface *hard_iface);
++bool batadv_is_emulated_wifi_hardif(struct batadv_hard_iface *hard_iface);
+ bool batadv_is_wifi_hardif(struct batadv_hard_iface *hard_iface);
+ struct batadv_hard_iface*
+ batadv_hardif_get_by_netdev(const struct net_device *net_dev);
+diff --git a/net/batman-adv/types.h b/net/batman-adv/types.h
+index 4d7f1ba..2a644d7 100644
+--- a/net/batman-adv/types.h
++++ b/net/batman-adv/types.h
+@@ -164,6 +164,13 @@ enum batadv_hard_iface_wifi_flags {
+ 	 * device
+ 	 */
+ 	BATADV_HARDIF_WIFI_CFG80211_INDIRECT = BIT(3),
++
++	/**
++	 * @BATADV_HARDIF_WIFI_EMULATED: non-wireless netdev which should use
++	 *  batman-adv's generic WiFi policies without pretending to provide
++	 *  cfg80211 station information
++	 */
++	BATADV_HARDIF_WIFI_EMULATED = BIT(4),
+ };
+ 
+ /**
