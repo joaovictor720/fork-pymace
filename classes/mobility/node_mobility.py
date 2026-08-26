@@ -7,7 +7,7 @@ __maintainer__ = "Bruno Chianca Ferreira"
 __email__ = "brunobcf@gmail.com"
 
 
-import pickle, socket, traceback, struct, threading, time, sys
+import csv, hashlib, pickle, socket, traceback, struct, threading, time, sys
 from apscheduler.schedulers.background import BackgroundScheduler
 from classes.mobility.pymobility.models.mobility import *
 from classes.mobility.pymace_mobility import *
@@ -17,16 +17,36 @@ from classes.interfaces import pprz_interface
 class Mobility():
   """_summary_
   """
-  def __init__ (self, scenario, model, dimensions, velocity, pos):
+  def __init__ (
+      self,
+      scenario,
+      model,
+      dimensions,
+      velocity,
+      pos,
+      seed=None,
+      pause=0,
+      trace_file=None,
+      trace_sha256=None,
+      trace_interval=None,
+      trace_start_time=None):
     self.scenario = scenario
     self.pos = pos
     self.name = "MOB"
     self.mobility_model = model
+    self.seed = None if seed is None else int(seed)
+    self.pause = 0.0 if pause is None else float(pause)
+    self.trace_file = trace_file
+    self.trace_sha256 = trace_sha256
+    self.trace_start_time = trace_start_time
     self.core_nodes = []
     self.mace_nodes = []
     self.scheduler = BackgroundScheduler()
     ### TODO verify connection between the mobility tick and the actual velocity of nodes
     self.update_interval = 0.1
+    self.trace_interval = (
+      self.update_interval if trace_interval is None else float(trace_interval)
+    )
     #self.scheduler.add_job(self.mobility_update, 'interval', seconds=0.5, id='update')
     self.mobility_thread = threading.Thread(target=self.mobility_update, args=())
     self.x_dim = dimensions[0]
@@ -34,6 +54,7 @@ class Mobility():
     self.velocity_lower = velocity[0]
     self.velocity_upper = velocity[1]
     self.lock = True
+    self.trace_rows = []
 
   def register_core_node(self, node):
     """_summary_
@@ -56,29 +77,35 @@ class Mobility():
     """_summary_
     """
     #print("mobility>configure_mobility> corenodes: " + str(len(self.core_nodes)) + " mace nodes: " + str(len(self.mace_nodes)))
+    if self.trace_file:
+      self.trace_rows = self.load_trace_file(self.trace_file, self.trace_sha256)
+      self.mobility_thread = threading.Thread(target=self.trace_replay_update, args=())
+      self.mobility_thread.start()
+      return
+
     if self.mobility_model.upper()   == 'RANDOM_WAYPOINT':
-      self.mobility_object = random_waypoint(len(self.core_nodes), dimensions=(self.x_dim , self.y_dim ), velocity=(self.velocity_lower, self.velocity_upper), wt_max=1.0)
+      self.mobility_object = random_waypoint(len(self.core_nodes), dimensions=(self.x_dim , self.y_dim ), velocity=(self.velocity_lower, self.velocity_upper), wt_max=self.pause, seed=self.seed)
       self.mobility_thread.start()
     elif self.mobility_model.upper() == 'RANDOM_WALK':
-      self.mobility_object = random_walk(len(self.core_nodes), dimensions=(self.x_dim , self.y_dim ), velocity=self.velocity_upper, distance=self.velocity_upper)
+      self.mobility_object = random_walk(len(self.core_nodes), dimensions=(self.x_dim , self.y_dim ), velocity=self.velocity_upper, distance=self.velocity_upper, seed=self.seed)
       self.mobility_thread.start()
     elif self.mobility_model.upper() == 'TRUNCATED_LEVY':
-      self.mobility_object = truncated_levy_walk(len(self.core_nodes), dimensions=(self.x_dim , self.y_dim ))
+      self.mobility_object = truncated_levy_walk(len(self.core_nodes), dimensions=(self.x_dim , self.y_dim ), seed=self.seed)
       self.mobility_thread.start()
     elif self.mobility_model.upper() == 'HETEROGENEOUS_TRUNCATED_LEVY':
-      self.mobility_object = heterogeneous_truncated_levy_walk(len(self.core_nodes), dimensions=(self.x_dim , self.y_dim ))
+      self.mobility_object = heterogeneous_truncated_levy_walk(len(self.core_nodes), dimensions=(self.x_dim , self.y_dim ), seed=self.seed)
       self.mobility_thread.start()
     elif self.mobility_model.upper() == 'GAUSS_MARKOV':
-      self.mobility_object = gauss_markov(len(self.core_nodes), dimensions=(self.x_dim , self.y_dim ))
+      self.mobility_object = gauss_markov(len(self.core_nodes), dimensions=(self.x_dim , self.y_dim ), seed=self.seed)
       self.mobility_thread.start()
     elif self.mobility_model.upper() == 'RANDOM_DIRECTION':
-      self.mobility_object = random_direction(len(self.core_nodes), dimensions=(self.x_dim , self.y_dim ), velocity=(self.velocity_lower, self.velocity_upper), wt_max=1.0)
+      self.mobility_object = random_direction(len(self.core_nodes), dimensions=(self.x_dim , self.y_dim ), velocity=(self.velocity_lower, self.velocity_upper), wt_max=self.pause, seed=self.seed)
       self.mobility_thread.start()
     elif self.mobility_model.upper() == 'REFERENCE_POINT_GROUP':
-      self.mobility_object = reference_point_group(len(self.core_nodes), dimensions=(self.x_dim , self.y_dim ), velocity=(self.velocity_lower, self.velocity_upper))
+      self.mobility_object = reference_point_group(len(self.core_nodes), dimensions=(self.x_dim , self.y_dim ), velocity=(self.velocity_lower, self.velocity_upper), seed=self.seed)
       self.mobility_thread.start()
     elif self.mobility_model.upper() == 'TVC':
-      self.mobility_object = tvc(len(self.core_nodes), dimensions=(self.x_dim , self.y_dim ), velocity=(self.velocity_lower, self.velocity_upper))
+      self.mobility_object = tvc(len(self.core_nodes), dimensions=(self.x_dim , self.y_dim ), velocity=(self.velocity_lower, self.velocity_upper), seed=self.seed)
       self.mobility_thread.start()
     elif self.mobility_model.upper() == 'PAPARAZZI':
       self.PprzInterface = pprz_interface.Interface(None)
@@ -89,9 +116,77 @@ class Mobility():
       self.retracer.register_callback(self.tracer_mobility_update)
       self.retracer.start()
     elif self.mobility_model.upper() == 'ATTRACTION':
-      self.mobility_object = Attraction(self.pos, self.velocity_upper, self.velocity_lower)
+      self.mobility_object = Attraction(self.pos, self.velocity_upper, self.velocity_lower, seed=self.seed)
       self.mobility_thread = threading.Thread(target=self.pymace_mobility_update, args=())
       self.mobility_thread.start()
+
+  def file_sha256(self, path):
+    digest = hashlib.sha256()
+    with open(path, "rb") as stream:
+      for chunk in iter(lambda: stream.read(1024 * 1024), b""):
+        digest.update(chunk)
+    return digest.hexdigest()
+
+  def load_trace_file(self, path, expected_sha256=None):
+    actual_sha256 = self.file_sha256(path)
+    if expected_sha256 and actual_sha256 != expected_sha256:
+      raise ValueError(
+        "Mobility trace SHA-256 mismatch for "
+        + str(path)
+        + ": expected "
+        + str(expected_sha256)
+        + ", got "
+        + actual_sha256
+      )
+
+    rows = []
+    with open(path, newline="", encoding="utf-8") as stream:
+      reader = csv.DictReader(stream)
+      for row in reader:
+        rows.append((
+          float(row["time_s"]),
+          float(row["x_m"]),
+          float(row["y_m"]),
+          float(row.get("z_m", 0.0)),
+        ))
+    return rows
+
+  def apply_position(self, x, y, z=0.0):
+    for node in self.mace_nodes:
+      node.corenode.setposition(x, y)
+      node.set_position([x, y, z])
+      node.update_position([x, y, z])
+
+  def trace_replay_update(self):
+    """Replay a deterministic mobility trace using a shared monotonic epoch."""
+    try:
+      if not self.trace_rows:
+        return
+
+      start_time = (
+        time.monotonic() if self.trace_start_time is None
+        else float(self.trace_start_time)
+      )
+
+      for trace_time, x, y, z in self.trace_rows:
+        if not self.lock:
+          break
+
+        target_time = start_time + trace_time
+        while self.lock:
+          sleep_s = target_time - time.monotonic()
+          if sleep_s <= 0:
+            break
+          time.sleep(min(sleep_s, 0.05))
+
+        if not self.lock:
+          break
+        self.apply_position(x, y, z)
+
+      while self.lock:
+        time.sleep(self.trace_interval)
+    except:
+      traceback.print_exc()
 
   def pymace_mobility_update(self):
     """_summary_
@@ -159,7 +254,8 @@ class Mobility():
     """
     #self.scheduler.shutdown()
     self.lock = False
-    self.mobility_thread.join()
+    if self.mobility_thread.is_alive():
+      self.mobility_thread.join()
 
   def event_callback(self, data):
     """_summary_

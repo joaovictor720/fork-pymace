@@ -72,8 +72,7 @@ node_config load_config(const std::string& cfg_path, const std::string& id) {
     nc.duration = cfg.value("duration", 10);
     nc.distribution = cfg.value("distribution", "uniform");
     nc.dissemination_interval = cfg.value("dissemination_interval", 0.5);
-    std::random_device rd;
-    nc.seed = cfg.value("seed", rd()) + std::atoi(id.c_str());
+    nc.seed = cfg.value("seed", 1) + std::atoi(id.c_str());
     nc.monitor_interval = cfg.value("monitor_interval", 1.0);
     std::string log_dir = cfg.value("log_dir", ".");
     if (!log_dir.empty() && log_dir.back() != '/') {
@@ -268,14 +267,18 @@ void run_random_mode(
     std::uniform_int_distribution<int> inc_dist(1, 1);
 
     auto start = std::chrono::steady_clock::now();
+    double next_event_s = 0.0;
 
     while (g_running.load()) {
-        auto elapsed = std::chrono::duration<double>(std::chrono::steady_clock::now() - start).count();
-        if (elapsed > duration) {
+        next_event_s += expd(gen);
+        if (next_event_s > duration) {
             break;
         }
 
-        std::this_thread::sleep_for(std::chrono::duration<double>(expd(gen)));
+        const auto event_time =
+            start + std::chrono::duration_cast<std::chrono::steady_clock::duration>(
+                        std::chrono::duration<double>(next_event_s));
+        std::this_thread::sleep_until(event_time);
         if (!g_running.load()) {
             break;
         }

@@ -9,7 +9,7 @@ __email__ = "brunobcf@gmail.com"
 class Attraction():
   """_summary_
   """
-  def __init__(self, pos, maxvel, minvel) -> None:
+  def __init__(self, pos, maxvel, minvel, seed=None, rng=None) -> None:
     """_summary_
 
     Args:
@@ -19,9 +19,14 @@ class Attraction():
     """
     self.maxvel = maxvel
     self.minvel = minvel
-    self.velx = random.uniform(self.minvel, self.maxvel)
-    self.vely = random.uniform(self.minvel, self.maxvel)
-    self.velz = random.uniform(self.minvel, self.maxvel)
+    self.rng = (
+      rng
+      if rng is not None
+      else (random if seed is None else random.Random(seed))
+    )
+    self.velx = self.rng.uniform(self.minvel, self.maxvel)
+    self.vely = self.rng.uniform(self.minvel, self.maxvel)
+    self.velz = self.rng.uniform(self.minvel, self.maxvel)
     self.attraction = [pos[0], pos[1], pos[2]]
     self.attraction_base = [pos[0], pos[1], pos[2]]
     self.pos = [pos[0], pos[1], pos[2]]
@@ -59,9 +64,13 @@ class Attraction():
     self.shiftcount += 0.1
 
     if self.shiftcount >= self.shifttimer:
-      self.set_attraction([self.attraction_base[0] + random.randint(0,self.shiftdelta),self.attraction_base[1] + random.randint(0,self.shiftdelta),self.attraction_base[2] + random.randint(0,self.shiftdelta)])
-      self.velx = random.uniform(self.minvel, self.maxvel)
-      self.vely = random.uniform(self.minvel, self.maxvel)
-      self.velz = random.uniform(self.minvel, self.maxvel)
+      self.set_attraction([
+        self.attraction_base[0] + self.rng.randint(0,self.shiftdelta),
+        self.attraction_base[1] + self.rng.randint(0,self.shiftdelta),
+        self.attraction_base[2] + self.rng.randint(0,self.shiftdelta)
+      ])
+      self.velx = self.rng.uniform(self.minvel, self.maxvel)
+      self.vely = self.rng.uniform(self.minvel, self.maxvel)
+      self.velz = self.rng.uniform(self.minvel, self.maxvel)
     
     return self.pos

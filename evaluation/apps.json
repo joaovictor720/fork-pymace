@@ -64,6 +64,18 @@
 				}
 			}
 		},
+		"usfd": {
+			"binary": "apps/crdt/usfd/crdt_usfd",
+			"net_setup": "ip",
+			"tcpdump_filter": "udp port 5001",
+			"tshark_display_filter": "udp.port==5001",
+			"udp_port": 5001,
+			"payload_type_mode": "none",
+			"frame_classification": {
+				"mode": "all_payload",
+				"type_name": "USFD_DELTA"
+			}
+		},
 		"usfdx3": {
 			"binary": "apps/crdt/usfdx3/crdt_usfdx3",
 			"net_setup": "ip",

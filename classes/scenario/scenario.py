@@ -452,11 +452,25 @@ class Scenario():
     Args:
         session (_type_): _description_
     """
+    trace_start_time = time.monotonic() + 1.0
     for node in self.mace_nodes:
       if node.mobility == "none":
         pass
       else:
-        node.mobility_model = Mobility(self, node.mobility['model'], node.max_position, node.velocity, node.coordinates)
+        trace_file = node.mobility.get('trace_file')
+        node.mobility_model = Mobility(
+          self,
+          node.mobility['model'],
+          node.max_position,
+          node.velocity,
+          node.coordinates,
+          seed=node.mobility.get('seed'),
+          pause=node.mobility.get('pause', 0),
+          trace_file=trace_file,
+          trace_sha256=node.mobility.get('trace_sha256'),
+          trace_interval=node.mobility.get('trace_interval'),
+          trace_start_time=trace_start_time if trace_file else None
+        )
         node.mobility_model.register_core_node(node.corenode)
         node.mobility_model.register_mace_node(node)
         node.mobility_model.configure_mobility()

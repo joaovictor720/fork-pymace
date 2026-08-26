@@ -154,4 +154,5 @@ CMakeUserPresets.json
 
 # JVAV
 mace.json
+scenarios/*/mobility_traces/
 *__expanded*

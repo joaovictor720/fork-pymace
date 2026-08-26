@@ -415,9 +415,8 @@ NodeConfig load_config(const std::string& path,
     config.duration = document.value("duration", 10);
     config.distribution = document.value("distribution", "uniform");
 
-    std::random_device random_device;
     config.seed =
-        document.value("seed", static_cast<int>(random_device())) +
+        document.value("seed", 1) +
         std::atoi(id.c_str());
     config.monitor_interval =
         document.value("monitor_interval", 1.0);
@@ -607,18 +606,17 @@ void run_random_mode(const NodeConfig& config,
     std::uniform_int_distribution<int> increment_distribution(1, 1);
 
     const auto start = std::chrono::steady_clock::now();
+    double next_event_s = 0.0;
     while (g_running.load()) {
-        const double elapsed =
-            std::chrono::duration<double>(
-                std::chrono::steady_clock::now() - start)
-                .count();
-        if (elapsed > config.duration) {
+        next_event_s += wait_distribution(generator);
+        if (next_event_s > config.duration) {
             break;
         }
 
-        std::this_thread::sleep_for(
-            std::chrono::duration<double>(
-                wait_distribution(generator)));
+        const auto event_time =
+            start + std::chrono::duration_cast<std::chrono::steady_clock::duration>(
+                        std::chrono::duration<double>(next_event_s));
+        std::this_thread::sleep_until(event_time);
         if (!g_running.load()) {
             break;
         }

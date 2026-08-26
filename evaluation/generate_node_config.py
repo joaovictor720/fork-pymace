@@ -1,6 +1,8 @@
 import json
 import sys
 
+from seed_utils import central_seed, derive_seed
+
 scenario_path = sys.argv[1]
 out_path = sys.argv[2]
 result_dir = sys.argv[3]
@@ -10,6 +12,8 @@ with open(scenario_path, "r", encoding="utf-8") as f:
 
 node_cfg = sc["node_config"].copy()
 node_count = sc["nodes"]["count"]
+seed = central_seed(sc)
+application_seed = derive_seed(seed, "application")
 
 udp_port = int(node_cfg.get("udp_port", 5001))
 node_cfg["udp_port"] = udp_port
@@ -24,7 +28,14 @@ node_cfg["address"] = {
     for i in range(node_count)
 }
 
-node_cfg["seed"] = sc["nodes"].get("seed", 0)
+node_cfg["central_seed"] = seed
+node_cfg["seed"] = application_seed
+node_cfg["seed_policy"] = "central_seed_sha256_streams_v1"
+node_cfg["seed_streams"] = {
+    "node_positions": derive_seed(seed, "node_positions", avoid_zero=False),
+    "mobility": derive_seed(seed, "mobility"),
+    "application": application_seed,
+}
 node_cfg["log_dir"] = result_dir
 
 with open(out_path, "w", encoding="utf-8") as f:

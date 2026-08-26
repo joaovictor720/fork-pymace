@@ -122,6 +122,13 @@ sed -i \
   -e "s|__CRDT_NODE_CONFIG__|$NODE_CFG|g" \
   "$MACE_JSON"
 
+cp "$SCENARIO_SPEC" "$RESULT_DIR/scenario.json"
+cp "$MACE_JSON" "$RESULT_DIR/mace.json"
+if [[ -d "$SCENARIO_DIR/mobility_traces" ]]; then
+  rm -rf "$RESULT_DIR/mobility_traces"
+  cp -r "$SCENARIO_DIR/mobility_traces" "$RESULT_DIR/mobility_traces"
+fi
+
 # -------------------------------
 # Run
 # -------------------------------

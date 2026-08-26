@@ -4,6 +4,30 @@ The folder Pymace is now a local git repository.It was only to track my changes
 
 Root and user paswword is set to  `mace`
 
+#### Reproducibility seed policy
+
+Experiment generation uses one central deterministic seed. Prefer a top-level
+`seed` field in `scenario.json`; when it is absent, the legacy `nodes.seed`
+field is used as the central seed.
+
+The generated files derive independent deterministic streams from that central
+seed:
+- `node_positions`: initial node placement in `mace.json`.
+- `mobility`: per-node mobility model seeds in `mace.json`.
+- `application`: CRDT application PRNG seed in `node_config.json`.
+
+For stochastic mobility models, `generate_scenario.py` now precomputes a
+deterministic mobility trace from the per-node mobility seed by default. The
+trace files are stored under `mobility_traces/`, referenced by absolute path in
+`mace.json`, and validated at runtime with SHA-256 before replay. The original
+mobility model name is kept in `mace.json`; `deterministic_replay=true` means
+the online mobility thread replays the generated trace instead of drawing new
+random samples during the emulation.
+
+`run_scenario.sh` stores the executed `scenario.json`, generated `mace.json`,
+generated `node_config.json`, and copied `mobility_traces/` in each run result
+directory. These files are the reproducibility manifest for a run.
+
 #### Main loop script
 ` do_it.sh  ` is an executable that will automate a bit the execution of the scenarios.
 To use it you may want to change the values of :
@@ -32,5 +56,3 @@ To use the results from the csv files :
 - `plot.py` will plot each value discriminated by concurency.
 
 Except for `plot.py`, all files in the `files_with_labels.py` list will be on the same figure. You can change the color label and linestyle with argument in this list.
-
-

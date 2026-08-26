@@ -5,10 +5,19 @@ import math
 from pathlib import Path
 from typing import Any, Dict, List, Tuple
 
+from mobility_trace import (
+    TRACE_POLICY,
+    deterministic_trace_enabled,
+    generate_traces_for_nodes,
+    trace_duration_s,
+    trace_interval_s,
+)
+from seed_utils import central_seed, derive_seed
+
 APPLICATION_START_DELAY = 30
 
-def generate_random_positions(n: int, area: Dict[str, float]) -> List[Tuple[float, float]]:
-    return [(random.uniform(0, area["x"]), random.uniform(0, area["y"])) for _ in range(n)]
+def generate_random_positions(n: int, area: Dict[str, float], rng: random.Random) -> List[Tuple[float, float]]:
+    return [(rng.uniform(0, area["x"]), rng.uniform(0, area["y"])) for _ in range(n)]
 
 def generate_grid_positions(n: int, area: Dict[str, float]) -> List[Tuple[float, float]]:
     side = math.ceil(math.sqrt(n))
@@ -48,8 +57,9 @@ if not scenario_file.exists():
 with open(scenario_file, "r", encoding="utf-8") as f:
     sc = json.load(f)
 
-seed = sc["nodes"].get("seed", 0)
-random.seed(seed)
+seed = central_seed(sc)
+node_position_seed = derive_seed(seed, "node_positions", avoid_zero=False)
+position_rng = random.Random(node_position_seed)
 
 node_count = sc["nodes"]["count"]
 distribution = sc["nodes"].get("distribution", "random")
@@ -61,7 +71,7 @@ else:
     area = {"x": float(raw_area["x"]), "y": float(raw_area["y"])}
 
 if distribution == "random":
-    positions = generate_random_positions(node_count, area)
+    positions = generate_random_positions(node_count, area, position_rng)
 elif distribution == "grid":
     positions = generate_grid_positions(node_count, area)
 else:
@@ -88,14 +98,49 @@ GPS_INTERVAL_S = float(node_cfg.get("gps_interval", 0.5))
 GPS_LOG_SEC = float(node_cfg.get("gps_duration", duration_s + cooldown_s))  # por padrão, só durante workload
 
 gps_logger_path = root / "evaluation" / "gps_logger.py"
+mob = sc["mobility"]
+
+if "speed" in mob:
+    default_vmin, default_vmax = mob["speed"]
+else:
+    default_vmin = mob.get("speed_min", 0)
+    default_vmax = mob.get("speed_max", 0)
+
+node_velocities = [
+    (float(default_vmin), float(default_vmax))
+    for _ in range(node_count)
+]
+mobility_seeds = [
+    derive_seed(seed, "mobility", i)
+    for i in range(node_count)
+]
+
+trace_manifest = None
+trace_enabled = (
+    str(mob.get("model", "none")).strip().lower() != "none"
+    and deterministic_trace_enabled(mob)
+)
+if trace_enabled:
+    trace_dir = scenario_dir / "mobility_traces"
+    trace_interval = trace_interval_s(sc)
+    trace_duration = trace_duration_s(sc)
+    trace_manifest = generate_traces_for_nodes(
+        trace_dir,
+        central_seed=seed,
+        mobility_config=mob,
+        dimensions=(area["x"], area["y"]),
+        velocities=node_velocities,
+        mobility_seeds=mobility_seeds,
+        interval_s=trace_interval,
+        duration_s=trace_duration,
+    )
+else:
+    trace_dir = None
+    trace_interval = None
+    trace_duration = None
 
 for i, (x, y) in enumerate(positions):
-    mob = sc["mobility"]
-    if "speed" in mob:
-        vmin, vmax = mob["speed"]
-    else:
-        vmin = mob.get("speed_min", 0)
-        vmax = mob.get("speed_max", 0)
+    vmin, vmax = node_velocities[i]
 
     mobility = {
         "model": mob["model"],
@@ -104,8 +149,22 @@ for i, (x, y) in enumerate(positions):
         "zone_z": 0,
         "velocity_lower": vmin,
         "velocity_upper": vmax,
-        "pause": mob.get("pause", 0)
+        "pause": mob.get("pause", 0),
+        "seed": mobility_seeds[i],
     }
+
+    if trace_manifest is not None and trace_dir is not None:
+        node_trace = trace_manifest["nodes"][i]
+        trace_file = (trace_dir / node_trace["file"]).resolve()
+        mobility.update({
+            "deterministic_replay": True,
+            "trace_policy": TRACE_POLICY,
+            "source_model": mob["model"],
+            "trace_file": str(trace_file),
+            "trace_sha256": node_trace["sha256"],
+            "trace_interval": trace_interval,
+            "trace_duration": trace_duration,
+        })
 
     if net_setup == "batman":
         base_net_setup = (
@@ -221,5 +280,8 @@ with open(out_file, "w", encoding="utf-8") as f:
     json.dump(mace, f, indent=2)
 
 print(f"[OK] Generated {out_file}")
-print(f"[INFO] Nodes: {node_count}, distribution: {distribution}, seed: {seed}, app: {app}, net_setup: {net_setup}, capture_sec: {CAPTURE_SEC}")
+print(f"[INFO] Nodes: {node_count}, distribution: {distribution}, central_seed: {seed}, node_position_seed: {node_position_seed}, app: {app}, net_setup: {net_setup}, capture_sec: {CAPTURE_SEC}")
+print(f"[INFO] Mobility: model={sc['mobility']['model']}, seed_stream=mobility")
+if trace_manifest is not None:
+    print(f"[INFO] Mobility trace: policy={TRACE_POLICY}, interval={trace_interval}s, duration={trace_duration}s, combined_sha256={trace_manifest['combined_sha256']}")
 print(f"[INFO] GPS: interval={GPS_INTERVAL_S}s, duration={GPS_LOG_SEC}s, gps_logger={gps_logger_path}")
