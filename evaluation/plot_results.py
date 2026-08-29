@@ -1,4 +1,5 @@
 import json
+import os
 from pathlib import Path
 
 import numpy as np
@@ -11,7 +12,7 @@ import seaborn as sns
 from matplotlib.lines import Line2D
 
 INPUT_CSV = "results/aggregated_results.csv"
-JOBS_JSON = "evaluation/jobs.json"
+JOBS_JSON = os.environ.get("JOBS_JSON", "evaluation/jobs.json")
 
 OUTPUT_DIR = Path("results/plots")
 OUTPUT_DIR.mkdir(parents=True, exist_ok=True)

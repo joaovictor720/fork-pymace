@@ -1,5 +1,6 @@
 {
   "name": "density_batman",
+  "seed": 22,
   "simulation": {
     "duration": 55,
     "start_delay": 5,
@@ -17,6 +18,7 @@
   },
   "network": {
     "routing": "batman",
+    "hardif_behavior": "emulated_wifi",
     "bandwidth": "11000000",
     "range": 160,
     "delay": 5,

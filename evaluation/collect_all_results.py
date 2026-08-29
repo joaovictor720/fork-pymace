@@ -1,12 +1,27 @@
 import pandas as pd
 from pathlib import Path
 import json
+import os
 
 ROOT = Path("/home/mace/git/fork-pymace/results")
 REPO_ROOT = Path("/home/mace/git/fork-pymace")
 
 
 def _load_algorithms():
+    jobs_path = os.environ.get("JOBS_JSON")
+    if jobs_path:
+        try:
+            cfg = json.loads(Path(jobs_path).read_text(encoding="utf-8"))
+            apps = []
+            for job in cfg.get("jobs", []):
+                app = str(job.get("app", "")).strip()
+                if app and app not in apps:
+                    apps.append(app)
+            if apps:
+                return apps
+        except Exception:
+            pass
+
     apps_path = REPO_ROOT / "evaluation" / "apps.json"
     try:
         cfg = json.loads(apps_path.read_text(encoding="utf-8"))

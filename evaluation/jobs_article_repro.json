@@ -1,0 +1,10 @@
+{
+  "default_runs": 10,
+  "jobs": [
+    { "scenario": "density_batman", "app": "broadcast" },
+    { "scenario": "density_batman", "app": "multiunicast" },
+    { "scenario": "density_ip", "app": "rapid" },
+    { "scenario": "density_ip", "app": "trickle" },
+    { "scenario": "density_ip", "app": "usfdx3" }
+  ]
+}

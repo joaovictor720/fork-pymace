@@ -1,5 +1,6 @@
 {
   "name": "density_ip",
+  "seed": 22,
   "simulation": {
     "duration": 55,
     "start_delay": 5,
