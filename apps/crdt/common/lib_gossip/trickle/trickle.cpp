@@ -451,7 +451,7 @@ private:
                 fd,
                 buffer.data(),
                 buffer.size(),
-                0,
+                MSG_TRUNC,
                 reinterpret_cast<sockaddr*>(&source),
                 &source_length);
             if (received == 0 && !running_.load()) {
@@ -468,6 +468,16 @@ private:
                     counters_.socket_errors.fetch_add(1);
                     set_errno_error("recvfrom");
                 }
+                continue;
+            }
+
+            if (static_cast<std::size_t>(received) > buffer.size()) {
+                // MSG_TRUNC reports the original UDP length on Linux.  A
+                // valid-looking prefix must never reach the state adapter.
+                counters_.received_packets.fetch_add(1);
+                counters_.received_bytes.fetch_add(
+                    static_cast<std::uint64_t>(received));
+                counters_.malformed_packets.fetch_add(1);
                 continue;
             }
 

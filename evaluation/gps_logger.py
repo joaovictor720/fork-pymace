@@ -117,7 +117,9 @@ def main() -> int:
 
     with open(args.out, "w", newline="", encoding="utf-8") as f:
         w = csv.writer(f)
-        w.writerow(["time_s", "node", "x_m", "y_m", "z_m", "ok"])
+        # Preserve the existing run-relative clock and add a wall clock shared
+        # by all nodes for alignment with application and experiment events.
+        w.writerow(["time_s", "timestamp_unix_s", "node", "x_m", "y_m", "z_m", "ok"])
 
         next_t = t0
         nrows = 0
@@ -127,8 +129,17 @@ def main() -> int:
             if elapsed > args.duration:
                 break
 
+            timestamp_unix_s = time.time()
             x, y, z, ok = poll_once(args.tag)
-            w.writerow([f"{elapsed:.9f}", args.node, f"{x:.6f}", f"{y:.6f}", f"{z:.6f}", ok])
+            w.writerow([
+                f"{elapsed:.9f}",
+                f"{timestamp_unix_s:.9f}",
+                args.node,
+                f"{x:.6f}",
+                f"{y:.6f}",
+                f"{z:.6f}",
+                ok,
+            ])
             nrows += 1
             if (nrows % FLUSH_EVERY) == 0:
                 f.flush()

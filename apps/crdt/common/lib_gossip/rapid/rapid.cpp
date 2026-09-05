@@ -554,7 +554,7 @@ private:
             const ssize_t received = ::recvfrom(fd,
                                                 buffer.data(),
                                                 buffer.size(),
-                                                0,
+                                                MSG_TRUNC,
                                                 nullptr,
                                                 nullptr);
             if (received <= 0) {
@@ -570,6 +570,13 @@ private:
 
             counters_.received_packets.fetch_add(1);
             counters_.received_bytes.fetch_add(static_cast<std::uint64_t>(received));
+            if (static_cast<std::size_t>(received) > buffer.size()) {
+                // On Linux MSG_TRUNC reports the original datagram length.
+                // Never decode or relay a prefix silently truncated to the
+                // configured packet budget.
+                counters_.malformed_packets.fetch_add(1);
+                continue;
+            }
             Bytes packet(buffer.begin(), buffer.begin() + received);
             DecodedPacket decoded;
             if (!decode_packet(packet, decoded)) {

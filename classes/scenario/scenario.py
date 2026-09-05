@@ -25,7 +25,7 @@ from core.emane.models.tdma import EmaneTdmaModel
 from core.emane.nodes import EmaneNet
 
 #Other libs
-import sys, subprocess, os, traceback, pprint, threading, time
+import json, sys, subprocess, os, traceback, pprint, threading, time
 
 class Scenario():
   """ The Scenario class has the function of reading the scenario file
@@ -84,6 +84,32 @@ class Scenario():
       self._nodes = scenario_json['nodes']
       self.emane_location = scenario_json['settings']['emane_location']
       self.emane_scale = float(scenario_json['settings']['emane_scale'])
+      self.experiment_clock_file = scenario_json['settings'].get(
+        'experiment_clock_file'
+      )
+      self.coverage_start_delay_s = float(
+        scenario_json['settings'].get('coverage_start_delay_s', 0.0)
+      )
+      raw_experiment_end = scenario_json['settings'].get(
+        'experiment_end_trace_s'
+      )
+      self.experiment_end_trace_s = (
+        None if raw_experiment_end is None else float(raw_experiment_end)
+      )
+      self.shutdown_grace_s = float(
+        scenario_json['settings'].get('shutdown_grace_s', 0.0)
+      )
+      if self.coverage_start_delay_s < 0.0:
+        raise ValueError('coverage_start_delay_s must be >= 0')
+      if (
+        self.experiment_end_trace_s is not None
+        and self.experiment_end_trace_s < self.coverage_start_delay_s
+      ):
+        raise ValueError(
+          'experiment_end_trace_s must not precede coverage start'
+        )
+      if self.shutdown_grace_s < 0.0:
+        raise ValueError('shutdown_grace_s must be >= 0')
     except:
       print("Error loading configurations. Check traceback log for more information")
       traceback.print_exc()
@@ -146,15 +172,28 @@ class Scenario():
       node.tracer = Tracer(node, node.tagname, self.report_folder)
       #node.tracer.start()
       #node.time_thread.start()
-    self.timer_thread = threading.Thread(target=self.check_runtime)
-    self.timer_thread.start()
+    self.timer_thread = None
+    # Preserve the legacy runtime semantics.  Spatial experiments start their
+    # timer from the trace epoch in configure_mobility(), after T_cover has
+    # been checked and injected by the runner.
+    if self.experiment_end_trace_s is None:
+      self.timer_thread = threading.Thread(target=self.check_runtime)
+      self.timer_thread.start()
 
   def check_runtime(self):
     """_summary_
     """
-    while((self.runtime >= self.simulation_time) and self.running):
-      time.sleep(1)
-      self.simulation_time += 1
+    deadline = getattr(self, '_runtime_deadline_monotonic_s', None)
+    if deadline is None:
+      while((self.runtime >= self.simulation_time) and self.running):
+        time.sleep(1)
+        self.simulation_time += 1
+    else:
+      while self.running:
+        remaining_s = deadline - time.monotonic()
+        if remaining_s <= 0.0:
+          break
+        time.sleep(min(remaining_s, 0.1))
     self.running = False
     for node in self.mace_nodes:
       try:
@@ -452,7 +491,56 @@ class Scenario():
     Args:
         session (_type_): _description_
     """
-    trace_start_time = time.monotonic() + 1.0
+    monotonic_now = time.monotonic()
+    unix_now = time.time()
+    trace_start_time = monotonic_now + 1.0
+    trace_start_unix_s = unix_now + (trace_start_time - monotonic_now)
+    coverage_start_monotonic_s = (
+      trace_start_time + max(0.0, self.coverage_start_delay_s)
+    )
+    coverage_start_unix_s = trace_start_unix_s + max(
+      0.0, self.coverage_start_delay_s
+    )
+
+    if self.experiment_clock_file:
+      clock_path = os.path.abspath(self.experiment_clock_file)
+      clock_dir = os.path.dirname(clock_path)
+      if clock_dir:
+        os.makedirs(clock_dir, exist_ok=True)
+      clock_payload = {
+        'schema': 'mace_experiment_clock_v1',
+        'trace_start_monotonic_s': trace_start_time,
+        'trace_start_unix_s': trace_start_unix_s,
+        'coverage_start_monotonic_s': coverage_start_monotonic_s,
+        'coverage_start_unix_s': coverage_start_unix_s,
+        'coverage_start_delay_s': max(0.0, self.coverage_start_delay_s),
+      }
+      if self.experiment_end_trace_s is not None:
+        experiment_end_monotonic_s = (
+          trace_start_time + self.experiment_end_trace_s
+        )
+        clock_payload.update({
+          'experiment_end_trace_s': self.experiment_end_trace_s,
+          'experiment_end_monotonic_s': experiment_end_monotonic_s,
+          'experiment_end_unix_s': (
+            trace_start_unix_s + self.experiment_end_trace_s
+          ),
+          'scenario_stop_monotonic_s': (
+            experiment_end_monotonic_s + self.shutdown_grace_s
+          ),
+          'scenario_stop_unix_s': (
+            trace_start_unix_s
+            + self.experiment_end_trace_s
+            + self.shutdown_grace_s
+          ),
+          'shutdown_grace_s': self.shutdown_grace_s,
+        })
+      temporary_path = clock_path + '.tmp.' + str(os.getpid())
+      with open(temporary_path, 'w', encoding='utf-8') as clock_stream:
+        json.dump(clock_payload, clock_stream, indent=2, sort_keys=True)
+        clock_stream.flush()
+        os.fsync(clock_stream.fileno())
+      os.replace(temporary_path, clock_path)
     for node in self.mace_nodes:
       if node.mobility == "none":
         pass
@@ -474,3 +562,11 @@ class Scenario():
         node.mobility_model.register_core_node(node.corenode)
         node.mobility_model.register_mace_node(node)
         node.mobility_model.configure_mobility()
+    if self.experiment_end_trace_s is not None:
+      self._runtime_deadline_monotonic_s = (
+        trace_start_time
+        + self.experiment_end_trace_s
+        + self.shutdown_grace_s
+      )
+      self.timer_thread = threading.Thread(target=self.check_runtime)
+      self.timer_thread.start()

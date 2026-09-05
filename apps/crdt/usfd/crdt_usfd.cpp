@@ -1,6 +1,8 @@
 #include <algorithm>
 #include <atomic>
 #include <chrono>
+#include <csignal>
+#include <cmath>
 #include <cstdint>
 #include <cstdlib>
 #include <cstring>
@@ -23,17 +25,22 @@
 #include <unistd.h>
 
 #include "../common/delta-crdts.cc"
+#include "../common/spatial_coverage.hpp"
 
 using json = nlohmann::json;
 
 namespace {
 
-constexpr std::size_t MSG_MAX = 65535;
+constexpr std::size_t LEGACY_MSG_MAX = 65535;
 constexpr std::size_t USFD_HEADER_SIZE = 8;
 constexpr int DEFAULT_PORT = 5001;
 constexpr int DEFAULT_DPD_CAPACITY = 1000;
 constexpr double DEFAULT_DPD_TTL_SECONDS = 60.0;
-constexpr int DEFAULT_RETRANSMISSIONS = 3;
+#ifndef MACE_USFD_DEFAULT_RETRANSMISSIONS
+#define MACE_USFD_DEFAULT_RETRANSMISSIONS 3
+#endif
+constexpr int DEFAULT_RETRANSMISSIONS =
+    MACE_USFD_DEFAULT_RETRANSMISSIONS;
 constexpr int DEFAULT_RETRANSMIT_DELAY_US = 5000;
 
 std::atomic<bool> g_running{true};
@@ -43,6 +50,8 @@ std::mutex gc_mutex;
 std::mutex delta_mutex;
 std::mutex event_log_mutex;
 std::ofstream event_log;
+mace::coverage::Bytes pending_snapshot;
+bool has_pending_snapshot = false;
 
 struct NodeConfig {
     std::string id;
@@ -63,7 +72,20 @@ struct NodeConfig {
     double dpd_ttl_seconds{DEFAULT_DPD_TTL_SECONDS};
     int retransmissions{DEFAULT_RETRANSMISSIONS};
     int retransmit_delay_us{DEFAULT_RETRANSMIT_DELAY_US};
+    std::string workload{"gcounter"};
+    mace::coverage::GridSpec grid;
+    std::chrono::milliseconds position_poll_interval{
+        mace::coverage::kDefaultPollInterval};
+    std::chrono::milliseconds gps_timeout{
+        mace::coverage::kDefaultGpsTimeout};
+    std::string gps_socket_path;
+    std::size_t max_datagram_bytes{
+        mace::coverage::kDefaultMaxDatagramBytes};
 };
+
+bool is_spatial_workload(const NodeConfig& config) {
+    return config.workload == "spatial_coverage";
+}
 
 struct Stats {
     std::atomic<std::uint64_t> sent_msgs{0};
@@ -142,6 +164,44 @@ double now_ts() {
     return std::chrono::duration<double>(
                std::chrono::steady_clock::now().time_since_epoch())
         .count();
+}
+
+double event_ts() {
+    return mace::coverage::unix_time_seconds();
+}
+
+void request_shutdown(int) {
+    g_running.store(false);
+}
+
+void log_spatial_event_at(double timestamp,
+                          const std::string& node_id,
+                          const std::string& event,
+                          const std::string& details = "") {
+    std::lock_guard<std::mutex> lock(event_log_mutex);
+    event_log << std::fixed << timestamp
+              << ", event=" << event
+              << ", node=" << node_id;
+    if (!details.empty()) {
+        event_log << ", " << details;
+    }
+    event_log << "\n";
+}
+
+void log_spatial_event(const std::string& node_id,
+                       const std::string& event,
+                       const std::string& details = "") {
+    log_spatial_event_at(event_ts(), node_id, event, details);
+}
+
+std::string expand_node_id(std::string value, const std::string& id) {
+    const std::string marker = "{id}";
+    std::size_t position = 0;
+    while ((position = value.find(marker, position)) != std::string::npos) {
+        value.replace(position, marker.size(), id);
+        position += id.size();
+    }
+    return value;
 }
 
 void log_event(const std::string& node_id,
@@ -395,6 +455,9 @@ void spawn_retransmission(int send_sock,
                  copies,
                  delay_us]() {
         for (int i = 0; i < copies; ++i) {
+            if (!g_running.load(std::memory_order_relaxed)) {
+                break;
+            }
             const ssize_t sent = sendto(
                 send_sock,
                 packet.data(),
@@ -411,7 +474,11 @@ void spawn_retransmission(int send_sock,
             }
 
             if (i + 1 < copies) {
-                usleep(static_cast<useconds_t>(delay_us));
+                if (mace::coverage::sleep_for_or_stopped(
+                        g_running,
+                        std::chrono::microseconds(delay_us))) {
+                    break;
+                }
             }
         }
         g_active_retransmissions.fetch_sub(1, std::memory_order_relaxed);
@@ -490,6 +557,72 @@ NodeConfig load_config(const std::string& path, const std::string& id) {
         config.retransmit_delay_us = DEFAULT_RETRANSMIT_DELAY_US;
     }
 
+    config.workload = document.value("workload", std::string{"gcounter"});
+    if (config.workload != "gcounter" &&
+        config.workload != "spatial_coverage") {
+        throw std::invalid_argument(
+            "workload must be either gcounter or spatial_coverage");
+    }
+    if (is_spatial_workload(config)) {
+        if (config.dissemination_interval <= 0.0 ||
+            config.monitor_interval <= 0.0) {
+            throw std::invalid_argument(
+                "dissemination and monitor intervals must be positive");
+        }
+        const auto& grid = document.contains("grid")
+                               ? document.at("grid")
+                               : document.at("grid_spec");
+        config.grid = mace::coverage::GridSpec{
+            grid.at("origin_x_m").get<double>(),
+            grid.at("origin_y_m").get<double>(),
+            grid.at("width_m").get<double>(),
+            grid.at("height_m").get<double>(),
+            grid.at("rows").get<std::uint32_t>(),
+            grid.at("cols").get<std::uint32_t>()};
+        const double poll_ms = document.value(
+            "position_poll_interval_ms",
+            document.value("poll_interval_ms", 100.0));
+        const double gps_timeout_ms = document.value("gps_timeout_ms", 50.0);
+        if (!std::isfinite(poll_ms) || poll_ms <= 0.0 ||
+            !std::isfinite(gps_timeout_ms) || gps_timeout_ms <= 0.0) {
+            throw std::invalid_argument("GPS polling intervals must be positive");
+        }
+        config.position_poll_interval =
+            std::chrono::duration_cast<std::chrono::milliseconds>(
+                std::chrono::duration<double, std::milli>(poll_ms));
+        config.gps_timeout =
+            std::chrono::duration_cast<std::chrono::milliseconds>(
+                std::chrono::duration<double, std::milli>(gps_timeout_ms));
+        if (config.position_poll_interval.count() <= 0 ||
+            config.gps_timeout.count() <= 0) {
+            throw std::invalid_argument("GPS intervals must be at least 1 ms");
+        }
+        const std::int64_t configured_budget = document.value(
+            "max_datagram_bytes",
+            document.value(
+                "max_payload_bytes",
+                static_cast<std::int64_t>(
+                    mace::coverage::kDefaultMaxDatagramBytes)));
+        if (configured_budget <= 0 ||
+            configured_budget > static_cast<std::int64_t>(
+                                    mace::coverage::kDefaultMaxDatagramBytes)) {
+            throw std::invalid_argument(
+                "max_datagram_bytes must be between 1 and 1200");
+        }
+        config.max_datagram_bytes =
+            static_cast<std::size_t>(configured_budget);
+        std::string gps_template = document.value(
+            "gps_socket_template",
+            document.value("gps_socket_path",
+                           std::string{"/tmp/node{id}_gps.sock"}));
+        config.gps_socket_path =
+            expand_node_id(std::move(gps_template), id);
+        mace::coverage::validate_datagram_budget(
+            config.grid,
+            config.max_datagram_bytes,
+            USFD_HEADER_SIZE);
+    }
+
     std::string log_dir = document.value("log_dir", std::string{"."});
     if (!log_dir.empty() && log_dir.back() != '/') {
         log_dir.push_back('/');
@@ -516,6 +649,235 @@ void print_config(const NodeConfig& config) {
     std::cout << "retransmissions: " << config.retransmissions << "\n";
     std::cout << "retransmit_delay_us: "
               << config.retransmit_delay_us << "\n";
+}
+
+void publish_spatial_snapshot(const NodeConfig& config,
+                              const mace::coverage::StateUpdate& update) {
+    const double timestamp = update.timestamp_unix_s;
+    {
+        std::lock_guard<std::mutex> lock(event_log_mutex);
+        event_log << std::fixed << timestamp
+                  << ", event=local_coverage, node=" << config.id
+                  << ", cell_ids_added="
+                  << mace::coverage::format_cell_ids(update.added)
+                  << ", replica_size=" << update.replica_size
+                  << ", replica_version=" << update.mutation_sequence
+                  << "\n";
+        event_log << std::fixed << timestamp
+                  << ", event=dissemination_trigger, node=" << config.id
+                  << ", replica_size=" << update.replica_size
+                  << ", serialized_state_size=" << update.snapshot.size()
+                  << ", replica_version=" << update.mutation_sequence
+                  << "\n";
+    }
+    {
+        std::lock_guard<std::mutex> lock(delta_mutex);
+        pending_snapshot = update.snapshot;
+        has_pending_snapshot = true;
+    }
+}
+
+void spatial_receive_loop(
+    int recv_sock,
+    int send_sock,
+    sockaddr_in broadcast_addr,
+    DpdCache& dpd,
+    mace::coverage::CoverageWorkload& workload,
+    Stats& stats,
+    const NodeConfig& config) {
+    std::vector<std::uint8_t> buffer(config.max_datagram_bytes);
+    while (g_running.load()) {
+        sockaddr_in source{};
+        socklen_t source_length = sizeof(source);
+        const ssize_t received = recvfrom(
+            recv_sock,
+            buffer.data(),
+            buffer.size(),
+            MSG_TRUNC,
+            reinterpret_cast<sockaddr*>(&source),
+            &source_length);
+        if (received <= 0) {
+            if (!g_running.load()) {
+                break;
+            }
+            if (received < 0 &&
+                (errno == EAGAIN || errno == EWOULDBLOCK || errno == EINTR)) {
+                continue;
+            }
+            if (received < 0 && errno == EBADF) {
+                break;
+            }
+            if (received < 0) {
+                stats.socket_errors.fetch_add(1, std::memory_order_relaxed);
+            }
+            continue;
+        }
+
+        stats.recv_msgs.fetch_add(1, std::memory_order_relaxed);
+        stats.recv_bytes.fetch_add(
+            static_cast<std::uint64_t>(received), std::memory_order_relaxed);
+        if (static_cast<std::size_t>(received) >
+            config.max_datagram_bytes) {
+            stats.malformed_packets.fetch_add(1, std::memory_order_relaxed);
+            std::ostringstream details;
+            details << "bytes=" << received << ", status=oversized";
+            log_spatial_event(config.id, "network_receive", details.str());
+            continue;
+        }
+
+        std::uint32_t origin = 0;
+        std::uint32_t seqno = 0;
+        const char* payload = nullptr;
+        std::size_t payload_size = 0;
+        if (!parse_usfd_packet(
+                reinterpret_cast<const char*>(buffer.data()),
+                static_cast<std::size_t>(received),
+                origin,
+                seqno,
+                payload,
+                payload_size)) {
+            stats.malformed_packets.fetch_add(1, std::memory_order_relaxed);
+            log_spatial_event(config.id, "network_receive", "status=malformed");
+            continue;
+        }
+        if (!dpd.remember_if_new(origin, seqno)) {
+            stats.duplicate_drops.fetch_add(1, std::memory_order_relaxed);
+            continue;
+        }
+
+        // Forwarding is an internal USFD action, never an application trigger.
+        stats.forwarded_msgs.fetch_add(1, std::memory_order_relaxed);
+        spawn_retransmission(
+            send_sock,
+            broadcast_addr,
+            std::vector<char>(
+                reinterpret_cast<const char*>(buffer.data()),
+                reinterpret_cast<const char*>(buffer.data()) + received),
+            stats,
+            config.retransmissions,
+            config.retransmit_delay_us);
+
+        try {
+            const auto update = workload.merge_remote(payload, payload_size);
+            {
+                std::ostringstream details;
+                details << "bytes=" << received
+                        << ", origin=" << origin
+                        << ", seqno=" << seqno
+                        << ", status=accepted"
+                        << ", state_changed=" << (update.changed ? 1 : 0);
+                log_spatial_event(config.id, "network_receive", details.str());
+            }
+            if (update.changed) {
+                std::ostringstream details;
+                details << "cell_ids_added="
+                        << mace::coverage::format_cell_ids(update.added)
+                        << ", replica_size=" << update.replica_size
+                        << ", replica_version="
+                        << update.mutation_sequence;
+                log_spatial_event_at(
+                    update.timestamp_unix_s,
+                    config.id,
+                    "remote_merge",
+                    details.str());
+            }
+        } catch (const std::exception&) {
+            stats.malformed_packets.fetch_add(1, std::memory_order_relaxed);
+            log_spatial_event(config.id, "network_receive", "status=malformed");
+        }
+    }
+}
+
+void spatial_dissemination_loop(
+    int send_sock,
+    sockaddr_in broadcast_addr,
+    DpdCache& dpd,
+    Stats& stats,
+    const NodeConfig& config) {
+    std::uint32_t next_seqno = 0;
+    auto next = std::chrono::steady_clock::now();
+    while (g_running.load()) {
+        next += std::chrono::duration_cast<std::chrono::steady_clock::duration>(
+            std::chrono::duration<double>(config.dissemination_interval));
+        if (mace::coverage::sleep_until_or_stopped(g_running, next)) {
+            break;
+        }
+
+        mace::coverage::Bytes snapshot;
+        {
+            std::lock_guard<std::mutex> lock(delta_mutex);
+            if (!has_pending_snapshot) {
+                continue;
+            }
+            snapshot = pending_snapshot;
+            pending_snapshot.clear();
+            has_pending_snapshot = false;
+        }
+        if (snapshot.size() + USFD_HEADER_SIZE >
+            config.max_datagram_bytes) {
+            log_spatial_event(config.id,
+                              "primitive_publish_rejected",
+                              "reason=payload_budget");
+            continue;
+        }
+
+        const std::uint32_t seqno = next_seqno++;
+        if (!dpd.remember_if_new(config.origin_id, seqno)) {
+            stats.duplicate_drops.fetch_add(1, std::memory_order_relaxed);
+            continue;
+        }
+        const std::string payload(
+            reinterpret_cast<const char*>(snapshot.data()), snapshot.size());
+        stats.generated_msgs.fetch_add(1, std::memory_order_relaxed);
+        spawn_retransmission(
+            send_sock,
+            broadcast_addr,
+            make_usfd_packet(config.origin_id, seqno, payload),
+            stats,
+            config.retransmissions,
+            config.retransmit_delay_us);
+
+        std::ostringstream details;
+        details << "origin=" << config.origin_id
+                << ", seqno=" << seqno
+                << ", serialized_state_size=" << snapshot.size();
+        log_spatial_event(config.id, "primitive_publish", details.str());
+    }
+}
+
+void write_spatial_monitor_sample(
+    std::ofstream& log,
+    mace::coverage::CoverageWorkload& workload,
+    const DpdCache& dpd,
+    const Stats& stats) {
+    log << std::fixed << event_ts()
+        << ", replica_size=" << workload.size()
+        << ", sent_msgs=" << stats.sent_msgs.load()
+        << ", recv_msgs=" << stats.recv_msgs.load()
+        << ", sent_bytes=" << stats.sent_bytes.load()
+        << ", recv_bytes=" << stats.recv_bytes.load()
+        << ", generated_msgs=" << stats.generated_msgs.load()
+        << ", forwarded_msgs=" << stats.forwarded_msgs.load()
+        << ", duplicate_drops=" << stats.duplicate_drops.load()
+        << ", malformed_packets=" << stats.malformed_packets.load()
+        << ", socket_errors=" << stats.socket_errors.load()
+        << ", dpd_entries=" << dpd.live_count() << "\n";
+    log.flush();
+}
+
+void spatial_monitor_loop(mace::coverage::CoverageWorkload& workload,
+                          const DpdCache& dpd,
+                          const Stats& stats,
+                          double interval,
+                          const std::string& logfile) {
+    std::ofstream log(logfile, std::ios::trunc);
+    while (g_running.load()) {
+        if (mace::coverage::sleep_for_or_stopped(
+                g_running, std::chrono::duration<double>(interval))) {
+            break;
+        }
+        write_spatial_monitor_sample(log, workload, dpd, stats);
+    }
 }
 
 void apply_payload(const char* payload,
@@ -551,7 +913,7 @@ void receive_loop(int recv_sock,
                   gcounter<int, std::string>& counter,
                   Stats& stats,
                   const NodeConfig& config) {
-    std::vector<char> buffer(MSG_MAX);
+    std::vector<char> buffer(LEGACY_MSG_MAX);
     while (g_running.load()) {
         sockaddr_in src{};
         socklen_t src_len = sizeof(src);
@@ -769,10 +1131,7 @@ void monitor_loop(gcounter<int, std::string>& counter,
 }
 
 void wait_for_retransmissions() {
-    for (int i = 0; i < 2000; ++i) {
-        if (g_active_retransmissions.load(std::memory_order_relaxed) == 0) {
-            return;
-        }
+    while (g_active_retransmissions.load(std::memory_order_relaxed) != 0) {
         usleep(1000);
     }
 }
@@ -798,7 +1157,16 @@ int main(int argc, char* argv[]) {
         return 1;
     }
 
-    NodeConfig config = load_config(config_path, node_id);
+    std::signal(SIGINT, request_shutdown);
+    std::signal(SIGTERM, request_shutdown);
+
+    NodeConfig config;
+    try {
+        config = load_config(config_path, node_id);
+    } catch (const std::exception& error) {
+        std::cerr << "Invalid configuration: " << error.what() << "\n";
+        return 1;
+    }
     std::string listen_host;
     std::uint16_t listen_port = DEFAULT_PORT;
     if (config.listen_addr.empty() ||
@@ -831,7 +1199,14 @@ int main(int argc, char* argv[]) {
                 << ", retransmit_delay_us=" << config.retransmit_delay_us
                 << ", broadcast=" << config.broadcast_address
                 << ", interface=" << config.interface_name;
-        log_event(config.id, "usfd_init", details.str());
+        if (is_spatial_workload(config)) {
+            // Spatial events use Unix time so they can be aligned with the
+            // shared mobility/experiment clock. Keep the legacy GCounter
+            // steady-clock log unchanged.
+            log_spatial_event(config.id, "usfd_init", details.str());
+        } else {
+            log_event(config.id, "usfd_init", details.str());
+        }
     }
 
     const int recv_sock = make_udp_socket(config.interface_name, true);
@@ -853,6 +1228,99 @@ int main(int argc, char* argv[]) {
     }
 
     DpdCache dpd(config.dpd_capacity, config.dpd_ttl_seconds);
+
+    if (is_spatial_workload(config)) {
+        mace::coverage::CoverageWorkload workload(config.grid);
+        mace::coverage::UnixGpsPositionSource position_source(
+            config.gps_socket_path, config.gps_timeout);
+        Stats stats;
+        {
+            std::ostringstream details;
+            details << "workload=spatial_coverage"
+                    << ", rows=" << config.grid.rows
+                    << ", cols=" << config.grid.cols
+                    << ", max_datagram_bytes="
+                    << config.max_datagram_bytes
+                    << ", gps_socket=" << config.gps_socket_path;
+            log_spatial_event(config.id, "application_start", details.str());
+        }
+
+        std::thread receiver(
+            spatial_receive_loop,
+            recv_sock,
+            send_sock,
+            broadcast_addr,
+            std::ref(dpd),
+            std::ref(workload),
+            std::ref(stats),
+            std::cref(config));
+        std::thread disseminator(
+            spatial_dissemination_loop,
+            send_sock,
+            broadcast_addr,
+            std::ref(dpd),
+            std::ref(stats),
+            std::cref(config));
+        std::thread monitor(
+            spatial_monitor_loop,
+            std::ref(workload),
+            std::cref(dpd),
+            std::cref(stats),
+            config.monitor_interval,
+            std::cref(config.log_file));
+        std::thread poller([&] {
+            mace::coverage::polling_loop(
+                position_source,
+                workload,
+                g_running,
+                config.position_poll_interval,
+                [&](const mace::coverage::StateUpdate& update) {
+                    publish_spatial_snapshot(config, update);
+                });
+        });
+
+        while (g_running.load()) {
+            std::this_thread::sleep_for(std::chrono::milliseconds(100));
+        }
+        shutdown(recv_sock, SHUT_RDWR);
+        close(recv_sock);
+
+        if (poller.joinable()) {
+            poller.join();
+        }
+        if (disseminator.joinable()) {
+            disseminator.join();
+        }
+        if (receiver.joinable()) {
+            receiver.join();
+        }
+        if (monitor.joinable()) {
+            monitor.join();
+        }
+        wait_for_retransmissions();
+
+        // No producer or detached retransmission can change the counters
+        // after this point. Append the authoritative final sample only now;
+        // otherwise an in-flight send could land after the monitor's last
+        // line and make the persisted totals stale.
+        {
+            std::ofstream final_log(config.log_file, std::ios::app);
+            write_spatial_monitor_sample(final_log, workload, dpd, stats);
+        }
+        close(send_sock);
+
+        log_spatial_event(
+            config.id,
+            "application_stop",
+            "replica_size=" + std::to_string(workload.size()));
+        {
+            std::lock_guard<std::mutex> lock(event_log_mutex);
+            event_log.flush();
+            event_log.close();
+        }
+        return 0;
+    }
+
     gcounter<int, std::string> counter(config.id);
     gcounter<int, std::string> delta_buffer;
     Stats stats;

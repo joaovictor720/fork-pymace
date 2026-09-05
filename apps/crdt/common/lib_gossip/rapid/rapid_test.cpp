@@ -1,9 +1,12 @@
 #include "rapid.hpp"
 
+#include <arpa/inet.h>
 #include <chrono>
+#include <cstring>
 #include <cstdlib>
 #include <future>
 #include <iostream>
+#include <sys/socket.h>
 #include <string>
 #include <thread>
 #include <unistd.h>
@@ -188,6 +191,89 @@ void test_delivery_queue_overflow(std::uint16_t port) {
     receiver.stop();
 }
 
+void append_little_u32(Bytes& output, std::uint32_t value) {
+    for (int index = 0; index < 4; ++index) {
+        output.push_back(static_cast<std::uint8_t>(
+            (value >> (index * 8)) & 0xff));
+    }
+}
+
+void append_little_u64(Bytes& output, std::uint64_t value) {
+    for (int index = 0; index < 8; ++index) {
+        output.push_back(static_cast<std::uint8_t>(
+            (value >> (index * 8)) & 0xff));
+    }
+}
+
+void test_oversized_datagram_is_not_delivered_from_truncated_prefix(
+    std::uint16_t port) {
+    Config config = local_config(port, 40);
+    // DATA header (13) + an even 18-byte application payload. Without
+    // MSG_TRUNC, a 32-byte datagram is received as this valid 31-byte prefix.
+    config.max_packet_size = 31;
+    Rapid receiver(config);
+    require(receiver.start(),
+            "truncation receiver failed to start: " + receiver.last_error());
+
+    Bytes datagram;
+    datagram.push_back(1);  // DATA
+    append_little_u64(datagram, 0x123456789abcdef0ULL);
+    append_little_u32(datagram, 18);
+    for (std::uint8_t value = 0; value < 18; ++value) {
+        datagram.push_back(value);
+    }
+    datagram.push_back(0xff);  // byte beyond max_packet_size
+    require(datagram.size() == 32, "oversized test datagram has wrong size");
+
+    const int sender = ::socket(AF_INET, SOCK_DGRAM, 0);
+    require(sender >= 0, "failed to create raw truncation test socket");
+    sockaddr_in destination{};
+    destination.sin_family = AF_INET;
+    destination.sin_port = htons(port);
+    require(::inet_pton(AF_INET, "127.0.0.1", &destination.sin_addr) == 1,
+            "failed to prepare raw truncation destination");
+
+    const auto before = receiver.stats();
+    const ssize_t sent = ::sendto(
+        sender,
+        datagram.data(),
+        datagram.size(),
+        0,
+        reinterpret_cast<const sockaddr*>(&destination),
+        sizeof(destination));
+    ::close(sender);
+    require(sent == static_cast<ssize_t>(datagram.size()),
+            "failed to send oversized test datagram");
+
+    const auto deadline = std::chrono::steady_clock::now() + 1s;
+    gossip::rapid::Stats after;
+    do {
+        after = receiver.stats();
+        if (after.malformed_packets > before.malformed_packets) {
+            break;
+        }
+        std::this_thread::sleep_for(10ms);
+    } while (std::chrono::steady_clock::now() < deadline);
+
+    require(after.malformed_packets == before.malformed_packets + 1,
+            "an oversized datagram was not counted as malformed");
+    require(after.pending_deliveries == 0,
+            "a valid-looking truncated DATA prefix reached the delivery queue");
+    require(after.received_bytes >= before.received_bytes + datagram.size(),
+            "received byte accounting lost the truncated datagram tail");
+
+    auto blocked_receive = std::async(std::launch::async, [&] {
+        return receiver.receive();
+    });
+    require(blocked_receive.wait_for(100ms) == std::future_status::timeout,
+            "oversized datagram was delivered to the application");
+    receiver.stop();
+    require(blocked_receive.wait_for(1s) == std::future_status::ready,
+            "shutdown did not wake receive after oversized datagram");
+    require(!blocked_receive.get().has_value(),
+            "receive returned a payload for an oversized datagram");
+}
+
 }  // namespace
 
 int main() {
@@ -196,6 +282,8 @@ int main() {
     test_dissemination_and_shutdown(port_base);
     test_expired_message_handle(static_cast<std::uint16_t>(port_base + 1));
     test_delivery_queue_overflow(static_cast<std::uint16_t>(port_base + 2));
+    test_oversized_datagram_is_not_delivered_from_truncated_prefix(
+        static_cast<std::uint16_t>(port_base + 3));
     std::cout << "PASS\n";
     return 0;
 }

@@ -16,12 +16,14 @@
 #include <sstream>
 #include <algorithm>
 #include <net/if.h>
+#include <csignal>
 
-#include "/home/mace/git/fork-pymace/apps/crdt/common/delta-crdts.cc"
+#include "../common/delta-crdts.cc"
+#include "../common/spatial_coverage.hpp"
 
 using json = nlohmann::json;
 
-constexpr size_t MSG_MAX = 4096;
+constexpr size_t LEGACY_MSG_MAX = 4096;
 
 static std::atomic<bool> g_running{true};
 
@@ -29,6 +31,8 @@ std::mutex _gc_mutex;
 std::mutex _delta_mutex;
 std::mutex _event_log_mutex;
 std::ofstream _event_log;
+mace::coverage::Bytes _pending_snapshot;
+bool _has_pending_snapshot = false;
 
 struct node_config {
     std::string id;
@@ -42,6 +46,15 @@ struct node_config {
     double monitor_interval;
     double dissemination_interval;
     double cooldown;
+    bool spatial_coverage{false};
+    mace::coverage::GridSpec grid;
+    std::chrono::milliseconds position_poll_interval{
+        mace::coverage::kDefaultPollInterval};
+    std::chrono::milliseconds gps_timeout{
+        mace::coverage::kDefaultGpsTimeout};
+    std::string gps_socket_path;
+    std::size_t max_datagram_bytes{
+        mace::coverage::kDefaultMaxDatagramBytes};
 };
 
 struct stats {
@@ -50,6 +63,60 @@ struct stats {
     std::atomic<int> sent_bytes{0};
     std::atomic<int> recv_bytes{0};
 };
+
+inline double event_ts() {
+    return mace::coverage::unix_time_seconds();
+}
+
+void stop_handler(int) {
+    g_running.store(false);
+}
+
+void log_spatial_event_at(double timestamp,
+                          const std::string& node_id,
+                          const std::string& event,
+                          const std::string& details = "") {
+    std::lock_guard<std::mutex> lock(_event_log_mutex);
+    _event_log << std::fixed << timestamp
+               << ", event=" << event
+               << ", node=" << node_id;
+    if (!details.empty()) {
+        _event_log << ", " << details;
+    }
+    _event_log << "\n";
+}
+
+void log_spatial_event(const std::string& node_id,
+                       const std::string& event,
+                       const std::string& details = "") {
+    log_spatial_event_at(event_ts(), node_id, event, details);
+}
+
+void publish_spatial_snapshot(const node_config& nc,
+                              const mace::coverage::StateUpdate& update) {
+    const double timestamp = update.timestamp_unix_s;
+    {
+        std::lock_guard<std::mutex> lock(_event_log_mutex);
+        _event_log << std::fixed << timestamp
+                   << ", event=local_coverage, node=" << nc.id
+                   << ", cell_ids_added="
+                   << mace::coverage::format_cell_ids(update.added)
+                   << ", replica_size=" << update.replica_size
+                   << ", replica_version=" << update.mutation_sequence
+                   << "\n";
+        _event_log << std::fixed << timestamp
+                   << ", event=dissemination_trigger, node=" << nc.id
+                   << ", replica_size=" << update.replica_size
+                   << ", serialized_state_size=" << update.snapshot.size()
+                   << ", replica_version=" << update.mutation_sequence
+                   << "\n";
+    }
+    {
+        std::lock_guard<std::mutex> lock(_delta_mutex);
+        _pending_snapshot = update.snapshot;
+        _has_pending_snapshot = true;
+    }
+}
 
 node_config load_config(const std::string& cfg_path, const std::string& id) {
     std::ifstream f(cfg_path);
@@ -84,6 +151,59 @@ node_config load_config(const std::string& cfg_path, const std::string& id) {
     nc.log_file = log_dir + "node_" + id + ".log";
 
     nc.cooldown = cfg.value("cooldown", 10);
+
+    const std::string workload = cfg.value("workload", std::string{"gcounter"});
+    if (workload != "gcounter" && workload != "spatial_coverage") {
+        throw std::invalid_argument(
+            "workload must be either gcounter or spatial_coverage");
+    }
+    nc.spatial_coverage = workload == "spatial_coverage";
+    if (nc.spatial_coverage) {
+        if (nc.dissemination_interval <= 0.0 || nc.monitor_interval <= 0.0) {
+            throw std::invalid_argument(
+                "dissemination and monitor intervals must be positive");
+        }
+        const auto& grid = cfg.contains("grid")
+                               ? cfg.at("grid")
+                               : cfg.at("grid_spec");
+        nc.grid = mace::coverage::GridSpec{
+            grid.at("origin_x_m").get<double>(),
+            grid.at("origin_y_m").get<double>(),
+            grid.at("width_m").get<double>(),
+            grid.at("height_m").get<double>(),
+            grid.at("rows").get<std::uint32_t>(),
+            grid.at("cols").get<std::uint32_t>()};
+        const int poll_ms = cfg.value(
+            "position_poll_interval_ms", cfg.value("poll_interval_ms", 100));
+        const int gps_timeout_ms = cfg.value("gps_timeout_ms", 50);
+        if (poll_ms <= 0 || gps_timeout_ms <= 0) {
+            throw std::invalid_argument("GPS polling intervals must be positive");
+        }
+        nc.position_poll_interval = std::chrono::milliseconds(poll_ms);
+        nc.gps_timeout = std::chrono::milliseconds(gps_timeout_ms);
+        nc.max_datagram_bytes = cfg.value(
+            "max_datagram_bytes",
+            cfg.value("max_payload_bytes",
+                      mace::coverage::kDefaultMaxDatagramBytes));
+        if (nc.max_datagram_bytes >
+            mace::coverage::kDefaultMaxDatagramBytes) {
+            throw std::invalid_argument("max_datagram_bytes cannot exceed 1200");
+        }
+        std::string gps_template = cfg.value(
+            "gps_socket_template",
+            cfg.value("gps_socket_path",
+                      std::string{"/tmp/node{id}_gps.sock"}));
+        const std::string marker = "{id}";
+        std::size_t marker_position = 0;
+        while ((marker_position = gps_template.find(marker, marker_position)) !=
+               std::string::npos) {
+            gps_template.replace(marker_position, marker.size(), id);
+            marker_position += id.size();
+        }
+        nc.gps_socket_path = std::move(gps_template);
+        mace::coverage::validate_datagram_budget(
+            nc.grid, nc.max_datagram_bytes, 0);
+    }
     return nc;
 }
 
@@ -216,12 +336,12 @@ void dissemination_loop(
 }
 
 void recv_loop(int sockfd, gcounter<int, std::string>& gc, stats& st, const std::string& node_id) {
-    char buffer[MSG_MAX];
+    char buffer[LEGACY_MSG_MAX];
     sockaddr_in src{};
     socklen_t srclen = sizeof(src);
 
     while (g_running.load()) {
-        ssize_t n = recvfrom(sockfd, buffer, MSG_MAX, 0, (sockaddr*)&src, &srclen);
+        ssize_t n = recvfrom(sockfd, buffer, LEGACY_MSG_MAX, 0, (sockaddr*)&src, &srclen);
         if (n <= 0) {
             if (!g_running.load()) {
                 break;
@@ -257,6 +377,163 @@ void recv_loop(int sockfd, gcounter<int, std::string>& gc, stats& st, const std:
             continue;
         }
     }
+}
+
+void spatial_dissemination_loop(
+    int sockfd,
+    const std::vector<sockaddr_in>& peers,
+    stats& st,
+    const node_config& nc
+) {
+    mace::coverage::Bytes last_payload;
+    int retriggers_left = 0;
+    const int retriggers_budget = 1;
+    auto next = std::chrono::steady_clock::now();
+
+    while (g_running.load()) {
+        next += std::chrono::duration_cast<std::chrono::steady_clock::duration>(
+            std::chrono::duration<double>(nc.dissemination_interval));
+        if (mace::coverage::sleep_until_or_stopped(g_running, next)) {
+            break;
+        }
+
+        mace::coverage::Bytes payload;
+        bool has_new = false;
+        {
+            std::lock_guard<std::mutex> lock(_delta_mutex);
+            if (_has_pending_snapshot) {
+                payload = _pending_snapshot;
+                _pending_snapshot.clear();
+                _has_pending_snapshot = false;
+                has_new = true;
+            }
+        }
+        if (!has_new) {
+            if (retriggers_left > 0 && !last_payload.empty()) {
+                payload = last_payload;
+                --retriggers_left;
+            } else {
+                continue;
+            }
+        } else {
+            last_payload = payload;
+            retriggers_left = retriggers_budget;
+        }
+
+        if (payload.size() > nc.max_datagram_bytes) {
+            log_spatial_event(nc.id, "network_transmit_rejected",
+                              "reason=payload_budget");
+            continue;
+        }
+        for (const auto& peer : peers) {
+            const ssize_t sent = sendto(
+                sockfd,
+                payload.data(),
+                payload.size(),
+                0,
+                reinterpret_cast<const sockaddr*>(&peer),
+                sizeof(peer));
+            if (sent > 0) {
+                st.sent_msgs++;
+                st.sent_bytes += static_cast<int>(sent);
+                std::ostringstream details;
+                details << "bytes=" << sent
+                        << ", kind="
+                        << (has_new ? "publish" : "retransmission");
+                log_spatial_event(nc.id, "network_transmit", details.str());
+            }
+        }
+    }
+}
+
+void spatial_recv_loop(int sockfd,
+                       mace::coverage::CoverageWorkload& workload,
+                       stats& st,
+                       const node_config& nc) {
+    std::vector<std::uint8_t> buffer(nc.max_datagram_bytes);
+    sockaddr_in source{};
+    socklen_t source_length = sizeof(source);
+    while (g_running.load()) {
+        const ssize_t received = recvfrom(
+            sockfd,
+            buffer.data(),
+            buffer.size(),
+            MSG_TRUNC,
+            reinterpret_cast<sockaddr*>(&source),
+            &source_length);
+        if (received <= 0) {
+            if (!g_running.load()) {
+                break;
+            }
+            if (received < 0 &&
+                (errno == EAGAIN || errno == EWOULDBLOCK || errno == EINTR)) {
+                continue;
+            }
+            if (received < 0 && errno == EBADF) {
+                break;
+            }
+            continue;
+        }
+
+        st.recv_msgs++;
+        st.recv_bytes += static_cast<int>(received);
+        if (static_cast<std::size_t>(received) > nc.max_datagram_bytes) {
+            std::ostringstream details;
+            details << "bytes=" << received << ", status=oversized";
+            log_spatial_event(nc.id, "network_receive", details.str());
+            continue;
+        }
+        try {
+            const auto update = workload.merge_remote(
+                buffer.data(), static_cast<std::size_t>(received));
+            {
+                std::ostringstream details;
+                details << "bytes=" << received << ", status=accepted";
+                log_spatial_event(nc.id, "network_receive", details.str());
+            }
+            if (update.changed) {
+                std::ostringstream details;
+                details << "cell_ids_added="
+                        << mace::coverage::format_cell_ids(update.added)
+                        << ", replica_size=" << update.replica_size
+                        << ", replica_version="
+                        << update.mutation_sequence;
+                log_spatial_event_at(
+                    update.timestamp_unix_s,
+                    nc.id,
+                    "remote_merge",
+                    details.str());
+            }
+        } catch (const std::exception&) {
+            std::ostringstream details;
+            details << "bytes=" << received << ", status=malformed";
+            log_spatial_event(nc.id, "network_receive", details.str());
+        }
+    }
+}
+
+void spatial_monitor_loop(mace::coverage::CoverageWorkload& workload,
+                          stats& st,
+                          double interval,
+                          const std::string& logfile) {
+    std::ofstream log(logfile, std::ios::trunc);
+    const auto write_sample = [&] {
+        log << std::fixed << event_ts()
+            << ", replica_size=" << workload.size()
+            << ", sent_msgs=" << st.sent_msgs
+            << ", recv_msgs=" << st.recv_msgs
+            << ", sent_bytes=" << st.sent_bytes
+            << ", recv_bytes=" << st.recv_bytes << "\n";
+        log.flush();
+    };
+    while (g_running.load()) {
+        if (mace::coverage::sleep_for_or_stopped(
+                g_running, std::chrono::duration<double>(interval))) {
+            break;
+        }
+        write_sample();
+    }
+    write_sample();
 }
 
 void run_random_mode(
@@ -358,7 +635,16 @@ int main(int argc, char* argv[]) {
         }
     }
 
-    node_config nc = load_config(cfgfile, node_id);
+    std::signal(SIGINT, stop_handler);
+    std::signal(SIGTERM, stop_handler);
+
+    node_config nc;
+    try {
+        nc = load_config(cfgfile, node_id);
+    } catch (const std::exception& error) {
+        std::cerr << "Invalid configuration: " << error.what() << "\n";
+        return 1;
+    }
     if (nc.listen_addr.empty()) {
         return 1;
     }
@@ -406,6 +692,78 @@ int main(int argc, char* argv[]) {
     if (bind(sockfd, (sockaddr*)&addr, sizeof(addr)) < 0) {
         close(sockfd);
         return 1;
+    }
+
+    if (nc.spatial_coverage) {
+        mace::coverage::CoverageWorkload workload(nc.grid);
+        mace::coverage::UnixGpsPositionSource position_source(
+            nc.gps_socket_path, nc.gps_timeout);
+        stats st;
+        {
+            std::ostringstream details;
+            details << "workload=spatial_coverage"
+                    << ", rows=" << nc.grid.rows
+                    << ", cols=" << nc.grid.cols
+                    << ", max_datagram_bytes=" << nc.max_datagram_bytes
+                    << ", gps_socket=" << nc.gps_socket_path;
+            log_spatial_event(nc.id, "application_start", details.str());
+        }
+
+        std::thread receiver(
+            spatial_recv_loop,
+            sockfd,
+            std::ref(workload),
+            std::ref(st),
+            std::cref(nc));
+        std::thread monitor(
+            spatial_monitor_loop,
+            std::ref(workload),
+            std::ref(st),
+            nc.monitor_interval,
+            std::cref(nc.log_file));
+        std::thread disseminator(
+            spatial_dissemination_loop,
+            sockfd,
+            std::cref(peers),
+            std::ref(st),
+            std::cref(nc));
+        std::thread poller([&] {
+            mace::coverage::polling_loop(
+                position_source,
+                workload,
+                g_running,
+                nc.position_poll_interval,
+                [&](const mace::coverage::StateUpdate& update) {
+                    publish_spatial_snapshot(nc, update);
+                });
+        });
+
+        while (g_running.load()) {
+            std::this_thread::sleep_for(std::chrono::milliseconds(100));
+        }
+        shutdown(sockfd, SHUT_RDWR);
+        close(sockfd);
+
+        if (poller.joinable()) {
+            poller.join();
+        }
+        if (disseminator.joinable()) {
+            disseminator.join();
+        }
+        if (receiver.joinable()) {
+            receiver.join();
+        }
+        if (monitor.joinable()) {
+            monitor.join();
+        }
+        log_spatial_event(nc.id, "application_stop",
+                          "replica_size=" + std::to_string(workload.size()));
+        {
+            std::lock_guard<std::mutex> lock(_event_log_mutex);
+            _event_log.flush();
+            _event_log.close();
+        }
+        return 0;
     }
 
     gcounter<int, std::string> gc(nc.id);

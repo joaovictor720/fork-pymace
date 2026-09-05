@@ -28,6 +28,86 @@ random samples during the emulation.
 generated `node_config.json`, and copied `mobility_traces/` in each run result
 directory. These files are the reproducibility manifest for a run.
 
+#### Spatial coverage workload
+
+All seven CRDT applications (`broadcast`, `multiunicast`, `rapid`, `trickle`,
+`usfd`, `usfdx1`, and `usfdx3`) accept `workload: "spatial_coverage"`. A
+minimal scenario fragment is:
+
+```json
+{
+  "simulation": {
+    "duration": 120,
+    "area": {"x": 160, "y": 160}
+  },
+  "grid": {
+    "origin_x_m": 0,
+    "origin_y_m": 0,
+    "width_m": 160,
+    "height_m": 160,
+    "rows": 16,
+    "cols": 16
+  },
+  "node_config": {
+    "workload": "spatial_coverage",
+    "position_poll_interval_ms": 100,
+    "gps_timeout_ms": 50,
+    "max_datagram_bytes": 1200,
+    "dissemination_interval": 0.5,
+    "monitor_interval": 1
+  },
+  "coverage": {
+    "start_delay_s": 30,
+    "post_coverage_window_s": 20,
+    "checkpoints": [0, 5, 10, 15, 20]
+  }
+}
+```
+
+The grid must exactly match `simulation.area`. The generator validates the
+full-state worst case against the strictest primitive header (13 bytes), so a
+1200-byte budget permits at most 593 cells. Duration, cooldown, checkpoints,
+and `T_cover` are experiment-runner concerns and are not written into the
+application configuration.
+
+Before starting CORE, `run_scenario.sh` checks that there is one deterministic
+trace per node, that the traces cover the complete grid after the configured
+coverage epoch, and that they extend through the post-coverage window. It then
+derives the external stop time from `T_cover`, writes
+`trace_validation.json` and `experiment_plan.json`, and publishes a shared
+`experiment_clock.json`. After the run it writes
+`spatial_coverage_analysis.json`, containing per-node and swarm CAR at the
+configured checkpoints. When explicitly configured,
+`mobility.deterministic_replay` must be the JSON boolean `true`; quoted boolean
+strings are rejected.
+
+The checker/analyzer can also be run directly:
+
+```bash
+python3 evaluation/spatial_coverage.py check-traces \
+  --grid-config node_config.json \
+  --coverage-start-time-s 30 \
+  --post-coverage-window-s 20 \
+  mobility_traces/node_*.csv
+
+python3 evaluation/spatial_coverage.py analyze \
+  --run-dir results/my_scenario/rapid/1 \
+  --experiment-clock auto
+```
+
+Spatial event logs distinguish `local_coverage`, `remote_merge`,
+`dissemination_trigger`, received traffic, and primitive publish/reset actions.
+The monitor logs separately retain cumulative `sent_msgs`, `recv_msgs`,
+`sent_bytes`, and `recv_bytes` for actual network traffic. Event timestamps use
+Unix time and are aligned to trace-relative time through
+`experiment_clock.json`; `replica_version` orders concurrent state mutations.
+
+Build and run the C++ unit tests with:
+
+```bash
+apps/crdt/build.sh test
+```
+
 #### Main loop script
 ` do_it.sh  ` is an executable that will automate a bit the execution of the scenarios.
 To use it you may want to change the values of :

@@ -16,6 +16,20 @@ from seed_utils import central_seed, derive_seed
 
 APPLICATION_START_DELAY = 30
 
+
+def finite_json_number(value: Any, label: str) -> float:
+    """Parse a finite JSON number without treating bool/string as numeric."""
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        raise ValueError(f"{label} must be a finite JSON number")
+    try:
+        result = float(value)
+    except (OverflowError, ValueError):
+        raise ValueError(f"{label} must be a finite JSON number")
+    if not math.isfinite(result):
+        raise ValueError(f"{label} must be a finite JSON number")
+    return result
+
+
 def generate_random_positions(n: int, area: Dict[str, float], rng: random.Random) -> List[Tuple[float, float]]:
     return [(rng.uniform(0, area["x"]), rng.uniform(0, area["y"])) for _ in range(n)]
 
@@ -82,23 +96,104 @@ net_setup = str(app_cfg.get("net_setup", "ip")).lower()
 tcpdump_filter = str(app_cfg.get("tcpdump_filter", "")).strip()
 
 node_cfg = sc.get("node_config", {})
+workload = str(
+    node_cfg.get("workload", sc.get("workload", "gcounter"))
+).strip().lower()
+if workload not in ("gcounter", "spatial_coverage"):
+    raise ValueError("workload must be gcounter or spatial_coverage")
+spatial_coverage_enabled = workload == "spatial_coverage"
+coverage_start_delay_s = float(APPLICATION_START_DELAY)
+post_coverage_window_s = 20.0
+shutdown_grace_s = 3.0
+if spatial_coverage_enabled:
+    coverage_cfg = sc.get("coverage", sc.get("spatial_coverage", {}))
+    if not isinstance(coverage_cfg, dict):
+        raise ValueError("coverage configuration must be an object")
+    coverage_start_delay_s = finite_json_number(
+        coverage_cfg.get("start_delay_s", APPLICATION_START_DELAY),
+        "coverage.start_delay_s",
+    )
+    post_coverage_window_s = finite_json_number(
+        coverage_cfg.get("post_coverage_window_s", 20.0),
+        "coverage.post_coverage_window_s",
+    )
+    shutdown_grace_s = finite_json_number(
+        coverage_cfg.get("shutdown_grace_s", 3.0),
+        "coverage.shutdown_grace_s",
+    )
+    if coverage_start_delay_s < 0.0:
+        raise ValueError("coverage.start_delay_s must be finite and >= 0")
+    if post_coverage_window_s < 0.0:
+        raise ValueError(
+            "coverage.post_coverage_window_s must be finite and >= 0"
+        )
+    if shutdown_grace_s <= 0.0:
+        raise ValueError("coverage.shutdown_grace_s must be finite and > 0")
 ip_iface = "eth0"
 if net_setup != "batman":
     ip_iface = str(
         node_cfg.get("usfd_interface", node_cfg.get("interface", "eth0"))
     ).strip() or "eth0"
-duration_s = float(node_cfg.get("duration", 10))
-cooldown_s = float(node_cfg.get("cooldown", 10))
-
-# Captura cobre duration+cooldown com pequena folga.
-CAPTURE_SEC = int(math.ceil(duration_s + cooldown_s + 1.0))
+if spatial_coverage_enabled:
+    # Spatial applications are externally bounded by the experiment runner;
+    # duration/cooldown are deliberately not passed to the application.  The
+    # runner replaces these tokens after its trace checker computes T_cover.
+    simulation_duration_s = finite_json_number(
+        sc["simulation"]["duration"], "simulation.duration"
+    )
+    if (
+        not math.isfinite(simulation_duration_s)
+        or simulation_duration_s <= coverage_start_delay_s
+    ):
+        raise ValueError(
+            "simulation.duration must exceed coverage.start_delay_s"
+        )
+    SPATIAL_RUN_SEC = "__SPATIAL_RUN_SECONDS__"
+    CAPTURE_SEC = "__SPATIAL_CAPTURE_SECONDS__"
+else:
+    duration_s = float(node_cfg.get("duration", 10))
+    cooldown_s = float(node_cfg.get("cooldown", 10))
+    SPATIAL_RUN_SEC = 0.0
+    # Legacy GCounter capture covers duration+cooldown with a small margin.
+    CAPTURE_SEC = int(math.ceil(duration_s + cooldown_s + 1.0))
 
 # GPS logging: conforme pedido do professor
-GPS_INTERVAL_S = float(node_cfg.get("gps_interval", 0.5))
-GPS_LOG_SEC = float(node_cfg.get("gps_duration", duration_s + cooldown_s))  # por padrão, só durante workload
+if spatial_coverage_enabled:
+    raw_gps_interval = node_cfg.get(
+        "gps_interval",
+        finite_json_number(
+            node_cfg.get("position_poll_interval_ms", 100),
+            "node_config.position_poll_interval_ms",
+        ) / 1000.0,
+    )
+    GPS_INTERVAL_S = finite_json_number(
+        raw_gps_interval, "node_config.gps_interval"
+    )
+else:
+    GPS_INTERVAL_S = float(node_cfg.get("gps_interval", 0.5))
+GPS_LOG_SEC = (
+    "__SPATIAL_GPS_SECONDS__"
+    if spatial_coverage_enabled
+    else float(node_cfg.get("gps_duration", duration_s + cooldown_s))
+)
+if not math.isfinite(GPS_INTERVAL_S) or GPS_INTERVAL_S <= 0.0 or (
+    not spatial_coverage_enabled
+    and (not math.isfinite(GPS_LOG_SEC) or GPS_LOG_SEC <= 0.0)
+):
+    raise ValueError("GPS interval and duration must be positive")
 
 gps_logger_path = root / "evaluation" / "gps_logger.py"
+clock_waiter_path = root / "evaluation" / "wait_for_experiment_clock.py"
 mob = sc["mobility"]
+
+if spatial_coverage_enabled:
+    deterministic_replay = mob.get("deterministic_replay", True)
+    if not isinstance(deterministic_replay, bool):
+        raise ValueError("mobility.deterministic_replay must be boolean")
+    if not deterministic_replay:
+        raise ValueError(
+            "spatial_coverage requires mobility.deterministic_replay=true"
+        )
 
 if "speed" in mob:
     default_vmin, default_vmax = mob["speed"]
@@ -179,12 +274,27 @@ for i, (x, y) in enumerate(positions):
             f"sudo ip link set up dev {ip_iface}; "
         )
 
+    if spatial_coverage_enabled:
+        startup_sequence = (
+            f"{base_net_setup}"
+            f"/usr/bin/python3 {clock_waiter_path} "
+            f"--clock __EXPERIMENT_CLOCK__; "
+        )
+        application_command = (
+            f"timeout --signal=TERM --kill-after=2 {SPATIAL_RUN_SEC} "
+            f"__CRDT_BIN__ -id {i} -config __CRDT_NODE_CONFIG__; "
+        )
+    else:
+        startup_sequence = f"sleep {APPLICATION_START_DELAY}; {base_net_setup}"
+        application_command = (
+            f"__CRDT_BIN__ -id {i} -config __CRDT_NODE_CONFIG__; "
+        )
+
     function = [
         f"/bin/bash -lc \""
         f"ulimit -c 0; "
         f"set -x; "
-        f"sleep {APPLICATION_START_DELAY}; "
-        f"{base_net_setup}"
+        f"{startup_sequence}"
         f"RESULT_DIR=\\$(grep '\\\"log_dir\\\"' __CRDT_NODE_CONFIG__ | "
         f"sed -E 's/.*\\\"log_dir\\\"[[:space:]]*:[[:space:]]*\\\"([^\\\"]+)\\\".*/\\1/'); "
         f"LOG_FILE=\\\"\\$RESULT_DIR/node_{i}.net.log\\\"; "
@@ -211,7 +321,7 @@ for i, (x, y) in enumerate(positions):
         f"echo \\\"GPS_FILE=\\$GPS_FILE\\\" >> \\\"\\$LOG_FILE\\\"; "
 
         # App
-        f"__CRDT_BIN__ -id {i} -config __CRDT_NODE_CONFIG__; "
+        f"{application_command}"
         f"APP_RC=\\$?; "
         f"echo \\\"APP_RC=\\$APP_RC\\\" >> \\\"\\$LOG_FILE\\\"; "
 
@@ -275,6 +385,15 @@ mace = {
     ],
     "nodes": nodes
 }
+
+if spatial_coverage_enabled:
+    mace["settings"]["experiment_clock_file"] = "__EXPERIMENT_CLOCK__"
+    mace["settings"]["coverage_start_delay_s"] = coverage_start_delay_s
+    mace["settings"]["experiment_end_trace_s"] = (
+        "__SPATIAL_END_TRACE_SECONDS__"
+    )
+    mace["settings"]["shutdown_grace_s"] = shutdown_grace_s
+    mace["settings"]["workload"] = "spatial_coverage"
 
 with open(out_file, "w", encoding="utf-8") as f:
     json.dump(mace, f, indent=2)

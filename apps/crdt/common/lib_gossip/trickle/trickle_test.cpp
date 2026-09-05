@@ -1,5 +1,6 @@
 #include "trickle.hpp"
 
+#include <arpa/inet.h>
 #include <chrono>
 #include <cstdlib>
 #include <future>
@@ -7,6 +8,7 @@
 #include <mutex>
 #include <stdexcept>
 #include <string>
+#include <sys/socket.h>
 #include <thread>
 #include <unistd.h>
 #include <vector>
@@ -307,6 +309,82 @@ void test_shutdown_unblocks_receive(std::uint16_t port) {
             "an empty instance returned an update during shutdown");
 }
 
+void append_little_u32(Bytes& output, std::uint32_t value) {
+    for (int index = 0; index < 4; ++index) {
+        output.push_back(static_cast<std::uint8_t>(
+            (value >> (index * 8)) & 0xff));
+    }
+}
+
+void append_little_u64(Bytes& output, std::uint64_t value) {
+    for (int index = 0; index < 8; ++index) {
+        output.push_back(static_cast<std::uint8_t>(
+            (value >> (index * 8)) & 0xff));
+    }
+}
+
+void test_oversized_datagram_is_not_applied_from_truncated_prefix(
+    std::uint16_t port) {
+    VectorState state(Bytes(18, 0));
+    Config config = local_config(port, 60, 606);
+    // Packet header (13) + an 18-byte update. Without MSG_TRUNC, the final
+    // byte of this 32-byte datagram disappears and leaves a valid 31-byte
+    // packet that would be passed to StateAdapter::apply_update().
+    config.max_packet_size = 31;
+    Trickle trickle(config, state);
+    require(trickle.start(),
+            "truncation instance failed to start: " + trickle.last_error());
+
+    Bytes datagram;
+    datagram.push_back(2);  // UPDATE
+    append_little_u64(datagram, 999);
+    append_little_u32(datagram, 18);
+    for (std::uint8_t value = 1; value <= 18; ++value) {
+        datagram.push_back(value);
+    }
+    datagram.push_back(0xff);
+    require(datagram.size() == 32, "oversized test datagram has wrong size");
+
+    const int sender = ::socket(AF_INET, SOCK_DGRAM, 0);
+    require(sender >= 0, "failed to create raw truncation test socket");
+    sockaddr_in destination{};
+    destination.sin_family = AF_INET;
+    destination.sin_port = htons(port);
+    require(::inet_pton(AF_INET, "127.0.0.1", &destination.sin_addr) == 1,
+            "failed to prepare raw truncation destination");
+
+    const auto before = trickle.stats();
+    const ssize_t sent = ::sendto(
+        sender,
+        datagram.data(),
+        datagram.size(),
+        0,
+        reinterpret_cast<const sockaddr*>(&destination),
+        sizeof(destination));
+    ::close(sender);
+    require(sent == static_cast<ssize_t>(datagram.size()),
+            "failed to send oversized test datagram");
+
+    require(wait_until(
+                [&] {
+                    return trickle.stats().malformed_packets >
+                           before.malformed_packets;
+                },
+                1s),
+            "an oversized datagram was not counted as malformed");
+    const auto after = trickle.stats();
+    require(after.malformed_packets == before.malformed_packets + 1,
+            "oversized datagram malformed count is unexpected");
+    require(after.received_bytes >= before.received_bytes + datagram.size(),
+            "received byte accounting lost the truncated datagram tail");
+    require(after.pending_deliveries == 0,
+            "a truncated UPDATE reached the delivery queue");
+    require(state.values() == Bytes(18, 0),
+            "a truncated UPDATE mutated application state");
+
+    trickle.stop();
+}
+
 }  // namespace
 
 int main() {
@@ -320,6 +398,8 @@ int main() {
         static_cast<std::uint16_t>(base + 2));
     test_shutdown_unblocks_receive(
         static_cast<std::uint16_t>(base + 3));
+    test_oversized_datagram_is_not_applied_from_truncated_prefix(
+        static_cast<std::uint16_t>(base + 4));
     std::cout << "PASS\n";
     return 0;
 }
