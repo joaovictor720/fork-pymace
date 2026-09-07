@@ -133,6 +133,8 @@ class RunAggregationTests(unittest.TestCase):
         )
 
         self.assertEqual(result["total_packets"], 30)
+        self.assertEqual(result["total_bytes"], 1800)
+        self.assertEqual(result["avg_bytes_per_node"], 900)
         self.assertEqual(result["total_payload_packets"], 18)
         self.assertEqual(result["total_control_packets"], 10)
         self.assertEqual(result["total_unclassified_packets"], 2)

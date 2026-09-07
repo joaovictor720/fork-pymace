@@ -95,6 +95,34 @@ python3 evaluation/spatial_coverage.py analyze \
   --experiment-clock auto
 ```
 
+To collect every completed spatial run, calculate mean, sample standard
+deviation, and Student-t 95% confidence intervals, and generate the CAR plots:
+
+```bash
+./evaluation/gera_spatial.sh
+```
+
+An alternate results directory and plot directory can be passed as the first
+and second arguments. The script discovers
+`spatial_coverage_analysis.json` recursively, so it does not depend on a
+particular scenario name, trace distribution, sweep parameter, or jobs file.
+It writes:
+
+- `all_spatial_runs.csv`: one row per run, including final CAR and network cost;
+- `all_spatial_car_checkpoints.csv`: one row per run/checkpoint;
+- `all_spatial_car_nodes.csv`: descriptive per-node observations;
+- `aggregated_spatial_car.csv`: CAR statistics by algorithm and checkpoint;
+- `aggregated_spatial_tcover.csv`: physical coverage-time statistics; and
+- `aggregated_spatial_overhead.csv`: final CAR and network-cost statistics.
+
+The run, rather than each node, is the independent unit in CAR confidence
+intervals. `T_cover` is deduplicated by mobility-trace hash across algorithms,
+because replaying one trace with multiple dissemination algorithms does not
+create additional independent mobility observations. Per-node boxplots are
+therefore descriptive only. The generated plots live under
+`results/plots/spatial/`. Use `--x COLUMN` with
+`plot_spatial_coverage.py` to override automatic sweep-axis detection.
+
 Spatial event logs distinguish `local_coverage`, `remote_merge`,
 `dissemination_trigger`, received traffic, and primitive publish/reset actions.
 The monitor logs separately retain cumulative `sent_msgs`, `recv_msgs`,

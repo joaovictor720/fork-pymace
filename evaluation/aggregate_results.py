@@ -10,6 +10,19 @@ OUTPUT = sys.argv[2]
 
 df = pd.read_csv(INPUT)
 
+# Spatial coverage has its own response variable (CAR), validity contract and
+# aggregation pipeline.  Do not silently feed those rows to the historical
+# GCounter convergence statistics when both workloads share all_results.csv.
+if "workload" in df.columns:
+    df = df[df["workload"].fillna("gcounter") != "spatial_coverage"].copy()
+    if df.empty:
+        print(
+            "No GCounter rows to aggregate. Use evaluation/gera_spatial.sh "
+            "for spatial-coverage results."
+        )
+        pd.DataFrame().to_csv(OUTPUT, index=False)
+        raise SystemExit(0)
+
 # -----------------------------
 # 0) Preferir nodes_cfg/density vindos do scenario.json (coletados em collect_all_results.py)
 # -----------------------------
