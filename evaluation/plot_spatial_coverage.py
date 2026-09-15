@@ -719,10 +719,14 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
         parser.error("spatial checkpoint plots are multi-page PDFs; use --formats pdf")
 
     car = _read(args.input_dir / "aggregated_spatial_car.csv")
-    usage = _read(args.input_dir / "aggregated_spatial_usage_checkpoints.csv")
+    usage_path = args.input_dir / "aggregated_spatial_usage_checkpoints.csv"
     written = []
     written.extend(plot_convergence_pdfs(car, args.output_dir, args.x))
-    written.extend(plot_usage_pdf(usage, args.output_dir, args.x))
+    if usage_path.exists():
+        usage = _read(usage_path)
+        written.extend(plot_usage_pdf(usage, args.output_dir, args.x))
+    else:
+        print(f"Skipped usage plots; missing {usage_path}")
     for path in written:
         print(f"Saved {path}")
     return 0
