@@ -119,7 +119,7 @@ fi
 # -------------------------------
 # Generate mace.json (uses apps.json internally)
 # -------------------------------
-python "$ROOT_DIR/evaluation/generate_scenario.py" "$SCENARIO_DIR" "$APP"
+MACE_RUN_ID="$RUN_ID" python "$ROOT_DIR/evaluation/generate_scenario.py" "$SCENARIO_DIR" "$APP"
 
 # -------------------------------
 # Generate node_config.json
@@ -426,6 +426,23 @@ fi
 python "$ROOT_DIR/evaluation/process_pcaps.py" "$RESULT_DIR" "$APP" --append-netlog
 
 if [[ "$WORKLOAD" == "spatial_coverage" && "$PYMACE_RC" -ne 0 ]]; then
-  echo "[ERROR] PyMACE exited with status $PYMACE_RC"
-  exit "$PYMACE_RC"
+  if [[ "$PYMACE_RC" -eq 137 && -f "$RESULT_DIR/spatial_coverage_analysis.json" ]]; then
+    python3 - "$RESULT_DIR/spatial_coverage_analysis.json" <<'PY'
+import json
+import sys
+
+with open(sys.argv[1], encoding="utf-8") as stream:
+    report = json.load(stream)
+
+issues = []
+issues.extend(report.get("trace_validation", {}).get("issues", []))
+issues.extend(report.get("car", {}).get("issues", []))
+if issues:
+    raise SystemExit(1)
+PY
+    echo "[WARN] PyMACE exited with status 137 after writing a valid spatial analysis; treating the legacy self-SIGKILL shutdown as successful."
+  else
+    echo "[ERROR] PyMACE exited with status $PYMACE_RC"
+    exit "$PYMACE_RC"
+  fi
 fi

@@ -1,4 +1,6 @@
 import json
+import hashlib
+import os
 import subprocess
 import sys
 import tempfile
@@ -86,13 +88,16 @@ class SpatialConfigGenerationTests(unittest.TestCase):
         self.assertNotEqual(completed.returncode, 0)
         return completed
 
-    def run_mace_config(self, value, expect_success=True):
+    def run_mace_config(self, value, expect_success=True, env=None):
         temporary = tempfile.TemporaryDirectory()
         self.addCleanup(temporary.cleanup)
         directory = Path(temporary.name)
         (directory / "scenario.json").write_text(
             json.dumps(value), encoding="utf-8"
         )
+        run_env = os.environ.copy()
+        if env:
+            run_env.update(env)
         completed = subprocess.run(
             [
                 sys.executable,
@@ -103,12 +108,13 @@ class SpatialConfigGenerationTests(unittest.TestCase):
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
             universal_newlines=True,
+            env=run_env,
         )
         if expect_success:
             self.assertEqual(completed.returncode, 0, completed.stderr)
             return json.loads(
                 (directory / "mace.json").read_text(encoding="utf-8")
-            )
+            ), directory
         self.assertNotEqual(completed.returncode, 0)
         return completed
 
@@ -192,7 +198,7 @@ class SpatialConfigGenerationTests(unittest.TestCase):
         value["coverage"] = "not a spatial configuration"
 
         generated_node = self.run_node_config(value)
-        generated_mace = self.run_mace_config(value)
+        generated_mace, _ = self.run_mace_config(value)
 
         self.assertEqual(generated_node["workload"], "gcounter")
         self.assertNotIn("experiment_clock_file", generated_mace["settings"])
@@ -208,7 +214,7 @@ class SpatialConfigGenerationTests(unittest.TestCase):
         self.assertLess(runner.index(removal), runner.index(launch))
 
     def test_generated_mace_uses_external_clock_and_termination(self):
-        mace = self.run_mace_config(scenario(VALID_GRID))
+        mace, _ = self.run_mace_config(scenario(VALID_GRID))
         self.assertEqual(
             mace["settings"]["experiment_clock_file"],
             "__EXPERIMENT_CLOCK__",
@@ -217,6 +223,115 @@ class SpatialConfigGenerationTests(unittest.TestCase):
         self.assertIn("wait_for_experiment_clock.py", command)
         self.assertIn("timeout --signal=TERM", command)
         self.assertNotIn("sleep 30;", command)
+
+    def test_trace_catalog_uses_run_id_and_node_prefix(self):
+        temporary = tempfile.TemporaryDirectory()
+        self.addCleanup(temporary.cleanup)
+        root = Path(temporary.name)
+        catalog = root / "catalog"
+        for run_name, x0 in (("run_001", 1.0), ("run_002", 11.0)):
+            run_dir = catalog / run_name
+            run_dir.mkdir(parents=True)
+            nodes = []
+            for node in range(3):
+                path = run_dir / "node_{}.csv".format(node)
+                path.write_text(
+                    "time_s,x_m,y_m,z_m\n"
+                    "0.000000000,{:.9f},0.000000000,0.000000000\n"
+                    "1.000000000,{:.9f},1.000000000,0.000000000\n".format(
+                        x0 + node,
+                        x0 + node,
+                    ),
+                    encoding="utf-8",
+                )
+                nodes.append({
+                    "file": path.name,
+                    "node": node,
+                    "sha256": hashlib.sha256(path.read_bytes()).hexdigest(),
+                    "rows": 2,
+                    "seed": node + 1,
+                    "role": "test",
+                })
+            manifest = {
+                "policy": "deterministic_mobility_trace_v1",
+                "catalog_policy": "test_catalog",
+                "central_seed": 123,
+                "model": "test_catalog",
+                "interval_s": 1.0,
+                "duration_s": 1.0,
+                "nodes": nodes,
+            }
+            (run_dir / "manifest.json").write_text(
+                json.dumps(manifest), encoding="utf-8"
+            )
+
+        value = scenario(VALID_GRID)
+        value["nodes"]["count"] = 2
+        value["mobility"] = {
+            "model": "trace_catalog",
+            "deterministic_replay": True,
+            "trace_catalog": str(catalog),
+            "trace_interval": 1.0,
+            "pause": 0,
+            "speed": [0, 0],
+        }
+
+        mace, directory = self.run_mace_config(
+            value,
+            env={"MACE_RUN_ID": "smoke_001", "MACE_TRACE_SET": "run_002"},
+        )
+        trace_dir = directory / "mobility_traces"
+        materialized = json.loads(
+            (trace_dir / "manifest.json").read_text(encoding="utf-8")
+        )
+
+        self.assertEqual(materialized["catalog_run"], "run_002")
+        self.assertEqual(len(materialized["nodes"]), 2)
+        self.assertFalse((trace_dir / "node_2.csv").exists())
+        self.assertIn("11.000000000", (trace_dir / "node_0.csv").read_text())
+        self.assertIn("12.000000000", (trace_dir / "node_1.csv").read_text())
+        for node in mace["nodes"]:
+            mobility = node["extra"]["mobility"]
+            self.assertEqual(mobility["source_model"], "test_catalog")
+            self.assertTrue(Path(mobility["trace_file"]).exists())
+
+    def test_runner_passes_run_id_to_scenario_generation(self):
+        runner = (EVALUATION_DIR / "run_scenario.sh").read_text(
+            encoding="utf-8"
+        )
+        self.assertIn('MACE_RUN_ID="$RUN_ID" python', runner)
+
+    def test_runner_tolerates_legacy_sigkill_after_valid_spatial_analysis(self):
+        runner = (EVALUATION_DIR / "run_scenario.sh").read_text(
+            encoding="utf-8"
+        )
+        self.assertIn('"$PYMACE_RC" -eq 137', runner)
+        self.assertIn('"$RESULT_DIR/spatial_coverage_analysis.json"', runner)
+        self.assertIn("legacy self-SIGKILL", runner)
+
+    def test_batch_scripts_support_incremental_run_ranges(self):
+        run_experiment = (EVALUATION_DIR / "run_experiment.sh").read_text(
+            encoding="utf-8"
+        )
+        run_all = (EVALUATION_DIR / "run_all.sh").read_text(
+            encoding="utf-8"
+        )
+        wrapper = (EVALUATION_DIR / "run_spatial_grid_repro.sh").read_text(
+            encoding="utf-8"
+        )
+
+        self.assertIn("--start-run) START_RUN=", run_experiment)
+        self.assertIn("END_RUN=$((START_RUN + RUNS - 1))", run_experiment)
+        self.assertIn('for RUN in $(seq "$START_RUN" "$END_RUN"); do', run_experiment)
+        self.assertIn('if (( START_RUN > 1 )); then', run_experiment)
+
+        self.assertIn("--start-run) START_RUN=", run_all)
+        self.assertIn('--start-run "$START_RUN"', run_all)
+
+        self.assertIn("--start-run)", wrapper)
+        self.assertIn("if (( START_RUN == 1 )); then", wrapper)
+        self.assertIn("Preserving existing spatial results", wrapper)
+        self.assertIn('--start-run "$START_RUN"', wrapper)
 
 
 if __name__ == "__main__":

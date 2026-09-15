@@ -1,13 +1,17 @@
 import json
+import os
 import sys
 import random
 import math
+import shutil
+import hashlib
 from pathlib import Path
-from typing import Any, Dict, List, Tuple
+from typing import Any, Dict, List, Mapping, Tuple
 
 from mobility_trace import (
     TRACE_POLICY,
     deterministic_trace_enabled,
+    file_sha256,
     generate_traces_for_nodes,
     trace_duration_s,
     trace_interval_s,
@@ -46,6 +50,175 @@ def generate_grid_positions(n: int, area: Dict[str, float]) -> List[Tuple[float,
             positions.append(((i + 0.5) * dx, (j + 0.5) * dy))
             idx += 1
     return positions
+
+
+def resolve_root_path(root: Path, value: str) -> Path:
+    path = Path(value)
+    if path.is_absolute():
+        return path
+    return root / path
+
+
+def run_key_from_value(value: Any) -> str:
+    if value is None or str(value).strip() == "":
+        return "run_001"
+    text = str(value).strip()
+    if text.isdigit():
+        numeric = int(text)
+    elif text.startswith("run_") and text[4:].isdigit():
+        numeric = int(text[4:])
+    else:
+        raise ValueError("trace catalog run must be run_NNN or a positive integer")
+    if numeric <= 0:
+        raise ValueError("trace catalog run must be run_NNN or a positive integer")
+    return "run_{:03d}".format(numeric)
+
+
+def trace_catalog_config(mobility_config: Mapping[str, Any]) -> Tuple[Path, str]:
+    raw_catalog = mobility_config.get("trace_catalog")
+    if raw_catalog is None:
+        raise ValueError("mobility.trace_catalog is required")
+    if isinstance(raw_catalog, str):
+        catalog_path = raw_catalog
+        explicit_run = mobility_config.get("trace_set")
+    elif isinstance(raw_catalog, Mapping):
+        catalog_path = raw_catalog.get("path")
+        explicit_run = raw_catalog.get("run", mobility_config.get("trace_set"))
+    else:
+        raise ValueError("mobility.trace_catalog must be a path or object")
+    if not isinstance(catalog_path, str) or not catalog_path.strip():
+        raise ValueError("mobility.trace_catalog.path must be a non-empty string")
+    run_key = run_key_from_value(
+        os.environ.get("MACE_TRACE_SET", os.environ.get("MACE_RUN_ID", explicit_run))
+    )
+    return Path(catalog_path), run_key
+
+
+def materialize_trace_catalog(
+    *,
+    root: Path,
+    scenario_dir: Path,
+    mobility_config: Mapping[str, Any],
+    node_count: int,
+    scenario_seed: int,
+) -> Tuple[Dict[str, Any], float, float]:
+    catalog_ref, run_key = trace_catalog_config(mobility_config)
+    catalog_dir = resolve_root_path(root, str(catalog_ref))
+    run_dir = catalog_dir / run_key
+    source_manifest_path = run_dir / "manifest.json"
+    if not source_manifest_path.exists():
+        raise FileNotFoundError(
+            "trace catalog run manifest not found: {}".format(source_manifest_path)
+        )
+    source_manifest = json.loads(
+        source_manifest_path.read_text(encoding="utf-8")
+    )
+    source_nodes = source_manifest.get("nodes", [])
+    if not isinstance(source_nodes, list):
+        raise ValueError("trace catalog manifest nodes must be a list")
+    if len(source_nodes) < node_count:
+        raise ValueError(
+            "trace catalog {} has {} nodes, scenario needs {}".format(
+                run_key, len(source_nodes), node_count
+            )
+        )
+
+    trace_dir = scenario_dir / "mobility_traces"
+    if trace_dir.exists():
+        shutil.rmtree(trace_dir)
+    trace_dir.mkdir(parents=True, exist_ok=True)
+
+    selected_nodes = sorted(
+        source_nodes,
+        key=lambda item: int(item.get("node", 0)),
+    )[:node_count]
+    node_entries = []
+    for expected_index, source_entry in enumerate(selected_nodes):
+        source_index = int(source_entry.get("node", expected_index))
+        if source_index != expected_index:
+            raise ValueError(
+                "trace catalog nodes must be contiguous from zero; expected {}, got {}".format(
+                    expected_index, source_index
+                )
+            )
+        source_file = run_dir / str(source_entry.get("file", ""))
+        if not source_file.exists():
+            raise FileNotFoundError("trace file not found: {}".format(source_file))
+        expected_sha = source_entry.get("sha256")
+        actual_source_sha = file_sha256(source_file)
+        if expected_sha and actual_source_sha != expected_sha:
+            raise ValueError(
+                "trace catalog SHA-256 mismatch for {}: expected {}, got {}".format(
+                    source_file, expected_sha, actual_source_sha
+                )
+            )
+
+        dest_file = trace_dir / "node_{}.csv".format(expected_index)
+        shutil.copyfile(source_file, dest_file)
+        dest_sha = file_sha256(dest_file)
+        node_entry = {
+            "file": dest_file.name,
+            "node": expected_index,
+            "source_node": source_index,
+            "sha256": dest_sha,
+            "rows": source_entry.get("rows"),
+            "content_sha256": source_entry.get("content_sha256"),
+            "seed": source_entry.get("seed"),
+            "role": source_entry.get("role"),
+        }
+        if "grid_cols" in source_entry:
+            node_entry["grid_cols"] = source_entry["grid_cols"]
+        node_entries.append({
+            key: value for key, value in node_entry.items() if value is not None
+        })
+
+    trace_interval = float(
+        source_manifest.get(
+            "interval_s",
+            mobility_config.get("trace_interval", 0.2),
+        )
+    )
+    trace_duration = float(
+        source_manifest.get(
+            "duration_s",
+            mobility_config.get("trace_duration", 0.0),
+        )
+    )
+    manifest = {
+        "policy": TRACE_POLICY,
+        "source_policy": source_manifest.get("policy"),
+        "catalog_policy": source_manifest.get("catalog_policy"),
+        "catalog_path": str(catalog_ref),
+        "catalog_run": run_key,
+        "catalog_manifest_sha256": file_sha256(source_manifest_path),
+        "catalog_combined_sha256": source_manifest.get("combined_sha256"),
+        "scenario_central_seed": int(scenario_seed),
+        "central_seed": source_manifest.get("central_seed", int(scenario_seed)),
+        "model": source_manifest.get(
+            "model",
+            mobility_config.get("source_model", mobility_config.get("model")),
+        ),
+        "interval_s": trace_interval,
+        "duration_s": trace_duration,
+        "coverage_start_time_s": source_manifest.get("coverage_start_time_s"),
+        "prefix_validations": source_manifest.get("prefix_validations"),
+        "nodes": node_entries,
+    }
+    manifest["combined_sha256"] = hashlib.sha256(
+        json.dumps(manifest, sort_keys=True).encode("utf-8")
+    ).hexdigest()
+
+    manifest_path = trace_dir / "manifest.json"
+    manifest_path.write_text(
+        json.dumps(manifest, indent=2, sort_keys=True),
+        encoding="utf-8",
+    )
+    manifest["manifest_sha256"] = file_sha256(manifest_path)
+    manifest_path.write_text(
+        json.dumps(manifest, indent=2, sort_keys=True),
+        encoding="utf-8",
+    )
+    return manifest, trace_interval, trace_duration
 
 if len(sys.argv) != 3:
     print("Usage: generate_scenario.py <scenario_dir> <app>")
@@ -211,11 +384,21 @@ mobility_seeds = [
 ]
 
 trace_manifest = None
+trace_catalog_enabled = mob.get("trace_catalog") is not None
 trace_enabled = (
     str(mob.get("model", "none")).strip().lower() != "none"
     and deterministic_trace_enabled(mob)
 )
-if trace_enabled:
+if trace_catalog_enabled:
+    trace_manifest, trace_interval, trace_duration = materialize_trace_catalog(
+        root=root,
+        scenario_dir=scenario_dir,
+        mobility_config=mob,
+        node_count=node_count,
+        scenario_seed=seed,
+    )
+    trace_dir = scenario_dir / "mobility_traces"
+elif trace_enabled:
     trace_dir = scenario_dir / "mobility_traces"
     trace_interval = trace_interval_s(sc)
     trace_duration = trace_duration_s(sc)
@@ -254,7 +437,7 @@ for i, (x, y) in enumerate(positions):
         mobility.update({
             "deterministic_replay": True,
             "trace_policy": TRACE_POLICY,
-            "source_model": mob["model"],
+            "source_model": trace_manifest.get("model", mob["model"]),
             "trace_file": str(trace_file),
             "trace_sha256": node_trace["sha256"],
             "trace_interval": trace_interval,

@@ -1,0 +1,9 @@
+{
+  "default_runs": 10,
+  "jobs": [
+    { "scenario": "spatial_grid_ip", "app": "rapid" },
+    { "scenario": "spatial_grid_ip", "app": "trickle" },
+    { "scenario": "spatial_grid_ip", "app": "usfdx3" },
+    { "scenario": "spatial_grid_batman", "app": "broadcast" }
+  ]
+}

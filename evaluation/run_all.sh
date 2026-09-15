@@ -8,20 +8,27 @@ JOBS_FILE="$ROOT_DIR/evaluation/jobs.json"
 OVERRIDE_RUNS=""
 ONLY_SCENARIO=""
 ONLY_APP=""
+START_RUN=1
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --runs) OVERRIDE_RUNS="$2"; shift 2 ;;
+    --start-run) START_RUN="$2"; shift 2 ;;
     --only-scenario) ONLY_SCENARIO="$2"; shift 2 ;;
     --only-app) ONLY_APP="$2"; shift 2 ;;
     --jobs) JOBS_FILE="$2"; shift 2 ;;
     *)
       echo "Unknown option: $1"
-      echo "Usage: $0 [--runs N] [--only-scenario NAME] [--only-app APP] [--jobs FILE]"
+      echo "Usage: $0 [--runs N] [--start-run K] [--only-scenario NAME] [--only-app APP] [--jobs FILE]"
       exit 1
       ;;
   esac
 done
+
+if ! [[ "$START_RUN" =~ ^[0-9]+$ ]] || (( START_RUN < 1 )); then
+  echo "[ERROR] --start-run must be a positive integer: $START_RUN"
+  exit 1
+fi
 
 if [[ ! -f "$JOBS_FILE" ]]; then
   echo "[ERROR] jobs file not found: $JOBS_FILE"
@@ -90,6 +97,7 @@ echo "RUN_ALL - Bateria de experimentos"
 echo "Root        : $ROOT_DIR"
 echo "Jobs file   : $JOBS_FILE"
 [[ -n "$OVERRIDE_RUNS" ]] && echo "Runs override: $OVERRIDE_RUNS"
+echo "Start run   : $(printf "run_%03d" "$START_RUN")"
 [[ -n "$ONLY_SCENARIO" ]] && echo "OnlyScenario: $ONLY_SCENARIO"
 [[ -n "$ONLY_APP" ]] && echo "OnlyApp     : $ONLY_APP"
 echo "=================================================="
@@ -119,7 +127,7 @@ run_job () {
   echo "Runs     : $runs"
   echo "##################################################"
 
-  "$RUN_SCRIPT" --scenario "$scenario" --app "$app" --runs "$runs"
+  "$RUN_SCRIPT" --scenario "$scenario" --app "$app" --runs "$runs" --start-run "$START_RUN"
 
   echo ">>> Done: scenario=$scenario app=$app"
   echo ""
