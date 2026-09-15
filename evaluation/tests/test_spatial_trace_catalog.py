@@ -35,6 +35,12 @@ class SpatialTraceCatalogTests(unittest.TestCase):
             self.assertEqual(manifest["grid"]["cols"], 24)
             self.assertEqual(manifest["coverage_speed_mps"], 20.0)
             self.assertEqual(manifest["patrol_speed_mps"], 20.0)
+            coverage_counts = [
+                node["coverage_cell_count"]
+                for node in manifest["nodes"][:10]
+            ]
+            self.assertEqual(sum(coverage_counts), 576)
+            self.assertLessEqual(max(coverage_counts) - min(coverage_counts), 1)
             first_t_cover = manifest["prefix_validations"]["10"]["t_cover_s"]
             self.assertGreaterEqual(first_t_cover, accepted_min)
             self.assertLessEqual(first_t_cover, accepted_max)

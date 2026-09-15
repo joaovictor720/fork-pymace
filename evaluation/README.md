@@ -154,11 +154,13 @@ fragmentation.
 
 The fixed mobility inputs live in
 `evaluation/trace_catalogs/spatial_grid_1km_24x24`.  The catalog contains 10
-independent trace sets with 50 node CSVs each.  In every set, nodes 0..9 are a
-randomized stratified sweep that guarantees physical coverage of the full grid
-after the 30s coverage-start offset; nodes 10..49 are seeded random patrols
-that increase density and connectivity variation.  `run_scenario.sh` passes
-its `RUN_ID` to
+independent trace sets with 50 node CSVs each.  In every set, nodes 0..9 receive
+balanced chunks of a randomized serpentine sweep, so the initial coverage work
+is split as evenly as possible across the 10 coverage drones while still
+varying route orientation, segment assignment, and within-cell jitter by seed.
+This guarantees physical coverage of the full grid after the 30s coverage-start
+offset; nodes 10..49 are seeded random patrols that increase density and
+connectivity variation.  `run_scenario.sh` passes its `RUN_ID` to
 `generate_scenario.py`, which materializes only the first N traces needed by
 the expanded density variant.
 

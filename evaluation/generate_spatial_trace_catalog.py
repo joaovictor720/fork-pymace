@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
 """Generate deterministic trace sets for the spatial grid experiments.
 
-Each catalog run contains 50 node traces.  Nodes 0..9 execute a randomized
-stratified sweep at a fixed movement speed that guarantees full-grid coverage
-after the coverage start time; nodes 10..49 execute seeded random patrols to
-provide density and connectivity variation.
+Each catalog run contains 50 node traces.  Nodes 0..9 execute balanced chunks
+of a randomized serpentine sweep at a fixed movement speed that guarantees
+full-grid coverage after the coverage start time; nodes 10..49 execute seeded
+random patrols to provide density and connectivity variation.
 """
 
 import argparse
@@ -31,12 +31,13 @@ from spatial_coverage import GridSpec, check_traces, read_traces
 
 
 CATALOG_POLICY = "mace_spatial_trace_catalog_v1"
-GENERATOR_POLICY = "stratified_randomized_fixed_speed_sweep_v2"
+GENERATOR_POLICY = "balanced_randomized_fixed_speed_sweep_v3"
 DEFAULT_CATALOG = (
     ROOT_DIR / "evaluation" / "trace_catalogs" / "spatial_grid_1km_24x24"
 )
 
 Point = Tuple[float, float]
+CellCoord = Tuple[int, int]
 TimedPoint = Tuple[float, float, float]
 
 
@@ -75,34 +76,61 @@ def _jittered_cell_center(
     )
 
 
-def _split_columns(cols: int, parts: int) -> List[List[int]]:
-    base = cols // parts
-    extra = cols % parts
+def _split_evenly(items: Sequence[CellCoord], parts: int) -> List[List[CellCoord]]:
+    base = len(items) // parts
+    extra = len(items) % parts
     groups = []
     current = 0
     for idx in range(parts):
-        width = base + (1 if idx < extra else 0)
-        groups.append(list(range(current, current + width)))
-        current += width
+        size = base + (1 if idx < extra else 0)
+        groups.append(list(items[current : current + size]))
+        current += size
     return groups
 
 
-def _coverage_route(
+def _serpentine_cells(grid: GridSpec, rng: random.Random) -> List[CellCoord]:
+    cells: List[CellCoord] = []
+    primary_reverse = rng.random() < 0.5
+    first_secondary_asc = rng.random() < 0.5
+    row_major = rng.random() < 0.5
+
+    if row_major:
+        rows = list(range(grid.rows))
+        if primary_reverse:
+            rows.reverse()
+        for lane_idx, row in enumerate(rows):
+            ascending = (
+                first_secondary_asc if lane_idx % 2 == 0
+                else not first_secondary_asc
+            )
+            cols = range(grid.cols) if ascending else range(grid.cols - 1, -1, -1)
+            for col in cols:
+                cells.append((row, col))
+    else:
+        cols = list(range(grid.cols))
+        if primary_reverse:
+            cols.reverse()
+        for lane_idx, col in enumerate(cols):
+            ascending = (
+                first_secondary_asc if lane_idx % 2 == 0
+                else not first_secondary_asc
+            )
+            rows = range(grid.rows) if ascending else range(grid.rows - 1, -1, -1)
+            for row in rows:
+                cells.append((row, col))
+
+    return cells
+
+
+def _coverage_route_from_cells(
     grid: GridSpec,
-    columns: Sequence[int],
+    cells: Sequence[CellCoord],
     rng: random.Random,
     jitter_fraction: float,
 ) -> List[Point]:
     route: List[Point] = []
-    ordered_cols = list(columns)
-    if rng.random() < 0.5:
-        ordered_cols.reverse()
-    first_col_asc = rng.random() < 0.5
-    for col_idx, col in enumerate(ordered_cols):
-        ascending = first_col_asc if col_idx % 2 == 0 else not first_col_asc
-        rows = range(grid.rows) if ascending else range(grid.rows - 1, -1, -1)
-        for row in rows:
-            route.append(_jittered_cell_center(grid, row, col, rng, jitter_fraction))
+    for row, col in cells:
+        route.append(_jittered_cell_center(grid, row, col, rng, jitter_fraction))
     return route
 
 
@@ -155,7 +183,7 @@ def _append_patrol(
 
 def _coverage_waypoints(
     grid: GridSpec,
-    columns: Sequence[int],
+    cells: Sequence[CellCoord],
     *,
     node_rng: random.Random,
     coverage_start_s: float,
@@ -163,7 +191,7 @@ def _coverage_waypoints(
     coverage_speed_mps: float,
     patrol_speed_mps: float,
 ) -> List[TimedPoint]:
-    route = _coverage_route(grid, columns, node_rng, jitter_fraction=0.18)
+    route = _coverage_route_from_cells(grid, cells, node_rng, jitter_fraction=0.18)
     route_start = coverage_start_s
     first_x, first_y = route[0]
     warmup_radius = min(
@@ -315,17 +343,21 @@ def _generate_run(
     run_dir = out_dir / run_name
     run_dir.mkdir(parents=True, exist_ok=True)
 
-    column_groups = _split_columns(grid.cols, coverage_node_count)
-    run_rng.shuffle(column_groups)
+    coverage_segments = _split_evenly(
+        _serpentine_cells(grid, run_rng),
+        coverage_node_count,
+    )
+    run_rng.shuffle(coverage_segments)
 
     node_entries: List[Dict[str, Any]] = []
     for node_index in range(node_count):
         node_seed = derive_seed(run_seed, "node", node_index)
         node_rng = random.Random(node_seed)
         if node_index < coverage_node_count:
+            cells = coverage_segments[node_index]
             waypoints = _coverage_waypoints(
                 grid,
-                column_groups[node_index],
+                cells,
                 node_rng=node_rng,
                 coverage_start_s=coverage_start_s,
                 trace_duration_s=duration_s,
@@ -333,7 +365,7 @@ def _generate_run(
                 patrol_speed_mps=patrol_speed_mps,
             )
             role = "stratified_sweep"
-            columns = column_groups[node_index]
+            coverage_cell_count = len(cells)
         else:
             waypoints = _random_patrol_waypoints(
                 grid,
@@ -342,7 +374,7 @@ def _generate_run(
                 patrol_speed_mps,
             )
             role = "random_patrol"
-            columns = []
+            coverage_cell_count = 0
 
         entry = _write_trace(
             run_dir / "node_{}.csv".format(node_index),
@@ -355,8 +387,8 @@ def _generate_run(
             "seed": int(node_seed),
             "role": role,
         })
-        if columns:
-            entry["grid_cols"] = list(columns)
+        if coverage_cell_count:
+            entry["coverage_cell_count"] = coverage_cell_count
         node_entries.append(entry)
 
     prefix_validations: Dict[str, Dict[str, Any]] = {}
@@ -466,8 +498,8 @@ def generate_catalog(args: argparse.Namespace) -> Dict[str, Any]:
     )
     if args.node_count % args.coverage_node_count != 0:
         raise SystemExit("node-count must be a multiple of coverage-node-count")
-    if grid.cols < args.coverage_node_count:
-        raise SystemExit("grid-cols must be >= coverage-node-count")
+    if grid.cell_count < args.coverage_node_count:
+        raise SystemExit("grid cell count must be >= coverage-node-count")
 
     accepted_t_cover_range_s = (
         float(args.accepted_t_cover_min_s),
@@ -565,7 +597,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--coverage-speed-mps", type=float, default=20.0)
     parser.add_argument("--patrol-speed-mps", type=float, default=20.0)
     parser.add_argument("--accepted-t-cover-min-s", type=float, default=120.0)
-    parser.add_argument("--accepted-t-cover-max-s", type=float, default=190.0)
+    parser.add_argument("--accepted-t-cover-max-s", type=float, default=170.0)
     return parser
 
 
