@@ -1,6 +1,7 @@
 import json
 import math
 import sys
+from pathlib import Path
 
 from seed_utils import central_seed, derive_seed
 from spatial_coverage import GridSpec
@@ -137,14 +138,34 @@ def _canonical_grid(scenario, node_config):
         "cols": grid.cols,
     }, grid
 
-scenario_path = sys.argv[1]
-out_path = sys.argv[2]
-result_dir = sys.argv[3]
+if len(sys.argv) == 4:
+    scenario_path = sys.argv[1]
+    app_name = None
+    out_path = sys.argv[2]
+    result_dir = sys.argv[3]
+elif len(sys.argv) == 5:
+    scenario_path = sys.argv[1]
+    app_name = sys.argv[2]
+    out_path = sys.argv[3]
+    result_dir = sys.argv[4]
+else:
+    raise SystemExit(
+        "Usage: generate_node_config.py <scenario.json> [app] <out.json> <result_dir>"
+    )
 
 with open(scenario_path, "r", encoding="utf-8") as f:
     sc = json.load(f)
 
+root = Path(__file__).resolve().parent.parent
+apps_path = root / "evaluation" / "apps.json"
+apps_cfg = json.loads(apps_path.read_text(encoding="utf-8"))
+app_cfg = apps_cfg.get("apps", {}).get(app_name, {}) if app_name else {}
+
 node_cfg = sc["node_config"].copy()
+overrides = app_cfg.get("node_config_overrides", {})
+if isinstance(overrides, dict):
+    node_cfg.update(overrides)
+
 node_count = sc["nodes"]["count"]
 seed = central_seed(sc)
 application_seed = derive_seed(seed, "application")

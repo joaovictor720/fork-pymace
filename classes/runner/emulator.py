@@ -8,7 +8,7 @@ __maintainer__ = "Bruno Chianca Ferreira"
 __email__ = "brunobcf@gmail.com"
 
 
-import traceback, os, logging, time, subprocess, threading, sys, requests
+import traceback, os, logging, time, subprocess, threading, sys
 from classes.runner.runner import Runner
 
 from ..interfaces import iosocket
@@ -153,13 +153,7 @@ class Emulator(Runner):
   def killsim(self):
     """_summary_
     """
-
-    os.system("sudo killall xterm")
     self.try_to_clean()
-
-    pid = os.popen("ps aux  |grep \"pymace.py\" | grep -v \"grep\" | awk '{print $2}'").readlines()
-    for p in pid:
-      os.system("sudo kill -s 9 " + str(p))
 
   def stop(self):
     """_summary_
@@ -203,14 +197,26 @@ class Emulator(Runner):
     if not self.daemon_mode: 
       # shutdown session
       logging.info("Simulation finished. Killing all processes")
-      requests.get('http://localhost:5000/sim/stop')
+      try:
+        if hasattr(self, "iosocket"):
+          self.iosocket.shutdown()
+      except:
+        logging.warning("Failed to shutdown emulation interface cleanly.", exc_info=True)
 
-      sthread.join()
-      self.session.shutdown()
+      sthread.join(timeout=2)
+
+      try:
+        self.session.shutdown()
+      except:
+        logging.warning("Failed to shutdown CORE session cleanly.", exc_info=True)
+
+      try:
+        self.coreemu.shutdown()
+      except:
+        logging.warning("Failed to shutdown CORE emulator cleanly.", exc_info=True)
 
       try:
         self.killsim()
-        os.system("sudo killall xterm")
         os.system("chown -R " + self.scenario.username + ":" + self.scenario.username + " ./reports")
       except:
         pass
@@ -220,5 +226,3 @@ class Emulator(Runner):
       self.coreemu.shutdown()
       self.scenario = None
       #self.try_to_clean()
-
-

@@ -126,6 +126,7 @@ MACE_RUN_ID="$RUN_ID" python "$ROOT_DIR/evaluation/generate_scenario.py" "$SCENA
 # -------------------------------
 python "$ROOT_DIR/evaluation/generate_node_config.py" \
   "$SCENARIO_SPEC" \
+  "$APP" \
   "$NODE_CFG" \
   "$RESULT_DIR"
 
@@ -399,7 +400,14 @@ if [[ "$WORKLOAD" == "spatial_coverage" ]]; then
   sudo "$ROOT_DIR/pymace.py" -s "$MACE_JSON" || PYMACE_RC=$?
 else
   # Preserve the historical best-effort behavior for GCounter experiments.
-  sudo "$ROOT_DIR/pymace.py" -s "$MACE_JSON" || true
+  PYMACE_START_TS="$(python3 - <<'PY'
+import time
+
+print(format(time.time() + 30.0, ".6f"))
+PY
+)"
+  export PYMACE_START_TS
+  sudo -E "$ROOT_DIR/pymace.py" -s "$MACE_JSON" || true
 fi
 
 # -------------------------------

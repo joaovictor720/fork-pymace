@@ -17,7 +17,9 @@ __version__ = "0.7"
 __maintainer__ = "Bruno Chianca Ferreira"
 __email__ = "brunobcf@gmail.com"
 
-import  sys, traceback, json, os, argparse, logging, shutil, signal, threading
+import  sys, traceback, json, os, argparse, logging, shutil, threading
+from pathlib import Path
+from urllib.request import urlopen
 from classes.runner.emulator import Emulator
 from classes.interfaces.daemon_socket import Daemon
 
@@ -54,23 +56,27 @@ class Mace():
           self.daemon.start()
         else:
           if args.scenario != None:
-            self.socket_thread = threading.Thread(target=self.daemon.start, args=())
+            self.socket_thread = threading.Thread(target=self.daemon.start, args=(), daemon=True)
             self.socket_thread.start()
             self.emulator.set_daemon_socket(self.daemon.get_socket())
             self._setup_emulation(self.emulator, args.scenario)
             self._start(self.emulator, 1)
           else:
             logging.error("Not running in daemon mode and no scenario was passed as argument. Exiting.")
+            return 1
         self._shutdown()
+        return 0
       except KeyboardInterrupt:
         logging.error("Interrupted by ctrl+c")
-        os._exit(1)
-      except SystemExit:
+        return 130
+      except SystemExit as exc:
         logging.info("Quiting")
-        os.kill(os.getpid(), signal.SIGINT)
-      except:
+        code = exc.code if isinstance(exc.code, int) else 0
+        return code
+      except Exception:
         logging.error("General error!")
         traceback.print_exc()
+        return 1
 
     def load_scenarios(self):
       files = []
@@ -154,9 +160,17 @@ class Mace():
 
       """
       logging.info("Exiting.")
-      pid = os.popen("ps aux  |grep \"pymace.py\" | grep -v \"grep\" | awk '{print $2}'").readlines()
-      for p in pid:
-        os.system("sudo kill -s 9 " + str(p))
+      try:
+        socket_thread = getattr(self, "socket_thread", None)
+        if socket_thread and socket_thread.is_alive():
+          try:
+            urlopen("http://127.0.0.1:5000/shutdown", timeout=2).read()
+          except Exception:
+            logging.warning("Could not stop daemon HTTP server cleanly during shutdown.", exc_info=True)
+        if socket_thread and socket_thread.is_alive():
+          socket_thread.join(timeout=5)
+      except Exception:
+        logging.warning("Could not wait for daemon socket thread during shutdown.", exc_info=True)
 
     def _clean(self):
       """ 
@@ -287,7 +301,8 @@ def load_settings():
   Returns:
       object: Returns a settings object
   """
-  main_settings_file = open("settings.json","r").read()
+  settings_path = Path(__file__).resolve().with_name("settings.json")
+  main_settings_file = settings_path.read_text(encoding="utf-8")
   main_settings = json.loads(main_settings_file)
   return main_settings
 
@@ -309,13 +324,10 @@ if __name__ == '__main__':
     localdir = os.path.dirname(os.path.abspath(__file__))
     #############################################################################
     mace = Mace(main_settings)
-    mace.main(); #call scheduler function
-    sys.exit(1)
+    sys.exit(mace.main()) #call scheduler function
   except KeyboardInterrupt:
     logging.error("Interrupted by ctrl+c")
-    os.kill(os.getpid(), signal.SIGINT)
-  except SystemExit:
-    logging.info("Quiting")
-    os.kill(os.getpid(), signal.SIGINT)
-  except:
+    sys.exit(130)
+  except Exception:
     traceback.print_exc()
+    sys.exit(1)

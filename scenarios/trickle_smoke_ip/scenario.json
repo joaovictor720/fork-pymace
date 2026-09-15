@@ -1,19 +1,19 @@
 {
-  "name": "workload_duration_cooldown_ip",
+  "name": "trickle_smoke_ip",
   "simulation": {
-    "duration": 140,
+    "duration": 40,
     "start_delay": 5,
-    "area": { "x": 500, "y": 500 }
+    "area": { "x": 120, "y": 120 }
   },
   "nodes": {
-    "count": 20,
-    "distribution": "random",
+    "count": 6,
+    "distribution": "grid",
     "seed": 22
   },
   "mobility": {
     "model": "random_waypoint",
     "pause": 0,
-    "speed": [4.0, 4.2]
+    "speed": [0.0, 0.0]
   },
   "network": {
     "routing": "none",
@@ -25,16 +25,12 @@
   },
   "node_config": {
     "udp_port": 5001,
-    "ops_per_sec": 4.0,
+    "ops_per_sec": 1.0,
     "diss_per_sec": 2.0,
     "monitor_interval": 1,
-    "duration": 10,
-    "cooldown": 10
-  },
-  "experiment": {
-    "vary": {
-      "node_config.duration": [10, 30, 50, 70],
-      "node_config.cooldown": [10, 20]
-    }
+    "duration": 5,
+    "cooldown": 20,
+    "trickle_k": 1,
+    "trickle_imax_ticks": 8
   }
 }

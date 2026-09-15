@@ -58,6 +58,7 @@ class Socket():
         self.network_time_div = 10
         self.counters = {}
         self.counters['networks'] = 0
+        self._shutdown_started = False
 
         for node in self.corenodes:
             self.initial_nodes[node.id] = node.getposition()
@@ -103,9 +104,9 @@ class Socket():
             self.shutdown()
 
        
-        self.nthread = threading.Thread(target=self.nodes_thread, args=())
-        self.dthread = threading.Thread(target=self.emmit_digest, args=())
-        self.netthread = threading.Thread(target=self.network_thread, args=())
+        self.nthread = threading.Thread(target=self.nodes_thread, args=(), daemon=True)
+        self.dthread = threading.Thread(target=self.emmit_digest, args=(), daemon=True)
+        self.netthread = threading.Thread(target=self.network_thread, args=(), daemon=True)
         
         self.nthread.start()
         self.dthread.start()
@@ -114,11 +115,19 @@ class Socket():
     def shutdown(self):
         """_summary_
         """
-        #self.socketio.stop(namespace='/sim')
+        if self._shutdown_started:
+            return
+
+        self._shutdown_started = True
         self.lock=False
-        self.nthread.join()
-        self.dthread.join()
-        self.netthread.join()
+        current = threading.current_thread()
+
+        for thread in (self.nthread, self.dthread, self.netthread):
+            if thread is current:
+                continue
+            if thread.is_alive():
+                thread.join(timeout=2)
+
         self.Pymace.stop()
 
     def emmit_digest(self):

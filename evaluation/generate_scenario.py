@@ -1,6 +1,6 @@
+import argparse
 import json
 import os
-import sys
 import random
 import math
 import shutil
@@ -19,6 +19,20 @@ from mobility_trace import (
 from seed_utils import central_seed, derive_seed
 
 APPLICATION_START_DELAY = 30
+
+
+def parse_args() -> argparse.Namespace:
+    parser = argparse.ArgumentParser(
+        description="Generate a pymace scenario from scenario.json plus evaluation/apps.json."
+    )
+    parser.add_argument("scenario_dir", help="Scenario directory containing scenario.json")
+    parser.add_argument("app", help="App name from evaluation/apps.json")
+    parser.add_argument(
+        "--out",
+        dest="out_path",
+        help="Optional output path for mace.json. Defaults to <scenario_dir>/mace.json.",
+    )
+    return parser.parse_args()
 
 
 def finite_json_number(value: Any, label: str) -> float:
@@ -220,12 +234,9 @@ def materialize_trace_catalog(
     )
     return manifest, trace_interval, trace_duration
 
-if len(sys.argv) != 3:
-    print("Usage: generate_scenario.py <scenario_dir> <app>")
-    sys.exit(1)
-
-scenario_dir = Path(sys.argv[1])
-app = sys.argv[2]
+args = parse_args()
+scenario_dir = Path(args.scenario_dir)
+app = args.app
 
 root = Path(__file__).resolve().parent.parent
 apps_path = root / "evaluation" / "apps.json"
@@ -236,7 +247,8 @@ if app not in apps:
 app_cfg = apps[app]
 
 scenario_file = scenario_dir / "scenario.json"
-out_file = scenario_dir / "mace.json"
+out_file = Path(args.out_path) if args.out_path else scenario_dir / "mace.json"
+out_file.parent.mkdir(parents=True, exist_ok=True)
 
 if not scenario_file.exists():
     raise FileNotFoundError(f"Scenario file not found: {scenario_file}")
@@ -463,12 +475,22 @@ for i, (x, y) in enumerate(positions):
             f"/usr/bin/python3 {clock_waiter_path} "
             f"--clock __EXPERIMENT_CLOCK__; "
         )
+        start_barrier_command = ""
         application_command = (
             f"timeout --signal=TERM --kill-after=2 {SPATIAL_RUN_SEC} "
             f"__CRDT_BIN__ -id {i} -config __CRDT_NODE_CONFIG__; "
         )
     else:
-        startup_sequence = f"sleep {APPLICATION_START_DELAY}; {base_net_setup}"
+        startup_sequence = f"{base_net_setup}"
+        start_barrier_command = (
+            f"START_TS=\\\"${{PYMACE_START_TS:-}}\\\"; "
+            f"echo \\\"PYMACE_START_TS=\\$START_TS\\\" >> \\\"\\$LOG_FILE\\\"; "
+            f"if [ -n \\\"\\$START_TS\\\" ]; then "
+            f"/usr/bin/python3 -c 'import os,time; "
+            f"s=float(os.environ.get(\"PYMACE_START_TS\", \"0\") or 0); "
+            f"time.sleep(max(0.0, s - time.time()))'; "
+            f"else sleep {APPLICATION_START_DELAY}; fi; "
+        )
         application_command = (
             f"__CRDT_BIN__ -id {i} -config __CRDT_NODE_CONFIG__; "
         )
@@ -504,6 +526,7 @@ for i, (x, y) in enumerate(positions):
         f"echo \\\"GPS_FILE=\\$GPS_FILE\\\" >> \\\"\\$LOG_FILE\\\"; "
 
         # App
+        f"{start_barrier_command}"
         f"{application_command}"
         f"APP_RC=\\$?; "
         f"echo \\\"APP_RC=\\$APP_RC\\\" >> \\\"\\$LOG_FILE\\\"; "

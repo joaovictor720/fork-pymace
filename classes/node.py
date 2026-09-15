@@ -10,16 +10,16 @@ __version__ = "0.4"
 __maintainer__ = "Bruno Chianca Ferreira"
 __email__ = "brunobcf@gmail.com"
 
+import importlib
 import os, random, json, traceback, time
 # My classes
 from classes.battery import battery
 from classes.auxiliar import tracer
 # The network classes should include everything related to network that is not related to application level
-from classes.network import network_sockets, network_pprz_udp, network_pprz_tcp
-from classes.membership import membership_pprz_udp, membership_pprz_tcp, membership_sockets
+from classes.network import network_sockets
+from classes.membership import membership_sockets
 from classes.bus import bus
 from classes.fault import detector
-from classes.interfaces import pprz_interface
 from classes.mobility import mobility
 # Applications classes for each required application to be tested
 
@@ -27,6 +27,17 @@ from classes.apps.traffic import traffic
 from classes.apps.paxos import paxos
 from classes.apps.multipaxos import multipaxos
 from classes.apps.rsm import rsm
+
+
+def _import_optional(module_name, feature_name):
+  try:
+    return importlib.import_module(module_name)
+  except ModuleNotFoundError as exc:
+    missing = exc.name or module_name
+    raise RuntimeError(
+      f"{feature_name} requires the optional dependency '{missing}'. "
+      f"Install the PAPARAZZI-related dependencies before enabling {feature_name}."
+    ) from exc
 
 class Node:
   def __init__(self, tag, node_number, energy_model, mobility_model, application, role, time_scale, initBattery, ip, net, membership='local', fault_detector='simple'):
@@ -59,8 +70,10 @@ class Node:
     if net.upper() == 'SOCKETS':
       self.Network = network_sockets.Network(self, ip) #create network object
     elif net.upper() == 'PPRZ_UDP':
+      network_pprz_udp = _import_optional("classes.network.network_pprz_udp", "network protocol PPRZ_UDP")
       self.Network = network_pprz_udp.Network(self, ip) #create network object
     elif net.upper() == 'PPRZ_TCP':
+      network_pprz_tcp = _import_optional("classes.network.network_pprz_tcp", "network protocol PPRZ_TCP")
       self.Network = network_pprz_tcp.Network(self, ip) #create network object
     else:
       print("invalid network protocol...using sockets")
@@ -98,8 +111,10 @@ class Node:
       os._exit(1)
 
 
-    #if pprz_interface:
-    self.PprzInterface = pprz_interface.Interface(self)
+    self.PprzInterface = None
+    if net.upper().startswith('PPRZ_') or mobility_model.upper() == 'PAPARAZZI':
+      pprz_interface = _import_optional("classes.interfaces.pprz_interface", "PAPARAZZI interface")
+      self.PprzInterface = pprz_interface.Interface(self)
     self.Mobility = mobility.Mobility(self, mobility_model)
 
     #TODO: change folder
@@ -127,12 +142,14 @@ class Node:
     self.Membership.start()
     self.FaultDetector.start()
     self.Application.start()
-    self.PprzInterface.start()
+    if self.PprzInterface is not None:
+      self.PprzInterface.start()
     self.Mobility.start()
 
   def shutdown(self):
     self.Mobility.shutdown()
-    self.PprzInterface.shutdown()
+    if self.PprzInterface is not None:
+      self.PprzInterface.shutdown()
     self.Application.shutdown()
     self.Membership.shutdown()
     self.FaultDetector.shutdown()

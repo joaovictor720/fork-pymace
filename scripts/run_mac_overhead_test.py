@@ -266,7 +266,7 @@ class MACOverhead():
         scenario += self.scenario_file
         try:
             test_file = open(scenario, "r") #just to check if exists
-            proc = subprocess.call(['sudo','./pymace.py', '-s' + scenario])
+            proc = subprocess.call(['sudo', '-E', 'python3', '-u', './pymace.py', '-s', scenario])
         except FileNotFoundError:
             return(-1)
         return(0)
