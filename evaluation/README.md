@@ -96,7 +96,8 @@ python3 evaluation/spatial_coverage.py analyze \
 ```
 
 To collect every completed spatial run, calculate mean, sample standard
-deviation, and Student-t 95% confidence intervals, and generate the CAR plots:
+deviation, and Student-t 95% confidence intervals, and generate the old-style
+convergence and network-cost plots:
 
 ```bash
 ./evaluation/gera_spatial.sh
@@ -112,16 +113,21 @@ It writes:
 - `all_spatial_car_checkpoints.csv`: one row per run/checkpoint;
 - `all_spatial_car_nodes.csv`: descriptive per-node observations;
 - `aggregated_spatial_car.csv`: CAR statistics by algorithm and checkpoint;
-- `aggregated_spatial_tcover.csv`: physical coverage-time statistics; and
-- `aggregated_spatial_overhead.csv`: final CAR and network-cost statistics.
+- `aggregated_spatial_tcover.csv`: physical coverage-time statistics;
+- `aggregated_spatial_overhead.csv`: final CAR and network-cost statistics;
+- `all_spatial_usage_checkpoints.csv`: per-run network cost accumulated up to
+  each CAR checkpoint; and
+- `aggregated_spatial_usage_checkpoints.csv`: checkpoint network-cost
+  statistics by algorithm and scenario parameter.
 
 The run, rather than each node, is the independent unit in CAR confidence
 intervals. `T_cover` is deduplicated by mobility-trace hash across algorithms,
 because replaying one trace with multiple dissemination algorithms does not
-create additional independent mobility observations. Per-node boxplots are
-therefore descriptive only. The generated plots live under
-`results/plots/spatial/`. Use `--x COLUMN` with
-`plot_spatial_coverage.py` to override automatic sweep-axis detection.
+create additional independent mobility observations. The generated plots live
+under `results/plots/spatial/`: `__convergence.pdf`,
+`__convergence_zoom_y.pdf`, and `__usage.pdf`. Each PDF has one page per
+configured checkpoint offset. Use `--x COLUMN` with `plot_spatial_coverage.py`
+to override automatic sweep-axis detection.
 
 Spatial event logs distinguish `local_coverage`, `remote_merge`,
 `dissemination_trigger`, received traffic, and primitive publish/reset actions.
@@ -129,6 +135,43 @@ The monitor logs separately retain cumulative `sent_msgs`, `recv_msgs`,
 `sent_bytes`, and `recv_bytes` for actual network traffic. Event timestamps use
 Unix time and are aligned to trace-relative time through
 `experiment_clock.json`; `replica_version` orders concurrent state mutations.
+
+#### Spatial grid density experiment
+
+`scenarios/spatial_grid_ip` and `scenarios/spatial_grid_batman` define the
+1km x 1km spatial workload used for density comparisons.  Both scenarios use a
+20x20 `GridSpec` (400 cells), `coverage.start_delay_s=30`, and
+`coverage.post_coverage_window_s=10`.  The density sweep is cumulative:
+10, 20, 30, 40 and 50 nodes use prefixes of the same run trace set.
+
+The fixed mobility inputs live in
+`evaluation/trace_catalogs/spatial_grid_1km_20x20`.  The catalog contains 10
+independent trace sets with 50 node CSVs each.  In every set, nodes 0..9 are a
+randomized stratified sweep that guarantees physical coverage of the full grid
+in roughly 1-2 minutes; nodes 10..49 are seeded random patrols that increase
+density and connectivity variation.  `run_scenario.sh` passes its `RUN_ID` to
+`generate_scenario.py`, which materializes only the first N traces needed by
+the expanded density variant.
+
+Regenerate the catalog only when intentionally changing the mobility design:
+
+```bash
+python3 evaluation/generate_spatial_trace_catalog.py --force
+```
+
+Run the spatial comparison with 10 runs per density/app:
+
+```bash
+./evaluation/run_spatial_grid_repro.sh 10
+```
+
+To split the same 10-run experiment into two batches while preserving the
+first batch:
+
+```bash
+./evaluation/run_spatial_grid_repro.sh 5
+./evaluation/run_spatial_grid_repro.sh --runs 5 --start-run 6
+```
 
 Build and run the C++ unit tests with:
 

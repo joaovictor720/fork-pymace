@@ -12,7 +12,7 @@ if str(EVALUATION_DIR) not in sys.path:
     sys.path.insert(0, str(EVALUATION_DIR))
 
 from parse_metrics import parse_application  # noqa: E402
-from plot_spatial_coverage import choose_x, main as plot_main  # noqa: E402
+from plot_spatial_coverage import _fixed_bar_y_upper, choose_x, main as plot_main  # noqa: E402
 from spatial_results import (  # noqa: E402
     aggregate_car,
     aggregate_tcover,
@@ -196,34 +196,67 @@ class SpatialAggregationTests(unittest.TestCase):
         self.assertEqual(len(files), 6)
         self.assertIn("aggregated_spatial_car.csv", files)
 
-    def test_plot_pipeline_generates_every_spatial_view(self):
+    def test_plot_pipeline_generates_old_style_paged_convergence_and_usage_views(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp) / "results"
             tables = Path(tmp) / "tables"
             plots = Path(tmp) / "plots"
             _make_run(root, "coverage_ip", "rapid", "run_1")
             write_results(root, tables, strict=True)
+            usage = tables / "aggregated_spatial_usage_checkpoints.csv"
+            car = tables / "aggregated_spatial_car.csv"
+            with car.open(newline="", encoding="utf-8") as source:
+                rows = list(csv.DictReader(source))
+                fields = list(rows[0])
+            fields.extend([
+                "total_packets_mean",
+                "total_packets_ci_low",
+                "total_packets_ci_high",
+            ])
+            for row in rows:
+                row.update({
+                    "total_packets_mean": "100",
+                    "total_packets_ci_low": "90",
+                    "total_packets_ci_high": "110",
+                })
+            with usage.open("w", newline="", encoding="utf-8") as output:
+                writer = csv.DictWriter(output, fieldnames=fields)
+                writer.writeheader()
+                writer.writerows(rows)
             result = plot_main(
                 [
                     "--input-dir", str(tables),
                     "--output-dir", str(plots),
-                    "--formats", "png",
+                    "--formats", "pdf",
                 ]
             )
-            names = {path.name for path in plots.glob("*.png")}
+            names = {path.name for path in plots.glob("*.pdf")}
 
         self.assertEqual(result, 0)
-        self.assertTrue(any(name.startswith("car_recovery_") for name in names))
-        self.assertIn("car_coverage_plus_2.5s.png", names)
-        self.assertTrue(any(name.startswith("car_nodes_final_") for name in names))
-        self.assertTrue(any(name.startswith("car_overhead_") for name in names))
-        self.assertTrue(any(name.startswith("tcover_") for name in names))
+        self.assertIn("coverage__convergence.pdf", names)
+        self.assertIn("coverage__convergence_zoom_y.pdf", names)
+        self.assertIn("coverage__usage.pdf", names)
+        self.assertFalse(any(name.startswith("coverage__convergence_plus_") for name in names))
+        self.assertFalse(any(name.startswith("coverage__total_packets") for name in names))
+        self.assertFalse(any(name.startswith("car_recovery_") for name in names))
+        self.assertFalse(any(name.startswith("car_nodes_final_") for name in names))
+        self.assertFalse(any(name.startswith("car_overhead_") for name in names))
+        self.assertFalse(any(name.startswith("tcover_") for name in names))
 
     def test_plot_axis_auto_detection_prefers_varying_numeric_parameter(self):
         import pandas as pd
 
         frame = pd.DataFrame({"nodes_cfg": [10, 20], "grid_cell_count": [4, 4]})
         self.assertEqual(choose_x(frame), "nodes_cfg")
+
+    def test_usage_axis_upper_uses_highest_checkpoint_with_padding(self):
+        import pandas as pd
+
+        frame = pd.DataFrame({
+            "total_packets_mean": [100.0, 1000.0],
+            "total_packets_ci_high": [110.0, 1234.0],
+        })
+        self.assertEqual(_fixed_bar_y_upper(frame, "total_packets_mean", "total_packets_ci_high"), 1250.0)
 
 
 if __name__ == "__main__":

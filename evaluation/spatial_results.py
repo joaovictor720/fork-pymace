@@ -25,10 +25,14 @@ GENERATED_FILES = {
     "runs": "all_spatial_runs.csv",
     "checkpoints": "all_spatial_car_checkpoints.csv",
     "nodes": "all_spatial_car_nodes.csv",
+    "usage_checkpoints": "all_spatial_usage_checkpoints.csv",
     "car": "aggregated_spatial_car.csv",
     "tcover": "aggregated_spatial_tcover.csv",
     "overhead": "aggregated_spatial_overhead.csv",
+    "usage": "aggregated_spatial_usage_checkpoints.csv",
 }
+
+USAGE_CACHE_SCHEMA = "mace_spatial_pcap_checkpoint_metrics_v1"
 
 
 def _load_json(path: Path) -> Dict[str, Any]:
@@ -490,6 +494,276 @@ def aggregate_overhead(runs: Sequence[Dict[str, Any]]) -> List[Dict[str, Any]]:
     return output
 
 
+def _read_csv_rows(path: Path) -> List[Dict[str, str]]:
+    with path.open(newline="", encoding="utf-8") as source:
+        return list(csv.DictReader(source))
+
+
+def _write_usage_cache(path: Path, rows: Sequence[Mapping[str, Any]]) -> None:
+    fields = (
+        "schema", "checkpoint_offset_s", "total_packets", "total_bytes",
+        "pcap_count",
+    )
+    with path.open("w", newline="", encoding="utf-8") as output:
+        writer = csv.DictWriter(output, fieldnames=fields)
+        writer.writeheader()
+        for row in rows:
+            writer.writerow({field: row.get(field) for field in fields})
+
+
+def _usage_cache_is_current(cache: Path, dependencies: Sequence[Path]) -> bool:
+    if not cache.exists():
+        return False
+    try:
+        cache_mtime = cache.stat().st_mtime_ns
+    except OSError:
+        return False
+    for dependency in dependencies:
+        try:
+            if dependency.stat().st_mtime_ns > cache_mtime:
+                return False
+        except OSError:
+            return False
+    return True
+
+
+def _usage_cache_path(run_dir: Path, cache_root: Optional[Path]) -> Optional[Path]:
+    if cache_root is None:
+        return None
+    try:
+        key = str(run_dir.resolve())
+    except OSError:
+        key = str(run_dir)
+    digest = hashlib.sha256(key.encode("utf-8")).hexdigest()[:24]
+    return cache_root / f"{digest}.csv"
+
+
+def _usage_rows_from_cache(cache: Path, offsets: Sequence[float]) -> Optional[List[Dict[str, Any]]]:
+    try:
+        rows = _read_csv_rows(cache)
+    except (OSError, csv.Error):
+        return None
+    if not rows or any(row.get("schema") != USAGE_CACHE_SCHEMA for row in rows):
+        return None
+    by_offset: Dict[float, Dict[str, str]] = {}
+    for row in rows:
+        offset = _finite_number(row.get("checkpoint_offset_s"))
+        if offset is not None:
+            by_offset[offset] = row
+    if any(offset not in by_offset for offset in offsets):
+        return None
+    result = []
+    for offset in offsets:
+        row = by_offset[offset]
+        result.append({
+            "schema": USAGE_CACHE_SCHEMA,
+            "checkpoint_offset_s": offset,
+            "total_packets": _integer(row.get("total_packets")),
+            "total_bytes": _integer(row.get("total_bytes")),
+            "pcap_count": _integer(row.get("pcap_count")),
+        })
+    return result
+
+
+def _load_apps_config(root: Path) -> Dict[str, Any]:
+    apps_path = root / "evaluation" / "apps.json"
+    return json.loads(apps_path.read_text(encoding="utf-8"))
+
+
+def _pcap_usage_for_offsets(
+    run_dir: Path,
+    algorithm: str,
+    t_cover_s: float,
+    offsets: Sequence[float],
+    trace_start_unix_s: float,
+    apps_config: Mapping[str, Any],
+) -> List[Dict[str, Any]]:
+    from process_pcaps import display_filter_for_app, _run_tshark_rows
+
+    pcaps = sorted(run_dir.glob("node_*.pcap"))
+    if not pcaps:
+        return []
+
+    display_filter = display_filter_for_app(algorithm, dict(apps_config))
+    cutoffs = [(offset, trace_start_unix_s + t_cover_s + offset) for offset in offsets]
+    packets = {offset: 0 for offset in offsets}
+    bytes_by_offset = {offset: 0 for offset in offsets}
+
+    for pcap in pcaps:
+        proc = _run_tshark_rows(
+            str(pcap),
+            display_filter,
+            ["frame.time_epoch", "frame.len"],
+        )
+        assert proc.stdout is not None
+        for line in proc.stdout:
+            line = line.rstrip("\n")
+            if not line:
+                continue
+            parts = line.split("\t")
+            if len(parts) < 2:
+                continue
+            try:
+                timestamp = float(parts[0].strip())
+                frame_len = int(parts[1].strip())
+            except ValueError:
+                continue
+            for offset, cutoff in cutoffs:
+                if timestamp <= cutoff:
+                    packets[offset] += 1
+                    bytes_by_offset[offset] += frame_len
+        assert proc.stderr is not None
+        stderr = proc.stderr.read().strip()
+        rc = proc.wait()
+        if rc != 0:
+            message = f"tshark failed for {pcap} with rc={rc}"
+            if stderr:
+                message += f": {stderr}"
+            raise ValueError(message)
+
+    return [
+        {
+            "schema": USAGE_CACHE_SCHEMA,
+            "checkpoint_offset_s": offset,
+            "total_packets": packets[offset],
+            "total_bytes": bytes_by_offset[offset],
+            "pcap_count": len(pcaps),
+        }
+        for offset in offsets
+    ]
+
+
+def _run_usage_checkpoints(
+    run: Mapping[str, Any],
+    offsets: Sequence[float],
+    apps_config: Mapping[str, Any],
+    repo_root: Path,
+    cache_root: Optional[Path],
+) -> List[Dict[str, Any]]:
+    run_dir_text = run.get("run_dir")
+    if not run_dir_text:
+        return []
+    run_dir = Path(str(run_dir_text))
+    if not run_dir.exists():
+        return []
+    t_cover_s = _finite_number(run.get("t_cover_s"))
+    if t_cover_s is None:
+        return []
+    clock_path = run_dir / "experiment_clock.json"
+    if not clock_path.exists():
+        return []
+    clock = _load_json(clock_path)
+    trace_start_unix_s = _finite_number(clock.get("trace_start_unix_s"))
+    if trace_start_unix_s is None:
+        return []
+
+    offsets = tuple(sorted({float(offset) for offset in offsets}))
+    if not offsets:
+        return []
+
+    cache = _usage_cache_path(run_dir, cache_root)
+    pcaps = sorted(run_dir.glob("node_*.pcap"))
+    dependencies = pcaps + [
+        clock_path,
+        run_dir / "spatial_coverage_analysis.json",
+        repo_root / "evaluation" / "apps.json",
+    ]
+    cached = None
+    if cache is not None and _usage_cache_is_current(cache, dependencies):
+        cached = _usage_rows_from_cache(cache, offsets)
+    rows = cached
+    if rows is None:
+        rows = _pcap_usage_for_offsets(
+            run_dir,
+            str(run.get("algorithm")),
+            t_cover_s,
+            offsets,
+            trace_start_unix_s,
+            apps_config,
+        )
+        if rows and cache is not None:
+            try:
+                cache.parent.mkdir(parents=True, exist_ok=True)
+                _write_usage_cache(cache, rows)
+            except OSError as exc:
+                print(f"[WARN] Could not write usage cache {cache}: {exc}", file=sys.stderr)
+
+    output = []
+    for item in rows:
+        row = _identity(run)
+        row.update({
+            "workload": "spatial_coverage",
+            "analysis_valid": run.get("analysis_valid"),
+            "run": run.get("run"),
+            "run_dir": str(run_dir),
+            "checkpoint_offset_s": item.get("checkpoint_offset_s"),
+            "checkpoint_label": _offset_slug(float(item.get("checkpoint_offset_s"))),
+            "t_cover_s": t_cover_s,
+            "total_packets": item.get("total_packets"),
+            "total_bytes": item.get("total_bytes"),
+            "pcap_count": item.get("pcap_count"),
+        })
+        output.append(row)
+    return output
+
+
+def collect_usage_checkpoints(
+    runs: Sequence[Dict[str, Any]],
+    checkpoints: Sequence[Dict[str, Any]],
+    repo_root: Optional[Path] = None,
+    cache_root: Optional[Path] = None,
+) -> List[Dict[str, Any]]:
+    if repo_root is None:
+        repo_root = Path(__file__).resolve().parent.parent
+    apps_config = _load_apps_config(repo_root)
+    offsets_by_run_dir: Dict[str, set] = defaultdict(set)
+    for checkpoint in checkpoints:
+        if checkpoint.get("analysis_valid") is not True:
+            continue
+        offset = _finite_number(checkpoint.get("checkpoint_offset_s"))
+        run_dir = checkpoint.get("run_dir")
+        if offset is not None and run_dir:
+            offsets_by_run_dir[str(run_dir)].add(offset)
+
+    output = []
+    for index, run in enumerate(runs, start=1):
+        if run.get("analysis_valid") is not True:
+            continue
+        run_dir = str(run.get("run_dir"))
+        offsets = sorted(offsets_by_run_dir.get(run_dir, ()))
+        if not offsets:
+            continue
+        run_path = Path(run_dir)
+        cache = _usage_cache_path(run_path, cache_root)
+        if (
+            not (cache is not None and cache.exists())
+            and not any(run_path.glob("node_*.pcap"))
+        ):
+            continue
+        print(f"[INFO] Usage checkpoints: {index}/{len(runs)} {run_dir}", file=sys.stderr)
+        output.extend(_run_usage_checkpoints(run, offsets, apps_config, repo_root, cache_root))
+    return output
+
+
+def aggregate_usage_checkpoints(rows: Sequence[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    keys = ("scenario_family", "datapoint_key", "algorithm", "checkpoint_offset_s")
+    output = []
+    for _, group in sorted(_group(rows, keys).items(), key=lambda item: str(item[0])):
+        first = group[0]
+        row = _identity(first)
+        row.update({
+            "checkpoint_offset_s": first.get("checkpoint_offset_s"),
+            "checkpoint_label": first.get("checkpoint_label"),
+            "runs_total": len(group),
+            "runs_valid": sum(item.get("analysis_valid") is True for item in group),
+        })
+        valid = [item for item in group if item.get("analysis_valid") is True]
+        for field in ("total_packets", "total_bytes"):
+            row.update(_mean_ci((item.get(field) for item in valid), field))
+        output.append(row)
+    return output
+
+
 def _write_csv(path: Path, rows: Sequence[Mapping[str, Any]]) -> bool:
     if not rows:
         if path.exists():
@@ -542,13 +816,20 @@ def write_results(results_root: Path, output_dir: Path, strict: bool = False) ->
     if not runs:
         print(f"No spatial_coverage_analysis.json files found under {results_root}.")
         return {"runs": 0, "checkpoints": 0, "nodes": 0, "errors": len(errors)}
+    usage_checkpoints = collect_usage_checkpoints(
+        runs,
+        checkpoints,
+        cache_root=output_dir / ".spatial_usage_cache",
+    )
     tables = {
         "runs": runs,
         "checkpoints": checkpoints,
         "nodes": nodes,
+        "usage_checkpoints": usage_checkpoints,
         "car": aggregate_car(checkpoints),
         "tcover": aggregate_tcover(runs),
         "overhead": aggregate_overhead(runs),
+        "usage": aggregate_usage_checkpoints(usage_checkpoints),
     }
     for name, rows in tables.items():
         path = output_dir / GENERATED_FILES[name]
@@ -556,7 +837,13 @@ def write_results(results_root: Path, output_dir: Path, strict: bool = False) ->
             print(f"Saved {path} ({len(rows)} rows)")
         else:
             print(f"Skipped {path} (no rows)")
-    return {"runs": len(runs), "checkpoints": len(checkpoints), "nodes": len(nodes), "errors": len(errors)}
+    return {
+        "runs": len(runs),
+        "checkpoints": len(checkpoints),
+        "nodes": len(nodes),
+        "usage_checkpoints": len(usage_checkpoints),
+        "errors": len(errors),
+    }
 
 
 def main(argv: Optional[Sequence[str]] = None) -> int:
