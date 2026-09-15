@@ -324,7 +324,12 @@ if __name__ == '__main__':
     localdir = os.path.dirname(os.path.abspath(__file__))
     #############################################################################
     mace = Mace(main_settings)
-    sys.exit(mace.main()) #call scheduler function
+    exit_code = mace.main() #call scheduler function
+    if not args.daemon and args.scenario is not None:
+      sys.stdout.flush()
+      sys.stderr.flush()
+      os._exit(exit_code)
+    sys.exit(exit_code)
   except KeyboardInterrupt:
     logging.error("Interrupted by ctrl+c")
     sys.exit(130)
