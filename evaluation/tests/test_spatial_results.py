@@ -243,6 +243,69 @@ class SpatialAggregationTests(unittest.TestCase):
         self.assertFalse(any(name.startswith("car_overhead_") for name in names))
         self.assertFalse(any(name.startswith("tcover_") for name in names))
 
+    def test_plot_pipeline_splits_packet_loss_when_density_is_x_axis(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp) / "results"
+            tables = Path(tmp) / "tables"
+            plots = Path(tmp) / "plots"
+            _make_run(root, "coverage_ip", "rapid", "run_1")
+            _make_run(root, "coverage_ip", "rapid", "run_2", seed=2, trace_hash="trace-b")
+            write_results(root, tables, strict=True)
+
+            car = tables / "aggregated_spatial_car.csv"
+            usage = tables / "aggregated_spatial_usage_checkpoints.csv"
+            with car.open(newline="", encoding="utf-8") as source:
+                car_rows = list(csv.DictReader(source))
+                car_fields = list(car_rows[0])
+            split_car_rows = []
+            for loss, nodes in (("0", "10"), ("10", "20")):
+                for row in car_rows:
+                    item = dict(row)
+                    item["network_error"] = loss
+                    item["nodes_cfg"] = nodes
+                    item["density_nodes_km2"] = nodes
+                    item["datapoint_key"] = f"{item['datapoint_key']}:loss={loss}:nodes={nodes}"
+                    split_car_rows.append(item)
+            with car.open("w", newline="", encoding="utf-8") as output:
+                writer = csv.DictWriter(output, fieldnames=car_fields)
+                writer.writeheader()
+                writer.writerows(split_car_rows)
+
+            split_usage_rows = []
+            usage_fields = list(car_fields)
+            for field in ("total_packets_mean", "total_packets_ci_low", "total_packets_ci_high"):
+                if field not in usage_fields:
+                    usage_fields.append(field)
+            for row in split_car_rows:
+                item = dict(row)
+                item["total_packets_mean"] = "100"
+                item["total_packets_ci_low"] = "90"
+                item["total_packets_ci_high"] = "110"
+                split_usage_rows.append(item)
+            with usage.open("w", newline="", encoding="utf-8") as output:
+                writer = csv.DictWriter(output, fieldnames=usage_fields)
+                writer.writeheader()
+                writer.writerows(split_usage_rows)
+
+            result = plot_main(
+                [
+                    "--input-dir", str(tables),
+                    "--output-dir", str(plots),
+                    "--formats", "pdf",
+                ]
+            )
+            names = {path.name for path in plots.glob("*.pdf")}
+
+        self.assertEqual(result, 0)
+        self.assertIn("coverage__loss_0pct__convergence.pdf", names)
+        self.assertIn("coverage__loss_10pct__convergence.pdf", names)
+        self.assertIn("coverage__loss_0pct__convergence_zoom_y.pdf", names)
+        self.assertIn("coverage__loss_10pct__convergence_zoom_y.pdf", names)
+        self.assertIn("coverage__loss_0pct__usage.pdf", names)
+        self.assertIn("coverage__loss_10pct__usage.pdf", names)
+        self.assertNotIn("coverage__convergence.pdf", names)
+        self.assertNotIn("coverage__usage.pdf", names)
+
     def test_plot_axis_auto_detection_prefers_varying_numeric_parameter(self):
         import pandas as pd
 

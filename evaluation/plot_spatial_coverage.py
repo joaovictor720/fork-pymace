@@ -93,13 +93,15 @@ X_LABELS = {
     "density_nodes_km2": "Nodes per km$^2$",
     "nodes_cfg": "Number of Nodes",
     "grid_cell_count": "Number of Spatial Cells",
-    "network_error": "Configured Packet Error Rate",
+    "network_error": "Configured Packet Error Rate (%)",
     "network_range_m": "Radio Range (m)",
     "area_km2": "Area (km$^2$)",
     "position_poll_interval_ms": "Position Polling Interval (ms)",
     "dissemination_interval_s": "Dissemination Interval (s)",
     "mobility_speed_max_mps": "Maximum Mobility Speed (m/s)",
 }
+
+PLOT_SPLIT_COLUMNS = ("network_error",)
 
 
 def _slug(value: object) -> str:
@@ -115,6 +117,73 @@ def _offset_slug(value: object) -> str:
     if math.isfinite(numeric) and abs(numeric - round(numeric)) < 1e-9:
         return f"{int(round(numeric))}s"
     return f"{numeric:g}s"
+
+
+def _numeric_slug(value: object) -> str:
+    try:
+        numeric = float(value)
+    except (TypeError, ValueError):
+        return _slug(value)
+    if not math.isfinite(numeric):
+        return "unknown"
+    if abs(numeric - round(numeric)) < 1e-9:
+        return str(int(round(numeric)))
+    return f"{numeric:g}".replace(".", "p")
+
+
+def _format_split_value(column: str, value: object) -> str:
+    try:
+        numeric = float(value)
+    except (TypeError, ValueError):
+        return str(value)
+    if column == "network_error" and math.isfinite(numeric):
+        return f"{numeric:g}%"
+    if math.isfinite(numeric):
+        return f"{numeric:g}"
+    return str(value)
+
+
+def _split_slug(column: str, value: object) -> str:
+    if column == "network_error":
+        return f"loss_{_numeric_slug(value)}pct"
+    return f"{_slug(column)}_{_slug(_format_split_value(column, value))}"
+
+
+def _split_label(column: str, value: object) -> str:
+    if column == "network_error":
+        return f"Packet loss = {_format_split_value(column, value)}"
+    return f"{X_LABELS.get(column, column)} = {_format_split_value(column, value)}"
+
+
+def _plot_splits(df: pd.DataFrame, x: str):
+    split_columns = []
+    for column in PLOT_SPLIT_COLUMNS:
+        if column == x or column not in df.columns:
+            continue
+        if pd.to_numeric(df[column], errors="coerce").nunique(dropna=True) > 1:
+            split_columns.append(column)
+    if not split_columns:
+        yield "", None, df
+        return
+
+    grouper = split_columns[0] if len(split_columns) == 1 else split_columns
+    grouped = df.groupby(grouper, dropna=False)
+    for keys, subset in grouped:
+        if not isinstance(keys, tuple):
+            keys = (keys,)
+        suffix_parts = []
+        label_parts = []
+        for column, value in zip(split_columns, keys):
+            suffix_parts.append(_split_slug(column, value))
+            label_parts.append(_split_label(column, value))
+        yield "__" + "__".join(suffix_parts), "; ".join(label_parts), subset
+
+
+def _page_label(offset: object, split_label: Optional[str]) -> str:
+    label = _checkpoint_label(offset)
+    if split_label:
+        return f"{label}; {split_label}"
+    return label
 
 
 def choose_x(df: pd.DataFrame, requested: str = "auto") -> str:
@@ -523,52 +592,59 @@ def plot_convergence_pdfs(frame: pd.DataFrame, output_dir: Path, requested_x: st
     for family, family_df in frame.groupby("scenario_family", dropna=False):
         x = choose_x(family_df, requested_x)
         xlabel = X_LABELS.get(x, x)
-        normal_figures = []
-        zoom_figures = []
-        offset_groups = sorted(
-            family_df.groupby("checkpoint_offset_s", dropna=False),
-            key=lambda item: float(item[0]),
-        )
-        for offset, offset_df in offset_groups:
-            offset_df = offset_df.copy()
-            offset_df[x] = _number(offset_df, x)
-            offset_df = offset_df.dropna(subset=[x])
-            if offset_df.empty:
-                continue
-            normal = build_line_with_ci(
-                df=offset_df,
-                x=x,
-                y="swarm_car_mean",
-                ci_low="swarm_car_ci_low",
-                ci_high="swarm_car_ci_high",
-                algo_col="algorithm",
-                xlabel=xlabel,
-                ylabel="Synchronization (%)",
-                zoom_y=False,
-                page_label=_checkpoint_label(offset),
+        for suffix, split_label, split_df in _plot_splits(family_df, x):
+            normal_figures = []
+            zoom_figures = []
+            offset_groups = sorted(
+                split_df.groupby("checkpoint_offset_s", dropna=False),
+                key=lambda item: float(item[0]),
             )
-            zoom = build_line_with_ci(
-                df=offset_df,
-                x=x,
-                y="swarm_car_mean",
-                ci_low="swarm_car_ci_low",
-                ci_high="swarm_car_ci_high",
-                algo_col="algorithm",
-                xlabel=xlabel,
-                ylabel="Synchronization (%)",
-                zoom_y=True,
-                page_label=_checkpoint_label(offset),
+            for offset, offset_df in offset_groups:
+                offset_df = offset_df.copy()
+                offset_df[x] = _number(offset_df, x)
+                offset_df = offset_df.dropna(subset=[x])
+                if offset_df.empty:
+                    continue
+                normal = build_line_with_ci(
+                    df=offset_df,
+                    x=x,
+                    y="swarm_car_mean",
+                    ci_low="swarm_car_ci_low",
+                    ci_high="swarm_car_ci_high",
+                    algo_col="algorithm",
+                    xlabel=xlabel,
+                    ylabel="Synchronization (%)",
+                    zoom_y=False,
+                    page_label=_page_label(offset, split_label),
+                )
+                zoom = build_line_with_ci(
+                    df=offset_df,
+                    x=x,
+                    y="swarm_car_mean",
+                    ci_low="swarm_car_ci_low",
+                    ci_high="swarm_car_ci_high",
+                    algo_col="algorithm",
+                    xlabel=xlabel,
+                    ylabel="Synchronization (%)",
+                    zoom_y=True,
+                    page_label=_page_label(offset, split_label),
+                )
+                if normal is not None:
+                    normal_figures.append(normal)
+                if zoom is not None:
+                    zoom_figures.append(zoom)
+            normal_path = _write_pdf_pages(
+                output_dir / f"{_slug(family)}{suffix}__convergence.pdf",
+                normal_figures,
             )
-            if normal is not None:
-                normal_figures.append(normal)
-            if zoom is not None:
-                zoom_figures.append(zoom)
-        normal_path = _write_pdf_pages(output_dir / f"{_slug(family)}__convergence.pdf", normal_figures)
-        zoom_path = _write_pdf_pages(output_dir / f"{_slug(family)}__convergence_zoom_y.pdf", zoom_figures)
-        if normal_path is not None:
-            written.append(normal_path)
-        if zoom_path is not None:
-            written.append(zoom_path)
+            zoom_path = _write_pdf_pages(
+                output_dir / f"{_slug(family)}{suffix}__convergence_zoom_y.pdf",
+                zoom_figures,
+            )
+            if normal_path is not None:
+                written.append(normal_path)
+            if zoom_path is not None:
+                written.append(zoom_path)
     return written
 
 
@@ -588,33 +664,39 @@ def plot_usage_pdf(
         family_df = family_df.dropna(subset=[x])
         if family_df.empty:
             continue
-        figures = []
         y_upper = _fixed_bar_y_upper(family_df, "total_packets_mean", "total_packets_ci_high")
-        if "checkpoint_offset_s" in family_df.columns:
-            groups = sorted(
-                family_df.groupby("checkpoint_offset_s", dropna=False),
-                key=lambda item: float(item[0]),
-            )
-        else:
-            groups = [(None, family_df)]
-        for offset, offset_df in groups:
-            figure = build_bar_with_ci(
-                df=offset_df,
-                x=x,
-                y="total_packets_mean",
-                ci_low="total_packets_ci_low",
-                ci_high="total_packets_ci_high",
-                algo_col="algorithm",
-                xlabel=X_LABELS.get(x, x),
-                ylabel="Total Packets",
-                page_label=_checkpoint_label(offset) if offset is not None else None,
-                y_upper=y_upper,
-            )
-            if figure is not None:
-                figures.append(figure)
-        path = _write_pdf_pages(output_dir / f"{_slug(family)}__usage.pdf", figures)
-        if path is not None:
-            written.append(path)
+        for suffix, split_label, split_df in _plot_splits(family_df, x):
+            figures = []
+            if "checkpoint_offset_s" in split_df.columns:
+                groups = sorted(
+                    split_df.groupby("checkpoint_offset_s", dropna=False),
+                    key=lambda item: float(item[0]),
+                )
+            else:
+                groups = [(None, split_df)]
+            for offset, offset_df in groups:
+                page_label = None
+                if offset is not None:
+                    page_label = _page_label(offset, split_label)
+                elif split_label:
+                    page_label = split_label
+                figure = build_bar_with_ci(
+                    df=offset_df,
+                    x=x,
+                    y="total_packets_mean",
+                    ci_low="total_packets_ci_low",
+                    ci_high="total_packets_ci_high",
+                    algo_col="algorithm",
+                    xlabel=X_LABELS.get(x, x),
+                    ylabel="Total Packets",
+                    page_label=page_label,
+                    y_upper=y_upper,
+                )
+                if figure is not None:
+                    figures.append(figure)
+            path = _write_pdf_pages(output_dir / f"{_slug(family)}{suffix}__usage.pdf", figures)
+            if path is not None:
+                written.append(path)
     return written
 
 

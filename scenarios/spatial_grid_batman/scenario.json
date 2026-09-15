@@ -56,7 +56,8 @@
   },
   "experiment": {
     "vary": {
-      "nodes.count": [10, 20, 30, 40, 50]
+      "nodes.count": [10, 20, 30, 40, 50],
+      "network.error": [0, 10]
     }
   }
 }

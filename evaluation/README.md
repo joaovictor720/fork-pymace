@@ -126,8 +126,11 @@ because replaying one trace with multiple dissemination algorithms does not
 create additional independent mobility observations. The generated plots live
 under `results/plots/spatial/`: `__convergence.pdf`,
 `__convergence_zoom_y.pdf`, and `__usage.pdf`. Each PDF has one page per
-configured checkpoint offset. Use `--x COLUMN` with `plot_spatial_coverage.py`
-to override automatic sweep-axis detection.
+configured checkpoint offset. When packet loss varies outside the selected
+x-axis, the plotter writes separate `__loss_0pct__*` and `__loss_10pct__*`
+PDFs instead of overlaying both loss levels on the same density points. Use
+`--x COLUMN` with `plot_spatial_coverage.py` to override automatic sweep-axis
+detection.
 
 Spatial event logs distinguish `local_coverage`, `remote_merge`,
 `dissemination_trigger`, received traffic, and primitive publish/reset actions.
@@ -139,10 +142,11 @@ Unix time and are aligned to trace-relative time through
 #### Spatial grid density experiment
 
 `scenarios/spatial_grid_ip` and `scenarios/spatial_grid_batman` define the
-1km x 1km spatial workload used for density comparisons.  Both scenarios use a
-20x20 `GridSpec` (400 cells), `coverage.start_delay_s=30`, and
+1km x 1km spatial workload used for density and packet-loss comparisons.  Both
+scenarios use a 20x20 `GridSpec` (400 cells), `coverage.start_delay_s=30`, and
 `coverage.post_coverage_window_s=10`.  The density sweep is cumulative:
-10, 20, 30, 40 and 50 nodes use prefixes of the same run trace set.
+10, 20, 30, 40 and 50 nodes use prefixes of the same run trace set. Each
+density is evaluated with configured packet error rates of 0% and 10%.
 
 The fixed mobility inputs live in
 `evaluation/trace_catalogs/spatial_grid_1km_20x20`.  The catalog contains 10
