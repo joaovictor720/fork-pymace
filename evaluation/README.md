@@ -143,17 +143,22 @@ Unix time and are aligned to trace-relative time through
 
 `scenarios/spatial_grid_ip` and `scenarios/spatial_grid_batman` define the
 1km x 1km spatial workload used for density and packet-loss comparisons.  Both
-scenarios use a 20x20 `GridSpec` (400 cells), `coverage.start_delay_s=30`, and
+scenarios use a 24x24 `GridSpec` (576 cells), `coverage.start_delay_s=30`, and
 `coverage.post_coverage_window_s=10`.  The density sweep is cumulative:
 10, 20, 30, 40 and 50 nodes use prefixes of the same run trace set. Each
-density is evaluated with configured packet error rates of 0% and 10%.
+density is evaluated with configured packet error rates of 0% and 10%. The
+radio range is fixed at 140m and the deterministic mobility traces are
+generated with a fixed 20m/s movement speed. The 24x24 grid is the largest
+square grid that fits the current 1200-byte datagram budget without adding
+fragmentation.
 
 The fixed mobility inputs live in
-`evaluation/trace_catalogs/spatial_grid_1km_20x20`.  The catalog contains 10
+`evaluation/trace_catalogs/spatial_grid_1km_24x24`.  The catalog contains 10
 independent trace sets with 50 node CSVs each.  In every set, nodes 0..9 are a
 randomized stratified sweep that guarantees physical coverage of the full grid
-in roughly 1-2 minutes; nodes 10..49 are seeded random patrols that increase
-density and connectivity variation.  `run_scenario.sh` passes its `RUN_ID` to
+after the 30s coverage-start offset; nodes 10..49 are seeded random patrols
+that increase density and connectivity variation.  `run_scenario.sh` passes
+its `RUN_ID` to
 `generate_scenario.py`, which materializes only the first N traces needed by
 the expanded density variant.
 

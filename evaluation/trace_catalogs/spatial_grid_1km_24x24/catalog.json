@@ -1,0 +1,384 @@
+{
+  "accepted_t_cover_range_s": [
+    120.0,
+    190.0
+  ],
+  "area": {
+    "x": 1000.0,
+    "y": 1000.0
+  },
+  "catalog_sha256": "af2704b12233adb7a994ac02c2ba0a684fe89676e75b1328b2615047178c430d",
+  "combined_sha256": "2a06c738c0cebf5cc1ce32e4f9a0b4f77b735aae6219af543c1f2c56f542fcaa",
+  "coverage_node_count": 10,
+  "coverage_speed_mps": 20.0,
+  "coverage_start_time_s": 30.0,
+  "density_prefixes": [
+    10,
+    20,
+    30,
+    40,
+    50
+  ],
+  "duration_s": 220.0,
+  "generator_policy": "stratified_randomized_fixed_speed_sweep_v2",
+  "grid": {
+    "cell_count": 576,
+    "cell_height_m": 41.666666666666664,
+    "cell_width_m": 41.666666666666664,
+    "cols": 24,
+    "height_m": 1000.0,
+    "origin_x_m": 0.0,
+    "origin_y_m": 0.0,
+    "rows": 24,
+    "width_m": 1000.0
+  },
+  "interval_s": 0.2,
+  "node_count": 50,
+  "patrol_speed_mps": 20.0,
+  "post_coverage_window_s": 10.0,
+  "run_count": 10,
+  "runs": [
+    {
+      "central_seed": 2093518614,
+      "combined_sha256": "c93d5c4520c3eaa066e1dbc4590fbcaa525171e6e0afb9b0a029eaa7ae726f85",
+      "manifest": "run_001/manifest.json",
+      "manifest_sha256": "9bb09ace76a8ea7f7abba98d3aaeeeaf625b1a79e7454aac8ffc0c3747905170",
+      "prefix_validations": {
+        "10": {
+          "covered_cell_count": 576,
+          "t_cover_s": 178.8,
+          "total_cell_count": 576
+        },
+        "20": {
+          "covered_cell_count": 576,
+          "t_cover_s": 178.8,
+          "total_cell_count": 576
+        },
+        "30": {
+          "covered_cell_count": 576,
+          "t_cover_s": 178.8,
+          "total_cell_count": 576
+        },
+        "40": {
+          "covered_cell_count": 576,
+          "t_cover_s": 178.8,
+          "total_cell_count": 576
+        },
+        "50": {
+          "covered_cell_count": 576,
+          "t_cover_s": 178.8,
+          "total_cell_count": 576
+        }
+      },
+      "run": "run_001"
+    },
+    {
+      "central_seed": 17719117,
+      "combined_sha256": "7e27e796cfee3140e904aac28f1da4b918655c821d46e7c500c6e08ad5c710a4",
+      "manifest": "run_002/manifest.json",
+      "manifest_sha256": "5b2e821e9bceaf2dc3612769239e2b3ffeb1cf2a5867fdf9c4fba6d44299adf2",
+      "prefix_validations": {
+        "10": {
+          "covered_cell_count": 576,
+          "t_cover_s": 180.4,
+          "total_cell_count": 576
+        },
+        "20": {
+          "covered_cell_count": 576,
+          "t_cover_s": 180.4,
+          "total_cell_count": 576
+        },
+        "30": {
+          "covered_cell_count": 576,
+          "t_cover_s": 180.4,
+          "total_cell_count": 576
+        },
+        "40": {
+          "covered_cell_count": 576,
+          "t_cover_s": 180.4,
+          "total_cell_count": 576
+        },
+        "50": {
+          "covered_cell_count": 576,
+          "t_cover_s": 174.0,
+          "total_cell_count": 576
+        }
+      },
+      "run": "run_002"
+    },
+    {
+      "central_seed": 340779781,
+      "combined_sha256": "9532c940b7803498c5c2a8c6c708377709763bf471faaf093742643cf6ae7fc9",
+      "manifest": "run_003/manifest.json",
+      "manifest_sha256": "703bbe9e8b6f182b15a5b97fc7cfc1603a5d0aa6f396f2eda9b5b2d0f000cfd4",
+      "prefix_validations": {
+        "10": {
+          "covered_cell_count": 576,
+          "t_cover_s": 178.4,
+          "total_cell_count": 576
+        },
+        "20": {
+          "covered_cell_count": 576,
+          "t_cover_s": 177.0,
+          "total_cell_count": 576
+        },
+        "30": {
+          "covered_cell_count": 576,
+          "t_cover_s": 177.0,
+          "total_cell_count": 576
+        },
+        "40": {
+          "covered_cell_count": 576,
+          "t_cover_s": 176.6,
+          "total_cell_count": 576
+        },
+        "50": {
+          "covered_cell_count": 576,
+          "t_cover_s": 176.6,
+          "total_cell_count": 576
+        }
+      },
+      "run": "run_003"
+    },
+    {
+      "central_seed": 1261654888,
+      "combined_sha256": "ba2b8381d297adc649cbe558fb311d70a6592624f9bc7e086d19456f5bfba8b9",
+      "manifest": "run_004/manifest.json",
+      "manifest_sha256": "59a6d98bbdb45e3d2de09ca2c6e16a9f1100bb1d5fa42f24d24fc2c22e6ebba2",
+      "prefix_validations": {
+        "10": {
+          "covered_cell_count": 576,
+          "t_cover_s": 180.0,
+          "total_cell_count": 576
+        },
+        "20": {
+          "covered_cell_count": 576,
+          "t_cover_s": 180.0,
+          "total_cell_count": 576
+        },
+        "30": {
+          "covered_cell_count": 576,
+          "t_cover_s": 180.0,
+          "total_cell_count": 576
+        },
+        "40": {
+          "covered_cell_count": 576,
+          "t_cover_s": 180.0,
+          "total_cell_count": 576
+        },
+        "50": {
+          "covered_cell_count": 576,
+          "t_cover_s": 180.0,
+          "total_cell_count": 576
+        }
+      },
+      "run": "run_004"
+    },
+    {
+      "central_seed": 1250352480,
+      "combined_sha256": "fafbbc7538a93fc7f4d8c3218d389cef142587c753962206359d3d9c5003cb76",
+      "manifest": "run_005/manifest.json",
+      "manifest_sha256": "abd7edd60d67b478e18980da3030f697e5ed0fd1b46d6985154ab71d3f15d142",
+      "prefix_validations": {
+        "10": {
+          "covered_cell_count": 576,
+          "t_cover_s": 179.2,
+          "total_cell_count": 576
+        },
+        "20": {
+          "covered_cell_count": 576,
+          "t_cover_s": 179.2,
+          "total_cell_count": 576
+        },
+        "30": {
+          "covered_cell_count": 576,
+          "t_cover_s": 178.8,
+          "total_cell_count": 576
+        },
+        "40": {
+          "covered_cell_count": 576,
+          "t_cover_s": 178.8,
+          "total_cell_count": 576
+        },
+        "50": {
+          "covered_cell_count": 576,
+          "t_cover_s": 178.8,
+          "total_cell_count": 576
+        }
+      },
+      "run": "run_005"
+    },
+    {
+      "central_seed": 1054724148,
+      "combined_sha256": "178078206b97f0052250b42f2cc11476f1d5c50b7c25a407d7100c6151bafe23",
+      "manifest": "run_006/manifest.json",
+      "manifest_sha256": "acd3aada6e6640e18a7e6374715929de5585a87f68f1c1f5a7e51a955720c7ae",
+      "prefix_validations": {
+        "10": {
+          "covered_cell_count": 576,
+          "t_cover_s": 179.0,
+          "total_cell_count": 576
+        },
+        "20": {
+          "covered_cell_count": 576,
+          "t_cover_s": 179.0,
+          "total_cell_count": 576
+        },
+        "30": {
+          "covered_cell_count": 576,
+          "t_cover_s": 179.0,
+          "total_cell_count": 576
+        },
+        "40": {
+          "covered_cell_count": 576,
+          "t_cover_s": 179.0,
+          "total_cell_count": 576
+        },
+        "50": {
+          "covered_cell_count": 576,
+          "t_cover_s": 179.0,
+          "total_cell_count": 576
+        }
+      },
+      "run": "run_006"
+    },
+    {
+      "central_seed": 23851367,
+      "combined_sha256": "dee7d91e75b5dbadd89779d2b7d229fd5221798e5de8937b84cc911635f33019",
+      "manifest": "run_007/manifest.json",
+      "manifest_sha256": "11bff3d873deac50ebc2aac3a3d9660b28e201d1fe7c1dbdba41eb2346e819ac",
+      "prefix_validations": {
+        "10": {
+          "covered_cell_count": 576,
+          "t_cover_s": 178.6,
+          "total_cell_count": 576
+        },
+        "20": {
+          "covered_cell_count": 576,
+          "t_cover_s": 178.4,
+          "total_cell_count": 576
+        },
+        "30": {
+          "covered_cell_count": 576,
+          "t_cover_s": 178.4,
+          "total_cell_count": 576
+        },
+        "40": {
+          "covered_cell_count": 576,
+          "t_cover_s": 177.6,
+          "total_cell_count": 576
+        },
+        "50": {
+          "covered_cell_count": 576,
+          "t_cover_s": 177.6,
+          "total_cell_count": 576
+        }
+      },
+      "run": "run_007"
+    },
+    {
+      "central_seed": 1914507579,
+      "combined_sha256": "22f60bf3f4f77c330fd202313460479a1e6bd0ad459bf269b4dd110365924935",
+      "manifest": "run_008/manifest.json",
+      "manifest_sha256": "37bda205c5021dc5db016253a7d50ae580801189d3d4181b8bcdc92a2c614f6d",
+      "prefix_validations": {
+        "10": {
+          "covered_cell_count": 576,
+          "t_cover_s": 179.2,
+          "total_cell_count": 576
+        },
+        "20": {
+          "covered_cell_count": 576,
+          "t_cover_s": 179.2,
+          "total_cell_count": 576
+        },
+        "30": {
+          "covered_cell_count": 576,
+          "t_cover_s": 179.2,
+          "total_cell_count": 576
+        },
+        "40": {
+          "covered_cell_count": 576,
+          "t_cover_s": 179.2,
+          "total_cell_count": 576
+        },
+        "50": {
+          "covered_cell_count": 576,
+          "t_cover_s": 179.2,
+          "total_cell_count": 576
+        }
+      },
+      "run": "run_008"
+    },
+    {
+      "central_seed": 2071012138,
+      "combined_sha256": "65d59f18949bf359c3fd3d520a57310d7a95576b773ab71ea1724d151e83296e",
+      "manifest": "run_009/manifest.json",
+      "manifest_sha256": "a45a436f5ff27c74b949749f284eddcc38808ed8b70a382edc8d85b1fec7da0b",
+      "prefix_validations": {
+        "10": {
+          "covered_cell_count": 576,
+          "t_cover_s": 179.8,
+          "total_cell_count": 576
+        },
+        "20": {
+          "covered_cell_count": 576,
+          "t_cover_s": 179.8,
+          "total_cell_count": 576
+        },
+        "30": {
+          "covered_cell_count": 576,
+          "t_cover_s": 179.8,
+          "total_cell_count": 576
+        },
+        "40": {
+          "covered_cell_count": 576,
+          "t_cover_s": 179.8,
+          "total_cell_count": 576
+        },
+        "50": {
+          "covered_cell_count": 576,
+          "t_cover_s": 179.8,
+          "total_cell_count": 576
+        }
+      },
+      "run": "run_009"
+    },
+    {
+      "central_seed": 1184596165,
+      "combined_sha256": "0d9b04e712a0a8acb7dd2be9704a632dd24209b2a882622e25c9b49e37ce398e",
+      "manifest": "run_010/manifest.json",
+      "manifest_sha256": "056a22e835a3a98ce8c6ad84f02f27201d25edabd3d50f7757860fdf97588c61",
+      "prefix_validations": {
+        "10": {
+          "covered_cell_count": 576,
+          "t_cover_s": 179.8,
+          "total_cell_count": 576
+        },
+        "20": {
+          "covered_cell_count": 576,
+          "t_cover_s": 179.8,
+          "total_cell_count": 576
+        },
+        "30": {
+          "covered_cell_count": 576,
+          "t_cover_s": 179.8,
+          "total_cell_count": 576
+        },
+        "40": {
+          "covered_cell_count": 576,
+          "t_cover_s": 179.8,
+          "total_cell_count": 576
+        },
+        "50": {
+          "covered_cell_count": 576,
+          "t_cover_s": 179.8,
+          "total_cell_count": 576
+        }
+      },
+      "run": "run_010"
+    }
+  ],
+  "schema": "mace_spatial_trace_catalog_v1",
+  "seed": 20260908
+}

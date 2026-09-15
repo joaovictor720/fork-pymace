@@ -2,7 +2,7 @@
   "name": "spatial_grid_batman",
   "seed": 20260908,
   "simulation": {
-    "duration": 140,
+    "duration": 220,
     "start_delay": 5,
     "area": {
       "x": 1000,
@@ -17,16 +17,16 @@
   "mobility": {
     "model": "trace_catalog",
     "deterministic_replay": true,
-    "trace_catalog": "evaluation/trace_catalogs/spatial_grid_1km_20x20",
+    "trace_catalog": "evaluation/trace_catalogs/spatial_grid_1km_24x24",
     "trace_interval": 0.2,
     "pause": 0,
-    "speed": [8.0, 24.0]
+    "speed": [20.0, 20.0]
   },
   "network": {
     "routing": "batman",
     "hardif_behavior": "emulated_wifi",
     "bandwidth": "11000000",
-    "range": 160,
+    "range": 140,
     "delay": 5,
     "jitter": 0,
     "error": 0
@@ -36,8 +36,8 @@
     "origin_y_m": 0,
     "width_m": 1000,
     "height_m": 1000,
-    "rows": 20,
-    "cols": 20
+    "rows": 24,
+    "cols": 24
   },
   "node_config": {
     "workload": "spatial_coverage",

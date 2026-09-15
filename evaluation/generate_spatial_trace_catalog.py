@@ -2,9 +2,9 @@
 """Generate deterministic trace sets for the spatial grid experiments.
 
 Each catalog run contains 50 node traces.  Nodes 0..9 execute a randomized
-stratified sweep that guarantees full-grid coverage after the coverage start
-time; nodes 10..49 execute seeded random patrols to provide density and
-connectivity variation.
+stratified sweep at a fixed movement speed that guarantees full-grid coverage
+after the coverage start time; nodes 10..49 execute seeded random patrols to
+provide density and connectivity variation.
 """
 
 import argparse
@@ -31,9 +31,9 @@ from spatial_coverage import GridSpec, check_traces, read_traces
 
 
 CATALOG_POLICY = "mace_spatial_trace_catalog_v1"
-GENERATOR_POLICY = "stratified_randomized_sweep_v1"
+GENERATOR_POLICY = "stratified_randomized_fixed_speed_sweep_v2"
 DEFAULT_CATALOG = (
-    ROOT_DIR / "evaluation" / "trace_catalogs" / "spatial_grid_1km_20x20"
+    ROOT_DIR / "evaluation" / "trace_catalogs" / "spatial_grid_1km_24x24"
 )
 
 Point = Tuple[float, float]
@@ -46,10 +46,6 @@ def _distance(left: Point, right: Point) -> float:
 
 def _clamp(value: float, lower: float, upper: float) -> float:
     return max(lower, min(upper, value))
-
-
-def _quantized(value: float, interval_s: float) -> float:
-    return round(round(value / interval_s) * interval_s, 9)
 
 
 def _cell_center(grid: GridSpec, row: int, col: int) -> Point:
@@ -110,35 +106,22 @@ def _coverage_route(
     return route
 
 
-def _timed_route(
+def _timed_route_at_speed(
     points: Sequence[Point],
     start_s: float,
-    finish_s: float,
+    speed_mps: float,
 ) -> List[TimedPoint]:
     if not points:
         raise ValueError("route cannot be empty")
-    if finish_s <= start_s:
-        raise ValueError("route finish must be after start")
-    if len(points) == 1:
-        x, y = points[0]
-        return [(start_s, x, y), (finish_s, x, y)]
-
-    segment_lengths = [
-        _distance(left, right)
-        for left, right in zip(points, points[1:])
-    ]
-    total_distance = sum(segment_lengths)
-    if total_distance <= 0.0:
-        raise ValueError("route distance must be positive")
-
+    if speed_mps <= 0.0:
+        raise ValueError("route speed must be positive")
     timed: List[TimedPoint] = [(start_s, points[0][0], points[0][1])]
-    elapsed = 0.0
-    duration_s = finish_s - start_s
-    for point, length in zip(points[1:-1], segment_lengths[:-1]):
-        elapsed += length
-        t = start_s + duration_s * (elapsed / total_distance)
+    t = start_s
+    previous = points[0]
+    for point in points[1:]:
+        t += _distance(previous, point) / speed_mps
         timed.append((t, point[0], point[1]))
-    timed.append((finish_s, points[-1][0], points[-1][1]))
+        previous = point
     return timed
 
 
@@ -170,59 +153,56 @@ def _append_patrol(
             waypoints.append((t, x, y))
 
 
-def _random_point_in_columns(
-    grid: GridSpec,
-    columns: Sequence[int],
-    rng: random.Random,
-) -> Point:
-    first = min(columns)
-    last = max(columns)
-    lower_x = grid.origin_x_m + first * grid.cell_width
-    upper_x = grid.origin_x_m + (last + 1) * grid.cell_width
-    return (
-        rng.uniform(lower_x, upper_x),
-        rng.uniform(grid.origin_y_m, grid.upper_y_m),
-    )
-
-
 def _coverage_waypoints(
     grid: GridSpec,
-    node_index: int,
     columns: Sequence[int],
     *,
-    run_rng: random.Random,
     node_rng: random.Random,
     coverage_start_s: float,
-    coverage_end_s: float,
     trace_duration_s: float,
-    forced_latest: bool,
-    interval_s: float,
+    coverage_speed_mps: float,
+    patrol_speed_mps: float,
 ) -> List[TimedPoint]:
     route = _coverage_route(grid, columns, node_rng, jitter_fraction=0.18)
-    route_start = _quantized(coverage_start_s, interval_s)
-    if forced_latest:
-        route_finish = coverage_end_s
-    else:
-        route_finish = coverage_end_s - run_rng.uniform(0.0, 5.0)
-        route_finish = max(route_finish, coverage_start_s + 45.0)
-        route_finish = _quantized(route_finish, interval_s)
-
+    route_start = coverage_start_s
     first_x, first_y = route[0]
-    warmup_start = _random_point_in_columns(grid, columns, node_rng)
-    warmup_mid = _random_point_in_columns(grid, columns, node_rng)
+    warmup_radius = min(
+        grid.cell_width * 1.5,
+        grid.cell_height * 1.5,
+        coverage_speed_mps * max(coverage_start_s, 0.0) * 0.2,
+    )
+
+    def nearby_start_point() -> Point:
+        angle = node_rng.uniform(0.0, 2.0 * math.pi)
+        distance = node_rng.uniform(0.0, warmup_radius)
+        return (
+            _clamp(
+                first_x + math.cos(angle) * distance,
+                grid.origin_x_m,
+                grid.upper_x_m,
+            ),
+            _clamp(
+                first_y + math.sin(angle) * distance,
+                grid.origin_y_m,
+                grid.upper_y_m,
+            ),
+        )
+
+    warmup_start = nearby_start_point()
+    warmup_mid = nearby_start_point()
     waypoints: List[TimedPoint] = [
         (0.0, warmup_start[0], warmup_start[1]),
         (coverage_start_s * 0.45, warmup_mid[0], warmup_mid[1]),
         (route_start, first_x, first_y),
     ]
-    route_points = _timed_route(route, route_start, route_finish)
+    route_points = _timed_route_at_speed(route, route_start, coverage_speed_mps)
     waypoints.extend(route_points[1:])
     _append_patrol(
         waypoints,
         rng=node_rng,
         grid=grid,
         until_s=trace_duration_s,
-        speed_range=(10.0, 22.0),
+        speed_range=(patrol_speed_mps, patrol_speed_mps),
         pause_probability=0.2,
         max_pause_s=1.5,
     )
@@ -233,6 +213,7 @@ def _random_patrol_waypoints(
     grid: GridSpec,
     rng: random.Random,
     trace_duration_s: float,
+    speed_mps: float,
 ) -> List[TimedPoint]:
     start = (
         rng.uniform(grid.origin_x_m, grid.upper_x_m),
@@ -244,7 +225,7 @@ def _random_patrol_waypoints(
         rng=rng,
         grid=grid,
         until_s=trace_duration_s,
-        speed_range=(8.0, 20.0),
+        speed_range=(speed_mps, speed_mps),
         pause_probability=0.25,
         max_pause_s=2.5,
     )
@@ -277,7 +258,7 @@ def _write_trace(
     rows_for_hash: List[Tuple[str, str, str, str]] = []
 
     with path.open("w", newline="", encoding="utf-8") as stream:
-        writer = csv.writer(stream)
+        writer = csv.writer(stream, lineterminator="\n")
         writer.writerow(["time_s", "x_m", "y_m", "z_m"])
         for sample_idx in range(sample_count):
             time_s = min(sample_idx * interval_s, duration_s)
@@ -324,7 +305,8 @@ def _generate_run(
     duration_s: float,
     coverage_start_s: float,
     post_coverage_window_s: float,
-    coverage_end_range_s: Tuple[float, float],
+    coverage_speed_mps: float,
+    patrol_speed_mps: float,
     accepted_t_cover_range_s: Tuple[float, float],
 ) -> Dict[str, Any]:
     run_name = "run_{:03d}".format(run_index)
@@ -333,11 +315,6 @@ def _generate_run(
     run_dir = out_dir / run_name
     run_dir.mkdir(parents=True, exist_ok=True)
 
-    coverage_end_s = _quantized(
-        run_rng.uniform(coverage_end_range_s[0], coverage_end_range_s[1]),
-        interval_s,
-    )
-    latest_node = run_rng.randrange(coverage_node_count)
     column_groups = _split_columns(grid.cols, coverage_node_count)
     run_rng.shuffle(column_groups)
 
@@ -348,20 +325,22 @@ def _generate_run(
         if node_index < coverage_node_count:
             waypoints = _coverage_waypoints(
                 grid,
-                node_index,
                 column_groups[node_index],
-                run_rng=run_rng,
                 node_rng=node_rng,
                 coverage_start_s=coverage_start_s,
-                coverage_end_s=coverage_end_s,
                 trace_duration_s=duration_s,
-                forced_latest=node_index == latest_node,
-                interval_s=interval_s,
+                coverage_speed_mps=coverage_speed_mps,
+                patrol_speed_mps=patrol_speed_mps,
             )
             role = "stratified_sweep"
             columns = column_groups[node_index]
         else:
-            waypoints = _random_patrol_waypoints(grid, node_rng, duration_s)
+            waypoints = _random_patrol_waypoints(
+                grid,
+                node_rng,
+                duration_s,
+                patrol_speed_mps,
+            )
             role = "random_patrol"
             columns = []
 
@@ -441,7 +420,8 @@ def _generate_run(
         "interval_s": interval_s,
         "duration_s": duration_s,
         "coverage_start_time_s": coverage_start_s,
-        "target_sweep_finish_range_s": list(coverage_end_range_s),
+        "coverage_speed_mps": coverage_speed_mps,
+        "patrol_speed_mps": patrol_speed_mps,
         "accepted_t_cover_range_s": list(accepted_t_cover_range_s),
         "coverage_node_count": coverage_node_count,
         "node_count": node_count,
@@ -489,17 +469,17 @@ def generate_catalog(args: argparse.Namespace) -> Dict[str, Any]:
     if grid.cols < args.coverage_node_count:
         raise SystemExit("grid-cols must be >= coverage-node-count")
 
-    coverage_end_range_s = (
-        float(args.target_t_cover_min_s),
-        float(args.target_t_cover_max_s),
-    )
     accepted_t_cover_range_s = (
         float(args.accepted_t_cover_min_s),
         float(args.accepted_t_cover_max_s),
     )
-    if coverage_end_range_s[0] <= args.coverage_start_s:
-        raise SystemExit("target coverage minimum must be after coverage start")
-    if coverage_end_range_s[1] + args.post_coverage_window_s > args.duration_s:
+    coverage_speed_mps = float(args.coverage_speed_mps)
+    patrol_speed_mps = float(args.patrol_speed_mps)
+    if coverage_speed_mps <= 0.0:
+        raise SystemExit("coverage-speed-mps must be positive")
+    if patrol_speed_mps <= 0.0:
+        raise SystemExit("patrol-speed-mps must be positive")
+    if accepted_t_cover_range_s[1] + args.post_coverage_window_s > args.duration_s:
         raise SystemExit("trace duration must include post-coverage window")
 
     runs = []
@@ -515,7 +495,8 @@ def generate_catalog(args: argparse.Namespace) -> Dict[str, Any]:
             duration_s=float(args.duration_s),
             coverage_start_s=float(args.coverage_start_s),
             post_coverage_window_s=float(args.post_coverage_window_s),
-            coverage_end_range_s=coverage_end_range_s,
+            coverage_speed_mps=coverage_speed_mps,
+            patrol_speed_mps=patrol_speed_mps,
             accepted_t_cover_range_s=accepted_t_cover_range_s,
         ))
 
@@ -550,7 +531,8 @@ def generate_catalog(args: argparse.Namespace) -> Dict[str, Any]:
         "duration_s": float(args.duration_s),
         "coverage_start_time_s": float(args.coverage_start_s),
         "post_coverage_window_s": float(args.post_coverage_window_s),
-        "target_sweep_finish_range_s": list(coverage_end_range_s),
+        "coverage_speed_mps": coverage_speed_mps,
+        "patrol_speed_mps": patrol_speed_mps,
         "accepted_t_cover_range_s": list(accepted_t_cover_range_s),
         "runs": runs,
     }
@@ -574,16 +556,16 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--coverage-node-count", type=int, default=10)
     parser.add_argument("--area-x-m", type=float, default=1000.0)
     parser.add_argument("--area-y-m", type=float, default=1000.0)
-    parser.add_argument("--grid-rows", type=int, default=20)
-    parser.add_argument("--grid-cols", type=int, default=20)
+    parser.add_argument("--grid-rows", type=int, default=24)
+    parser.add_argument("--grid-cols", type=int, default=24)
     parser.add_argument("--interval-s", type=float, default=0.2)
-    parser.add_argument("--duration-s", type=float, default=140.0)
+    parser.add_argument("--duration-s", type=float, default=220.0)
     parser.add_argument("--coverage-start-s", type=float, default=30.0)
     parser.add_argument("--post-coverage-window-s", type=float, default=10.0)
-    parser.add_argument("--target-t-cover-min-s", type=float, default=100.0)
-    parser.add_argument("--target-t-cover-max-s", type=float, default=115.0)
-    parser.add_argument("--accepted-t-cover-min-s", type=float, default=95.0)
-    parser.add_argument("--accepted-t-cover-max-s", type=float, default=120.0)
+    parser.add_argument("--coverage-speed-mps", type=float, default=20.0)
+    parser.add_argument("--patrol-speed-mps", type=float, default=20.0)
+    parser.add_argument("--accepted-t-cover-min-s", type=float, default=120.0)
+    parser.add_argument("--accepted-t-cover-max-s", type=float, default=190.0)
     return parser
 
 

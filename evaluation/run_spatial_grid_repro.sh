@@ -9,7 +9,7 @@ START_RUN=1
 POSITIONAL_RUNS_SEEN=0
 JOBS_FILE="${JOBS_JSON:-evaluation/jobs_spatial_grid.json}"
 STAMP="$(date +%Y%m%d_%H%M%S)"
-CATALOG_MANIFEST="evaluation/trace_catalogs/spatial_grid_1km_20x20/catalog.json"
+CATALOG_MANIFEST="evaluation/trace_catalogs/spatial_grid_1km_24x24/catalog.json"
 
 usage() {
   echo "Usage: ./evaluation/run_spatial_grid_repro.sh [runs]"
