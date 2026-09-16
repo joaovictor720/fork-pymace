@@ -32,7 +32,20 @@ GENERATED_FILES = {
     "usage": "aggregated_spatial_usage_checkpoints.csv",
 }
 
-USAGE_CACHE_SCHEMA = "mace_spatial_pcap_checkpoint_metrics_v1"
+USAGE_CACHE_SCHEMA = "mace_spatial_pcap_checkpoint_metrics_v2"
+
+USAGE_METRIC_FIELDS = (
+    "total_packets",
+    "total_payload_packets",
+    "total_control_packets",
+    "total_unclassified_packets",
+    "total_management_packets",
+    "total_bytes",
+    "total_payload_bytes",
+    "total_control_bytes",
+    "total_unclassified_bytes",
+    "total_management_bytes",
+)
 
 
 def _load_json(path: Path) -> Dict[str, Any]:
@@ -501,7 +514,9 @@ def _read_csv_rows(path: Path) -> List[Dict[str, str]]:
 
 def _write_usage_cache(path: Path, rows: Sequence[Mapping[str, Any]]) -> None:
     fields = (
-        "schema", "checkpoint_offset_s", "total_packets", "total_bytes",
+        "schema",
+        "checkpoint_offset_s",
+        *USAGE_METRIC_FIELDS,
         "pcap_count",
     )
     with path.open("w", newline="", encoding="utf-8") as output:
@@ -558,8 +573,7 @@ def _usage_rows_from_cache(cache: Path, offsets: Sequence[float]) -> Optional[Li
         result.append({
             "schema": USAGE_CACHE_SCHEMA,
             "checkpoint_offset_s": offset,
-            "total_packets": _integer(row.get("total_packets")),
-            "total_bytes": _integer(row.get("total_bytes")),
+            **{field: _integer(row.get(field)) for field in USAGE_METRIC_FIELDS},
             "pcap_count": _integer(row.get("pcap_count")),
         })
     return result
@@ -578,22 +592,35 @@ def _pcap_usage_for_offsets(
     trace_start_unix_s: float,
     apps_config: Mapping[str, Any],
 ) -> List[Dict[str, Any]]:
-    from process_pcaps import display_filter_for_app, _run_tshark_rows
+    from process_pcaps import (
+        _classify_row,
+        _run_tshark_rows,
+        _tshark_fields,
+        classification_config_for_app,
+        display_filter_for_app,
+        payload_type_mode_for_app,
+    )
 
     pcaps = sorted(run_dir.glob("node_*.pcap"))
     if not pcaps:
         return []
 
     display_filter = display_filter_for_app(algorithm, dict(apps_config))
+    payload_mode = payload_type_mode_for_app(algorithm, dict(apps_config))
+    classification_cfg = classification_config_for_app(algorithm, dict(apps_config))
+    classification_mode = str(classification_cfg.get("mode", "none"))
+    tshark_fields = _tshark_fields(payload_mode, classification_mode)
     cutoffs = [(offset, trace_start_unix_s + t_cover_s + offset) for offset in offsets]
-    packets = {offset: 0 for offset in offsets}
-    bytes_by_offset = {offset: 0 for offset in offsets}
+    counts: Dict[float, Dict[str, int]] = {
+        offset: {field: 0 for field in USAGE_METRIC_FIELDS}
+        for offset in offsets
+    }
 
     for pcap in pcaps:
         proc = _run_tshark_rows(
             str(pcap),
             display_filter,
-            ["frame.time_epoch", "frame.len"],
+            tshark_fields,
         )
         assert proc.stdout is not None
         for line in proc.stdout:
@@ -603,15 +630,36 @@ def _pcap_usage_for_offsets(
             parts = line.split("\t")
             if len(parts) < 2:
                 continue
+            row_fields = {
+                field_name: (parts[index].strip() if index < len(parts) else "")
+                for index, field_name in enumerate(tshark_fields)
+            }
             try:
-                timestamp = float(parts[0].strip())
-                frame_len = int(parts[1].strip())
+                timestamp = float(row_fields["frame.time_epoch"])
+                frame_len = int(row_fields["frame.len"])
             except ValueError:
                 continue
+            category, _, _, _ = _classify_row(
+                row_fields,
+                payload_mode,
+                classification_cfg,
+            )
+            if category not in {"payload", "control"}:
+                category = "unclassified"
             for offset, cutoff in cutoffs:
                 if timestamp <= cutoff:
-                    packets[offset] += 1
-                    bytes_by_offset[offset] += frame_len
+                    bucket = counts[offset]
+                    bucket["total_packets"] += 1
+                    bucket["total_bytes"] += frame_len
+                    if category == "payload":
+                        bucket["total_payload_packets"] += 1
+                        bucket["total_payload_bytes"] += frame_len
+                    elif category == "control":
+                        bucket["total_control_packets"] += 1
+                        bucket["total_control_bytes"] += frame_len
+                    else:
+                        bucket["total_unclassified_packets"] += 1
+                        bucket["total_unclassified_bytes"] += frame_len
         assert proc.stderr is not None
         stderr = proc.stderr.read().strip()
         rc = proc.wait()
@@ -621,16 +669,22 @@ def _pcap_usage_for_offsets(
                 message += f": {stderr}"
             raise ValueError(message)
 
-    return [
-        {
+    output = []
+    for offset in offsets:
+        row = {
             "schema": USAGE_CACHE_SCHEMA,
             "checkpoint_offset_s": offset,
-            "total_packets": packets[offset],
-            "total_bytes": bytes_by_offset[offset],
             "pcap_count": len(pcaps),
         }
-        for offset in offsets
-    ]
+        row.update(counts[offset])
+        row["total_management_packets"] = (
+            row["total_control_packets"] + row["total_unclassified_packets"]
+        )
+        row["total_management_bytes"] = (
+            row["total_control_bytes"] + row["total_unclassified_bytes"]
+        )
+        output.append(row)
+    return output
 
 
 def _run_usage_checkpoints(
@@ -699,8 +753,7 @@ def _run_usage_checkpoints(
             "checkpoint_offset_s": item.get("checkpoint_offset_s"),
             "checkpoint_label": _offset_slug(float(item.get("checkpoint_offset_s"))),
             "t_cover_s": t_cover_s,
-            "total_packets": item.get("total_packets"),
-            "total_bytes": item.get("total_bytes"),
+            **{field: item.get(field) for field in USAGE_METRIC_FIELDS},
             "pcap_count": item.get("pcap_count"),
         })
         output.append(row)
@@ -758,7 +811,7 @@ def aggregate_usage_checkpoints(rows: Sequence[Dict[str, Any]]) -> List[Dict[str
             "runs_valid": sum(item.get("analysis_valid") is True for item in group),
         })
         valid = [item for item in group if item.get("analysis_valid") is True]
-        for field in ("total_packets", "total_bytes"):
+        for field in USAGE_METRIC_FIELDS:
             row.update(_mean_ci((item.get(field) for item in valid), field))
         output.append(row)
     return output

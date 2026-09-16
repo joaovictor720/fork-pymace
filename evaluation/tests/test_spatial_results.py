@@ -16,6 +16,7 @@ from plot_spatial_coverage import _fixed_bar_y_upper, choose_x, main as plot_mai
 from spatial_results import (  # noqa: E402
     aggregate_car,
     aggregate_tcover,
+    aggregate_usage_checkpoints,
     parse_spatial_run,
     write_results,
 )
@@ -320,6 +321,50 @@ class SpatialAggregationTests(unittest.TestCase):
             "total_packets_ci_high": [110.0, 1234.0],
         })
         self.assertEqual(_fixed_bar_y_upper(frame, "total_packets_mean", "total_packets_ci_high"), 1250.0)
+
+    def test_usage_aggregation_keeps_packet_breakdown_columns(self):
+        base = {
+            "scenario_family": "coverage",
+            "datapoint_key": "same",
+            "algorithm": "broadcast",
+            "checkpoint_offset_s": 0.0,
+            "checkpoint_label": "tcover",
+            "analysis_valid": True,
+        }
+        rows = [
+            dict(
+                base,
+                total_packets=13,
+                total_payload_packets=10,
+                total_control_packets=2,
+                total_unclassified_packets=1,
+                total_management_packets=3,
+                total_bytes=130,
+                total_payload_bytes=100,
+                total_control_bytes=20,
+                total_unclassified_bytes=10,
+                total_management_bytes=30,
+            ),
+            dict(
+                base,
+                total_packets=27,
+                total_payload_packets=20,
+                total_control_packets=5,
+                total_unclassified_packets=2,
+                total_management_packets=7,
+                total_bytes=270,
+                total_payload_bytes=200,
+                total_control_bytes=50,
+                total_unclassified_bytes=20,
+                total_management_bytes=70,
+            ),
+        ]
+
+        result = aggregate_usage_checkpoints(rows)[0]
+
+        self.assertEqual(result["total_packets_mean"], 20.0)
+        self.assertEqual(result["total_payload_packets_mean"], 15.0)
+        self.assertEqual(result["total_management_packets_mean"], 5.0)
 
 
 if __name__ == "__main__":

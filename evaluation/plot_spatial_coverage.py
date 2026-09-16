@@ -19,6 +19,7 @@ import pandas as pd
 import seaborn as sns
 from matplotlib.backends.backend_pdf import PdfPages
 from matplotlib.lines import Line2D
+from matplotlib.patches import Patch
 from matplotlib.ticker import ScalarFormatter
 
 
@@ -78,6 +79,11 @@ HATCHES = {
     "trickle": "..",
     "usfdx3": "--",
     "usfdx1": "++",
+}
+
+PACKET_CLASS_STYLES = {
+    "payload": {"alpha": 0.98, "hatch": ""},
+    "management": {"alpha": 0.52, "hatch": "///"},
 }
 
 LEGEND_LABELS_SHORT = {
@@ -373,6 +379,42 @@ def _apply_bar_legend_auto(ax, algo_order: Sequence[str], *, prefer: str = "uppe
     )
 
 
+def _apply_packet_breakdown_legend(ax, algo_order: Sequence[str]) -> None:
+    handles = [
+        Patch(
+            facecolor=PALETTE.get(algorithm, "gray"),
+            edgecolor="black",
+            label=LEGEND_LABELS_SHORT.get(algorithm, algorithm),
+        )
+        for algorithm in algo_order
+    ]
+    handles.extend(
+        [
+            Patch(facecolor="#777777", edgecolor="black", label="Useful payload"),
+            Patch(
+                facecolor="#777777",
+                edgecolor="black",
+                alpha=PACKET_CLASS_STYLES["management"]["alpha"],
+                hatch=PACKET_CLASS_STYLES["management"]["hatch"],
+                label="Network management",
+            ),
+        ]
+    )
+    ax.legend(
+        handles=handles,
+        loc="lower center",
+        bbox_to_anchor=(0.5, 1.02),
+        ncol=3,
+        frameon=True,
+        framealpha=0.92,
+        borderaxespad=0.0,
+        handlelength=1.1,
+        handletextpad=0.6,
+        labelspacing=0.25,
+        fontsize=_legend_fontsize_pt(),
+    )
+
+
 def _checkpoint_label(offset: object) -> str:
     try:
         numeric = float(offset)
@@ -571,6 +613,154 @@ def build_bar_with_ci(
     return fig
 
 
+def build_stacked_usage_bar_with_ci(
+    df: pd.DataFrame,
+    x: str,
+    algo_col: str,
+    xlabel: str,
+    ylabel: str,
+    *,
+    page_label: Optional[str] = None,
+    y_upper: Optional[float] = None,
+) -> Optional[plt.Figure]:
+    fig, ax = _new_fig_ax()
+    algo_order = _algo_order(df, algo_col)
+    x_values = sorted(pd.to_numeric(df[x], errors="coerce").dropna().unique())
+    x_pos = np.arange(len(x_values))
+    plotted = 0
+
+    for index, algorithm in enumerate(algo_order):
+        subset = df[df[algo_col].astype(str) == algorithm].copy()
+        subset = subset.sort_values(x)
+        metrics = pd.DataFrame({x: x_values}).merge(subset, on=x, how="left")
+        if len(algo_order) == 1:
+            width = 0.58
+            positions = x_pos
+        elif len(algo_order) == 2:
+            width = 0.36
+            positions = x_pos - width / 2 if index == 0 else x_pos + width / 2
+        else:
+            width = 0.26
+            offsets = np.linspace(-width, width, len(algo_order))
+            positions = x_pos + offsets[index]
+
+        payload = pd.to_numeric(metrics["total_payload_packets_mean"], errors="coerce")
+        management = pd.to_numeric(
+            metrics["total_management_packets_mean"], errors="coerce"
+        )
+        total = pd.to_numeric(metrics["total_packets_mean"], errors="coerce")
+        total_low = pd.to_numeric(metrics["total_packets_ci_low"], errors="coerce").fillna(total)
+        total_high = pd.to_numeric(metrics["total_packets_ci_high"], errors="coerce").fillna(total)
+        if "total_payload_packets_ci_low" in metrics.columns:
+            payload_low = pd.to_numeric(
+                metrics["total_payload_packets_ci_low"], errors="coerce"
+            ).fillna(payload)
+        else:
+            payload_low = payload
+        if "total_payload_packets_ci_high" in metrics.columns:
+            payload_high = pd.to_numeric(
+                metrics["total_payload_packets_ci_high"], errors="coerce"
+            ).fillna(payload)
+        else:
+            payload_high = payload
+        mask = payload.notna() & management.notna() & total.notna()
+        if not mask.any():
+            continue
+
+        color = PALETTE.get(algorithm, "gray")
+        visible_positions = positions[mask.to_numpy()]
+        visible_payload = payload[mask].clip(lower=0.0).to_numpy()
+        visible_management = management[mask].clip(lower=0.0).to_numpy()
+        visible_total = total[mask].to_numpy()
+        payload_lower_error = (payload - payload_low).clip(lower=0.0).where(mask, 0.0)
+        payload_upper_error = (payload_high - payload).clip(lower=0.0).where(mask, 0.0)
+        total_lower_error = (total - total_low).clip(lower=0.0).where(mask, 0.0)
+        total_upper_error = (total_high - total).clip(lower=0.0).where(mask, 0.0)
+        payload_yerr = np.vstack([
+            payload_lower_error.to_numpy(),
+            payload_upper_error.to_numpy(),
+        ])
+        total_yerr = np.vstack([
+            total_lower_error.to_numpy(),
+            total_upper_error.to_numpy(),
+        ])
+
+        ax.bar(
+            visible_positions,
+            visible_payload,
+            width,
+            color=color,
+            edgecolor="black",
+            linewidth=0.85,
+            alpha=PACKET_CLASS_STYLES["payload"]["alpha"],
+            hatch=PACKET_CLASS_STYLES["payload"]["hatch"],
+        )
+        ax.bar(
+            visible_positions,
+            visible_management,
+            width,
+            bottom=visible_payload,
+            color=color,
+            edgecolor="black",
+            linewidth=0.85,
+            alpha=PACKET_CLASS_STYLES["management"]["alpha"],
+            hatch=PACKET_CLASS_STYLES["management"]["hatch"],
+        )
+        ax.errorbar(
+            visible_positions,
+            visible_payload,
+            yerr=payload_yerr[:, mask.to_numpy()],
+            fmt="none",
+            capsize=3,
+            ecolor="#444444",
+            elinewidth=0.85,
+            alpha=0.62,
+        )
+        ax.errorbar(
+            visible_positions,
+            visible_total,
+            yerr=total_yerr[:, mask.to_numpy()],
+            fmt="none",
+            capsize=4,
+            ecolor="black",
+            elinewidth=1.0,
+            alpha=0.9,
+        )
+        plotted += int(mask.sum())
+
+    if plotted == 0:
+        plt.close(fig)
+        return None
+
+    ax.set_xticks(x_pos)
+    ax.set_xticklabels(_format_xticks(x_values))
+    ax.set_xlabel(xlabel, labelpad=6)
+    ax.set_ylabel(ylabel, labelpad=6)
+    ax.grid(True, axis="y", linestyle=":", alpha=0.6)
+    if y_upper is not None:
+        ax.set_ylim(0.0, y_upper)
+    _apply_thousands_sci(ax)
+    _apply_packet_breakdown_legend(ax, algo_order)
+    if page_label:
+        ax.text(
+            0.02,
+            0.96,
+            page_label,
+            transform=ax.transAxes,
+            ha="left",
+            va="top",
+            fontsize=9.0 * FONT_SCALE,
+            bbox={
+                "boxstyle": "round,pad=0.18",
+                "facecolor": "white",
+                "edgecolor": "none",
+                "alpha": 0.82,
+            },
+        )
+    _finalize_layout(fig)
+    return fig
+
+
 def _write_pdf_pages(path: Path, figures: Sequence[plt.Figure]) -> Optional[Path]:
     if not figures:
         return None
@@ -665,6 +855,14 @@ def plot_usage_pdf(
         if family_df.empty:
             continue
         y_upper = _fixed_bar_y_upper(family_df, "total_packets_mean", "total_packets_ci_high")
+        breakdown_required = (
+            "total_payload_packets_mean",
+            "total_management_packets_mean",
+            "total_packets_mean",
+            "total_packets_ci_low",
+            "total_packets_ci_high",
+        )
+        has_breakdown = _has_cols(family_df, breakdown_required)
         for suffix, split_label, split_df in _plot_splits(family_df, x):
             figures = []
             if "checkpoint_offset_s" in split_df.columns:
@@ -680,18 +878,29 @@ def plot_usage_pdf(
                     page_label = _page_label(offset, split_label)
                 elif split_label:
                     page_label = split_label
-                figure = build_bar_with_ci(
-                    df=offset_df,
-                    x=x,
-                    y="total_packets_mean",
-                    ci_low="total_packets_ci_low",
-                    ci_high="total_packets_ci_high",
-                    algo_col="algorithm",
-                    xlabel=X_LABELS.get(x, x),
-                    ylabel="Total Packets",
-                    page_label=page_label,
-                    y_upper=y_upper,
-                )
+                if has_breakdown:
+                    figure = build_stacked_usage_bar_with_ci(
+                        df=offset_df,
+                        x=x,
+                        algo_col="algorithm",
+                        xlabel=X_LABELS.get(x, x),
+                        ylabel="Total Packets",
+                        page_label=page_label,
+                        y_upper=y_upper,
+                    )
+                else:
+                    figure = build_bar_with_ci(
+                        df=offset_df,
+                        x=x,
+                        y="total_packets_mean",
+                        ci_low="total_packets_ci_low",
+                        ci_high="total_packets_ci_high",
+                        algo_col="algorithm",
+                        xlabel=X_LABELS.get(x, x),
+                        ylabel="Total Packets",
+                        page_label=page_label,
+                        y_upper=y_upper,
+                    )
                 if figure is not None:
                     figures.append(figure)
             path = _write_pdf_pages(output_dir / f"{_slug(family)}{suffix}__usage.pdf", figures)
