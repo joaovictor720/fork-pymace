@@ -72,6 +72,12 @@ elif [[ "$target" == "test" ]]; then
     "$SCRIPT_DIR/common/lib_gossip/trickle/trickle.cpp" \
     -o "$trickle_test_binary"
   "$trickle_test_binary"
+  spatial_trickle_test_binary="${TMPDIR:-/tmp}/mace_spatial_trickle_test"
+  "$CXX_BIN" "${COMMON_FLAGS[@]}" \
+    "$SCRIPT_DIR/trickle/spatial_adapter_test.cpp" \
+    "$SCRIPT_DIR/common/lib_gossip/trickle/trickle.cpp" \
+    -o "$spatial_trickle_test_binary"
+  "$spatial_trickle_test_binary"
 else
   build_one "$target"
 fi

@@ -158,7 +158,7 @@ node_config load_config(const std::string& cfg_path, const std::string& id) {
                       mace::coverage::kDefaultMaxDatagramBytes));
         if (nc.max_datagram_bytes >
             mace::coverage::kDefaultMaxDatagramBytes) {
-            throw std::invalid_argument("max_datagram_bytes cannot exceed 1200");
+            throw std::invalid_argument("max_datagram_bytes cannot exceed 1400");
         }
         std::string gps_template = cfg.value(
             "gps_socket_template",

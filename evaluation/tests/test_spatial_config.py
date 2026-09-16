@@ -123,7 +123,7 @@ class SpatialConfigGenerationTests(unittest.TestCase):
         self.assertEqual(generated["workload"], "spatial_coverage")
         self.assertEqual(generated["grid"], VALID_GRID)
         self.assertEqual(generated["position_poll_interval_ms"], 100)
-        self.assertEqual(generated["max_datagram_bytes"], 1200)
+        self.assertEqual(generated["max_datagram_bytes"], 1400)
         self.assertEqual(generated["dissemination_interval"], 0.5)
         for forbidden in (
             "ops_per_sec",
@@ -143,11 +143,21 @@ class SpatialConfigGenerationTests(unittest.TestCase):
         self.assertIn("coincide", completed.stderr)
 
     def test_grid_must_fit_strictest_primitive_budget(self):
-        too_large = dict(VALID_GRID, rows=25, cols=24)
+        too_large = dict(VALID_GRID, rows=1, cols=10745)
         completed = self.run_node_config(
             scenario(too_large), expect_success=False
         )
         self.assertIn("budget", completed.stderr)
+
+    def test_bitmap_grid_exact_budget_and_legacy_budget(self):
+        self.run_node_config(scenario(dict(VALID_GRID, rows=1, cols=10744)))
+        value = scenario(dict(VALID_GRID, rows=1, cols=9144))
+        value["node_config"]["max_datagram_bytes"] = 1200
+        self.run_node_config(value)
+        value["grid"]["cols"] += 1
+        self.run_node_config(value, expect_success=False)
+        value["grid"] = dict(VALID_GRID, rows=256, cols=256)
+        self.run_node_config(value, expect_success=False)
 
     def test_grid_rejects_boolean_string_and_nonfinite_numeric_fields(self):
         invalid_fields = (

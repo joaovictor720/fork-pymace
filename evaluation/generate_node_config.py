@@ -8,7 +8,8 @@ from spatial_coverage import GridSpec
 
 
 SPATIAL_WIRE_OVERHEAD_BYTES = 13
-MAX_DATAGRAM_BYTES = 1200
+SPATIAL_BITMAP_HEADER_BYTES = 44
+MAX_DATAGRAM_BYTES = 1400
 
 
 def _finite_json_number(value, label):
@@ -214,11 +215,15 @@ if workload == "spatial_coverage":
         raw_max_datagram_bytes, "max_datagram_bytes"
     )
     if max_datagram_bytes <= 0 or max_datagram_bytes > MAX_DATAGRAM_BYTES:
-        raise ValueError("max_datagram_bytes must be between 1 and 1200")
-    worst_case_bytes = 2 * grid.cell_count + SPATIAL_WIRE_OVERHEAD_BYTES
+        raise ValueError("max_datagram_bytes must be between 1 and 1400")
+    worst_case_bytes = (
+        (grid.cell_count + 7) // 8
+        + SPATIAL_BITMAP_HEADER_BYTES
+        + SPATIAL_WIRE_OVERHEAD_BYTES
+    )
     if worst_case_bytes > max_datagram_bytes:
         raise ValueError(
-            "full GSet plus primitive metadata requires {} bytes, budget is {}"
+            "full bitmap plus grid/primitive headers requires {} bytes, budget is {}"
             .format(worst_case_bytes, max_datagram_bytes)
         )
 

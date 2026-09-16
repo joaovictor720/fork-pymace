@@ -118,31 +118,25 @@ void test_grid_validation() {
                 .validate();
         },
         "an underflowed cell dimension is rejected");
-    check_throws(
-        [] {
-            mace::coverage::validate_datagram_budget(
-                GridSpec{0, 0, 10, 10, 25, 24}, 1200, 13);
-        },
-        "full state above datagram budget is rejected");
-    mace::coverage::validate_datagram_budget(four_by_four(), 1200, 13);
+    // 44-byte grid header, 13-byte RAPID/Trickle header, 1343 bitmap bytes.
     mace::coverage::validate_datagram_budget(
-        GridSpec{0, 0, 10, 10, 1, 600}, 1200, 0);
+        GridSpec{0, 0, 10, 10, 1, 10744}, 1400, 13);
     mace::coverage::validate_datagram_budget(
-        GridSpec{0, 0, 10, 10, 1, 593}, 1200, 14);
-    check_throws(
-        [] {
-            mace::coverage::validate_datagram_budget(
-                GridSpec{0, 0, 10, 10, 1, 593}, 1200, 15);
-        },
-        "one byte above the exact datagram budget is rejected");
-    check_throws(
-        [] {
-            mace::coverage::validate_datagram_budget(
-                GridSpec{0, 0, 10, 10, 1, 1},
-                std::numeric_limits<std::size_t>::max(),
-                std::numeric_limits<std::size_t>::max());
-        },
-        "datagram budget arithmetic cannot wrap around");
+        GridSpec{0, 0, 10, 10, 1, 10744}, 1400, 0);
+    check_throws([] {
+        mace::coverage::validate_datagram_budget(
+            GridSpec{0, 0, 10, 10, 1, 10745}, 1400, 13);
+    }, "one bitmap byte above the exact datagram budget is rejected");
+    check_throws([] {
+        mace::coverage::validate_datagram_budget(
+            GridSpec{0, 0, 10, 10, 256, 256}, 1400, 13);
+    }, "65536-cell grid is representable but exceeds the datagram budget");
+    check_throws([] {
+        mace::coverage::validate_datagram_budget(
+            four_by_four(), std::numeric_limits<std::size_t>::max(),
+            std::numeric_limits<std::size_t>::max());
+    }, "datagram budget arithmetic cannot wrap around");
+
 }
 
 void test_traversal() {
@@ -166,68 +160,120 @@ void test_traversal() {
           "traversal with invalid endpoint is ignored");
 }
 
+Bytes frame(const GridSpec& grid, const Bytes& bitmap) {
+    return mace::coverage::serialize_bitmap(bitmap, grid);
+}
+
 void test_codec_and_merge() {
-    const std::set<CellId> expected{0, 1, 255, 256, 65535};
-    const Bytes encoded = mace::coverage::serialize_gset(expected);
-    check_equal(encoded,
-                Bytes({0x00, 0x00,
-                       0x00, 0x01,
-                       0x00, 0xff,
-                       0x01, 0x00,
-                       0xff, 0xff}),
-                "GSet uses sorted uint16 network byte order");
-    check_equal(mace::coverage::deserialize_gset(encoded, 65536),
-                expected,
-                "GSet serialization round-trips exactly");
-    check_throws(
-        [] {
-            (void)mace::coverage::deserialize_gset(Bytes{0}, 16);
-        },
-        "odd payload is rejected");
-    check_throws(
-        [] {
-            (void)mace::coverage::deserialize_gset(Bytes{0, 16}, 16);
-        },
-        "out-of-grid id is rejected");
-    check_throws(
-        [] {
-            (void)mace::coverage::deserialize_gset(Bytes{0, 1, 0, 1}, 16);
-        },
-        "duplicate wire ids are rejected");
-    check_throws(
-        [] {
-            (void)mace::coverage::deserialize_gset(Bytes{0, 2, 0, 1}, 16);
-        },
-        "out-of-order wire ids are rejected");
-    check_throws(
-        [] {
-            (void)mace::coverage::deserialize_gset(
-                static_cast<const std::uint8_t*>(nullptr), 2, 16);
-        },
-        "non-empty null payload is rejected");
-    check_equal(
-        mace::coverage::deserialize_gset(
-            static_cast<const std::uint8_t*>(nullptr), 0, 16),
-        std::set<CellId>{},
-        "empty null payload is a valid empty GSet");
+    using mace::coverage::BitmapReplica;
+    using mace::coverage::deserialize_bitmap;
+    using mace::coverage::bitmap_contains;
+    const GridSpec grid{0, 0, 130, 10, 1, 13};
+    BitmapReplica replica(grid);
+    check_equal(replica.bitmap(), Bytes({0, 0}), "bitmap starts all zero");
+    check(!replica.contains(7), "unset bit is absent");
+    const auto initial = replica.add_local({0, 7, 8, 12, 7});
+    check_equal(replica.bitmap(), Bytes({0x81, 0x11}),
+                "cell IDs use LSB-first bit order within each byte");
+    check(replica.contains(7) && replica.contains(12) && replica.size() == 4,
+          "contains and count agree with activated bits");
+    check(!replica.add_local({7}).changed, "adding a known bit is idempotent");
+    check_equal(initial.snapshot.size(), std::size_t{46},
+                "frame has 44 grid bytes plus two raw bitmap bytes");
+    check_equal(deserialize_bitmap(initial.snapshot, grid), replica.bitmap(),
+                "binary bitmap round-trips including padding");
+    check_equal(Bytes(initial.snapshot.end() - 2, initial.snapshot.end()),
+                Bytes({0x81, 0x11}), "wire carries raw bitmap bytes");
+    auto invalid = initial.snapshot;
+    invalid.back() |= 0x80;
+    check_throws([&] { replica.merge_serialized(invalid); },
+                 "nonzero padding bits are rejected");
+    invalid = initial.snapshot;
+    invalid.pop_back();
+    check_throws([&] { replica.merge_serialized(invalid); },
+                 "truncated frame is rejected");
+    invalid = initial.snapshot;
+    invalid.push_back(0);
+    check_throws([&] { replica.merge_serialized(invalid); },
+                 "oversized frame is rejected");
+    check_throws([&] { replica.merge_serialized(Bytes{}); },
+                 "empty datagram cannot stand for an empty fixed-size bitmap");
+    check_throws([&] {
+        deserialize_bitmap(static_cast<const std::uint8_t*>(nullptr), 46, grid);
+    }, "null payload is rejected");
+    for (const auto& other : {
+             GridSpec{0, 0, 130, 10, 13, 1},
+             GridSpec{1, 0, 130, 10, 1, 13},
+             GridSpec{0, 1, 130, 10, 1, 13},
+             GridSpec{0, 0, 140, 10, 1, 13},
+             GridSpec{0, 0, 130, 20, 1, 13},
+             GridSpec{0, 0, 130, 10, 1, 14}}) {
+        check_throws([&] { replica.merge_serialized(frame(other, {0, 0})); },
+                     "incompatible grid is rejected even at the same byte length");
+    }
+    check_throws([&] { replica.add_local({1, 13}); },
+                 "out-of-grid local cell rejected before partial mutation");
+    check_equal(replica.size(), std::size_t{4}, "invalid inputs leave state intact");
+    const auto remote = frame(grid, {0x82, 0x01});
+    const auto first = replica.merge_serialized(remote);
+    const auto second = replica.merge_serialized(remote);
+    check(first.changed && first.replica_size == 5 && first.snapshot.empty(),
+          "overlapping remote merge adds one bit without an application snapshot");
+    check(first.mutation_sequence == 2 && first.timestamp_unix_s > 0.0,
+          "remote mutation uses the shared version sequence");
+    check(!second.changed && second.mutation_sequence == 2 &&
+          second.timestamp_unix_s == 0.0, "remote merge is idempotent");
+    check_equal(replica.bitmap(), Bytes({0x83, 0x11}), "merge is bytewise OR");
+    check(bitmap_contains({3}, {1}) && !bitmap_contains({1}, {3}),
+          "subset comparison distinguishes local and remote newer");
+    check(!bitmap_contains({1}, {2}) && !bitmap_contains({2}, {1}),
+          "equal cardinality does not imply consistency");
+    check(bitmap_contains({3}, {3}), "equal states are consistent");
+    const Bytes a{0x81, 0x10}, b{0x02, 0x01}, c{0x04, 0x10};
+    BitmapReplica abc(grid), cba(grid), bc(grid), grouped(grid);
+    for (const auto& v : {a, b, c}) abc.merge_serialized(frame(grid, v));
+    for (const auto& v : {c, b, a}) cba.merge_serialized(frame(grid, v));
+    bc.merge_serialized(frame(grid, b));
+    bc.merge_serialized(frame(grid, c));
+    grouped.merge_serialized(frame(grid, a));
+    grouped.merge_serialized(bc.serialize());
+    check_equal(abc.bitmap(), cba.bitmap(), "merge is commutative");
+    check_equal(abc.bitmap(), grouped.bitmap(), "merge is associative");
+    const GridSpec large{0, 0, 256, 256, 256, 256};
+    BitmapReplica full(large);
+    full.add_local({0, 65535});
+    check(full.contains(65535) && full.bitmap().size() == 8192 && full.size() == 2,
+          "65536 cells do not overflow cell count or final bit");
+    check_equal(deserialize_bitmap(full.serialize(), large), full.bitmap(),
+                "largest representable grid round-trips");
+    check_equal(frame(GridSpec{-0.0, 0, 130, 10, 1, 13}, {0, 0}),
+                frame(grid, {0, 0}), "signed zero origins have one canonical header");
+}
 
-    mace::coverage::GSetReplica replica(16);
-    const auto first = replica.merge(std::set<CellId>{1, 2});
-    const auto second = replica.merge(std::set<CellId>{1, 2});
-    check(first.changed && first.replica_size == 2,
-          "first remote merge changes GSet");
-    check(first.mutation_sequence == 1 && first.timestamp_unix_s > 0.0,
-          "first mutation is stamped under the replica lock");
-    check(!second.changed && second.replica_size == 2,
-          "remote merge remains idempotent");
-    check(second.mutation_sequence == 1 && second.timestamp_unix_s == 0.0,
-          "idempotent merge does not allocate a mutation version");
-
-    const auto third = replica.add_local(std::vector<CellId>{3});
-    check(third.changed && third.mutation_sequence == 2,
-          "local and remote mutations share one contiguous version sequence");
-    check(third.timestamp_unix_s >= first.timestamp_unix_s,
-          "mutation timestamps do not regress within one replica");
+void test_concurrent_snapshots() {
+    const GridSpec grid{0, 0, 256, 256, 16, 16};
+    mace::coverage::BitmapReplica replica(grid);
+    std::thread local([&] {
+        for (unsigned id = 0; id < 128; ++id) replica.add_local({CellId(id)});
+    });
+    std::thread remote([&] {
+        mace::coverage::BitmapReplica other(grid);
+        for (unsigned id = 128; id < 256; ++id) {
+            other.add_local({CellId(id)});
+            replica.merge_serialized(other.serialize());
+        }
+    });
+    Bytes previous(32, 0);
+    for (int i = 0; i < 256; ++i) {
+        const auto snapshot = mace::coverage::deserialize_bitmap(replica.serialize(), grid);
+        check(mace::coverage::bitmap_contains(snapshot, previous),
+              "concurrent complete snapshots grow monotonically");
+        previous = snapshot;
+    }
+    local.join();
+    remote.join();
+    check_equal(replica.bitmap(), Bytes(32, 0xff), "concurrent merges lose no bits");
+    check_equal(replica.size(), std::size_t{256}, "concurrent count stays consistent");
 }
 
 void test_application_trigger_semantics() {
@@ -239,7 +285,7 @@ void test_application_trigger_semantics() {
                 std::vector<CellId>({0}),
                 "first position covers its cell");
     check_equal(initial.update.snapshot,
-                Bytes({0, 0}),
+                frame(workload.grid(), {1}),
                 "first position provides full trigger snapshot");
     check(initial.update.mutation_sequence == 1,
           "first local trigger carries replica version one");
@@ -248,7 +294,7 @@ void test_application_trigger_semantics() {
     check(same.status == ObservationStatus::NoChange,
           "remaining in one cell does not trigger");
 
-    const auto remote = workload.merge_remote(Bytes{0, 2});
+    const auto remote = workload.merge_remote(frame(workload.grid(), {4}));
     check(remote.changed && workload.size() == 2,
           "remote state changes replica without local observation");
     check(remote.mutation_sequence == 2 &&
@@ -261,13 +307,13 @@ void test_application_trigger_semantics() {
     check_equal(known.update.added,
                 std::vector<CellId>({1}),
                 "known remote endpoint is not reported as locally new");
-    check_equal(mace::coverage::deserialize_gset(known.update.snapshot, 3),
-                std::set<CellId>({0, 1, 2}),
+    check_equal(mace::coverage::deserialize_bitmap(known.update.snapshot, workload.grid()),
+                Bytes({7}),
                 "trigger includes knowledge previously learned remotely");
 
     CoverageWorkload known_only(GridSpec{0, 0, 20, 10, 1, 2});
     (void)known_only.observe(Position{1, 5, 0});
-    (void)known_only.merge_remote(Bytes{0, 1});
+    (void)known_only.merge_remote(frame(known_only.grid(), {2}));
     const auto enter_known = known_only.observe(Position{19, 5, 0});
     check(enter_known.status == ObservationStatus::NoChange,
           "entering a remotely known cell does not trigger");
@@ -322,7 +368,7 @@ void test_polling_is_independent_from_remote_merge() {
     });
 
     const auto before = std::chrono::steady_clock::now();
-    const auto merged = workload.merge_remote(Bytes{0, 1});
+    const auto merged = workload.merge_remote(frame(workload.grid(), {2}));
     const auto elapsed = std::chrono::steady_clock::now() - before;
     check(merged.changed, "communication-side merge succeeds during GPS polling");
     check(merged.mutation_sequence == 1,
@@ -465,6 +511,7 @@ int main() {
     test_grid_validation();
     test_traversal();
     test_codec_and_merge();
+    test_concurrent_snapshots();
     test_application_trigger_semantics();
     test_invalid_gps_sample_preserves_last_valid_position();
     test_polling_is_independent_from_remote_merge();
