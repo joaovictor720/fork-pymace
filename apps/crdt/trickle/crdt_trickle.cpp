@@ -579,7 +579,7 @@ NodeConfig load_config(const std::string& path,
                 static_cast<std::uint64_t>(configured_budget) >
                     mace::coverage::kDefaultMaxDatagramBytes) {
                 throw std::invalid_argument(
-                    "max_datagram_bytes must be between 1 and 1200");
+                    "max_datagram_bytes must be between 1 and 1400");
             }
             config.max_datagram_bytes =
                 static_cast<std::size_t>(configured_budget);
@@ -749,13 +749,11 @@ public:
 
     StateRelation compare(
         const gossip::Bytes& remote_summary) const override {
-        const auto remote = mace::coverage::deserialize_gset(
-            remote_summary, state_.grid().cell_count());
-        const auto local = state_.cells();
-        const bool local_contains_remote = std::includes(
-            local.begin(), local.end(), remote.begin(), remote.end());
-        const bool remote_contains_local = std::includes(
-            remote.begin(), remote.end(), local.begin(), local.end());
+        const auto remote = mace::coverage::deserialize_bitmap(
+            remote_summary, state_.grid());
+        const auto local = state_.bitmap();
+        const bool local_contains_remote = mace::coverage::bitmap_contains(local, remote);
+        const bool remote_contains_local = mace::coverage::bitmap_contains(remote, local);
 
         if (local_contains_remote && remote_contains_local) {
             return StateRelation::Equivalent;
@@ -773,8 +771,8 @@ public:
         const gossip::Bytes& remote_summary) const override {
         // Validate the summary supplied by the protocol, but deliberately do
         // not compute a delta. Spatial coverage always transfers full state.
-        (void)mace::coverage::deserialize_gset(
-            remote_summary, state_.grid().cell_count());
+        (void)mace::coverage::deserialize_bitmap(
+            remote_summary, state_.grid());
         return state_.snapshot();
     }
 

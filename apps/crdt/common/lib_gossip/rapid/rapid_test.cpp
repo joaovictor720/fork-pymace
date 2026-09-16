@@ -51,8 +51,11 @@ void test_invalid_config() {
 }
 
 void test_dissemination_and_shutdown(std::uint16_t port) {
-    Rapid first(local_config(port, 1));
-    Rapid second(local_config(port, 2));
+    auto first_config = local_config(port, 1);
+    auto second_config = local_config(port, 2);
+    first_config.max_packet_size = second_config.max_packet_size = 1400;
+    Rapid first(first_config);
+    Rapid second(second_config);
     require(first.start(), "first instance failed to start: " + first.last_error());
     require(second.start(), "second instance failed to start: " + second.last_error());
 
@@ -60,9 +63,16 @@ void test_dissemination_and_shutdown(std::uint16_t port) {
         return second.receive();
     });
 
-    const std::string text = "independent RAPID instances";
+    // Fill the exact UDP budget, including RAPID's 13-byte DATA header.
+    // Embedded zero/high bytes must survive the cache and retransmission.
+    Bytes payload(1400 - 13, 0);
+    payload[0] = 0x81;
+    payload[8] = 0xff;
+    payload.back() = 0x01;
+    require(!first.disseminate(Bytes(payload.size() + 1, 0)).has_value(),
+            "oversized outgoing datagram must be rejected");
     const auto first_message =
-        first.disseminate(Bytes(text.begin(), text.end()));
+        first.disseminate(payload);
     require(first_message.has_value(),
             "disseminate failed: " + first.last_error());
     require(received.wait_for(2s) == std::future_status::ready,
@@ -70,7 +80,7 @@ void test_dissemination_and_shutdown(std::uint16_t port) {
 
     const auto message = received.get();
     require(message.has_value(), "receive returned shutdown instead of a message");
-    require(std::string(message->payload.begin(), message->payload.end()) == text,
+    require(message->payload == payload,
             "received payload differs from disseminated payload");
 
     auto repeated = std::async(std::launch::async, [&] {
@@ -87,13 +97,14 @@ void test_dissemination_and_shutdown(std::uint16_t port) {
             "a foreign message handle rejection was not counted");
 
     const auto distinct_message =
-        first.disseminate(Bytes(text.begin(), text.end()));
+        first.disseminate(payload);
     require(distinct_message.has_value(),
             "a repeated payload was not accepted as a new logical message");
     require(repeated.wait_for(2s) == std::future_status::ready,
             "an identical payload with a new message id was not delivered");
-    require(repeated.get().has_value(),
-            "the repeated payload receive returned shutdown");
+    const auto repeated_message = repeated.get();
+    require(repeated_message.has_value() && repeated_message->payload == payload,
+            "repeated binary payload differs from the original");
 
     const auto first_stats = first.stats();
     const auto second_stats = second.stats();
@@ -121,7 +132,7 @@ void test_dissemination_and_shutdown(std::uint16_t port) {
             "a stopped instance accepted a dissemination");
     require(!first.retransmit(*first_message),
             "a stopped instance accepted a retransmission");
-    require(first.stats().rejected_disseminations == 1,
+    require(first.stats().rejected_disseminations == 2,
             "a post-stop dissemination rejection was not counted");
     require(first.stats().rejected_retransmissions == 1,
             "a post-stop retransmission rejection was not counted");

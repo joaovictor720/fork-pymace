@@ -52,7 +52,7 @@ minimal scenario fragment is:
     "workload": "spatial_coverage",
     "position_poll_interval_ms": 100,
     "gps_timeout_ms": 50,
-    "max_datagram_bytes": 1200,
+    "max_datagram_bytes": 1400,
     "dissemination_interval": 0.5,
     "monitor_interval": 1
   },
@@ -65,9 +65,34 @@ minimal scenario fragment is:
 ```
 
 The grid must exactly match `simulation.area`. The generator validates the
-full-state worst case against the strictest primitive header (13 bytes), so a
-1200-byte budget permits at most 593 cells. Duration, cooldown, checkpoints,
-and `T_cover` are experiment-runner concerns and are not written into the
+full bitmap against the strictest primitive header (13 bytes for RAPID/Trickle).
+The coverage frame has a 44-byte header: `CBM1`, rows and columns as big-endian
+uint32, followed by origin x/y and width/height as big-endian IEEE-754 binary64.
+The remaining `ceil(rows * cols / 8)` bytes are the bitmap: cell 0 is the low
+bit of byte 0, cell 7 is its high bit, and cell 8 is the low bit of byte 1.
+Unused final bits must be zero. Receivers reject differing grids, malformed
+lengths and nonzero padding. This encoding is incompatible with old spatial
+ID-list payloads; all nodes in a run must use the new binaries. GCounter is
+unchanged.
+
+The proposed default budget is 1400 bytes of UDP payload, including application
+and primitive headers. Maximum cells are
+`min(65536, 8 * (budget - 44 - primitive_header_bytes))`: 10,848 for broadcast
+and multi-unicast (0), 10,784 for USFD (8), and 10,744 for RAPID/Trickle (13).
+The shared generator uses the strictest limit; 103x103 is the largest square
+that fits all primitives. An explicit 1200-byte budget remains supported
+(9,144 cells with the strictest header). Oversized grids fail before startup;
+there is no fragmentation, compression or encoding fallback in the application.
+
+**BATMAN-adv path validation remains pending:** during bitmap implementation,
+the host interface reported MTU 1500, but no CORE/BATMAN interfaces or loaded
+`batman_adv` module were available to measure the mesh path. Do not treat
+1400 as a verified mesh limit: inspect `eth0` and `bat0` MTUs in the running
+CORE nodes, then probe a 1428-byte IPv4 packet (1400 UDP payload + 8 UDP +
+20 IP) and check physical-interface captures for IP/BATMAN fragmentation.
+The UDP budget check alone cannot establish that the mesh avoids fragmentation.
+
+Duration, cooldown, checkpoints, and `T_cover` are experiment-runner concerns and are not written into the
 application configuration.
 
 Before starting CORE, `run_scenario.sh` checks that there is one deterministic
@@ -148,9 +173,7 @@ scenarios use a 24x24 `GridSpec` (576 cells), `coverage.start_delay_s=30`, and
 10, 20, 30, 40 and 50 nodes use prefixes of the same run trace set. Each
 density is evaluated with configured packet error rates of 0% and 10%. The
 radio range is fixed at 140m and the deterministic mobility traces are
-generated with a fixed 20m/s movement speed. The 24x24 grid is the largest
-square grid that fits the current 1200-byte datagram budget without adding
-fragmentation.
+generated with a fixed 20m/s movement speed.
 
 The fixed mobility inputs live in
 `evaluation/trace_catalogs/spatial_grid_1km_24x24`.  The catalog contains 10

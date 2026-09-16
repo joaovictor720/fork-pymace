@@ -14,7 +14,6 @@
 #include <limits>
 #include <mutex>
 #include <optional>
-#include <set>
 #include <stdexcept>
 #include <string>
 #include <thread>
@@ -37,7 +36,7 @@ inline double unix_time_seconds() {
         .count();
 }
 
-constexpr std::size_t kDefaultMaxDatagramBytes = 1200;
+constexpr std::size_t kDefaultMaxDatagramBytes = 1400;
 constexpr std::chrono::milliseconds kDefaultPollInterval{100};
 constexpr std::chrono::milliseconds kDefaultGpsTimeout{50};
 constexpr char kGpsV1Request[4] = {'G', 'P', 'S', '1'};
@@ -320,11 +319,21 @@ struct GridSpec {
     }
 };
 
-inline std::size_t serialized_size_for_cells(std::uint64_t count) {
-    if (count > std::numeric_limits<std::size_t>::max() / sizeof(CellId)) {
-        throw std::overflow_error("serialized GSet size overflows size_t");
+// Coverage frame: "CBM1", rows/cols (u32 BE), origin x/y and width/height
+// (IEEE-754 binary64 BE), then raw bitmap bytes. Exact GridSpec metadata
+// avoids accepting equally-sized bitmaps with a different spatial meaning.
+constexpr std::size_t kBitmapHeaderBytes = 4 + 4 + 4 + 4 * 8;
+
+inline std::size_t bitmap_size_for_cells(std::uint64_t count) {
+    const auto bytes = count / 8 + (count % 8 != 0);
+    if (bytes > std::numeric_limits<std::size_t>::max() - kBitmapHeaderBytes) {
+        throw std::overflow_error("serialized bitmap size overflows size_t");
     }
-    return static_cast<std::size_t>(count) * sizeof(CellId);
+    return static_cast<std::size_t>(bytes);
+}
+
+inline std::size_t serialized_size_for_cells(std::uint64_t count) {
+    return kBitmapHeaderBytes + bitmap_size_for_cells(count);
 }
 
 inline void validate_datagram_budget(const GridSpec& grid,
@@ -335,66 +344,81 @@ inline void validate_datagram_budget(const GridSpec& grid,
         primitive_overhead_bytes > max_datagram_bytes) {
         throw std::invalid_argument("invalid maximum datagram budget");
     }
-    const std::size_t state_size =
-        serialized_size_for_cells(grid.cell_count());
-    // Subtracting the already-validated overhead avoids wrapping size_t when
-    // this reusable helper is called with a budget larger than the workload's
-    // normal 1200-byte cap.
-    if (state_size > max_datagram_bytes - primitive_overhead_bytes) {
+    const auto available = max_datagram_bytes - primitive_overhead_bytes;
+    if (serialized_size_for_cells(grid.cell_count()) > available) {
+        const auto max_cells = available < kBitmapHeaderBytes ? 0ULL :
+            std::min<std::uint64_t>(65536, (available - kBitmapHeaderBytes) * 8ULL);
         throw std::invalid_argument(
-            "full GSet plus primitive metadata exceeds max_datagram_bytes");
+            "full bitmap plus grid/primitive headers exceeds max_datagram_bytes; "
+            "maximum grid cells=" + std::to_string(max_cells));
     }
 }
 
-inline Bytes serialize_gset(const std::set<CellId>& cells) {
-    Bytes output;
-    output.reserve(serialized_size_for_cells(cells.size()));
-    for (CellId id : cells) {
-        // Network byte order, deterministic ascending order.
-        output.push_back(static_cast<std::uint8_t>((id >> 8) & 0xff));
-        output.push_back(static_cast<std::uint8_t>(id & 0xff));
+inline Bytes bitmap_header(const GridSpec& grid) {
+    grid.validate();
+    Bytes header{'C', 'B', 'M', '1'};
+    const auto append = [&](std::uint64_t value, int bytes) {
+        for (int i = bytes - 1; i >= 0; --i) {
+            header.push_back(static_cast<std::uint8_t>(value >> (i * 8)));
+        }
+    };
+    append(grid.rows, 4);
+    append(grid.cols, 4);
+    static_assert(sizeof(double) == 8 && std::numeric_limits<double>::is_iec559,
+                  "bitmap grid header requires IEEE-754 binary64");
+    for (double value : {grid.origin_x_m, grid.origin_y_m,
+                         grid.width_m, grid.height_m}) {
+        if (value == 0.0) value = 0.0; // Canonicalize negative zero.
+        std::uint64_t bits;
+        std::memcpy(&bits, &value, sizeof(bits));
+        append(bits, 8);
     }
+    return header;
+}
+
+inline void validate_bitmap(const Bytes& bitmap, std::uint64_t cell_count) {
+    if (bitmap.size() != bitmap_size_for_cells(cell_count)) {
+        throw std::invalid_argument("bitmap length does not match grid");
+    }
+    if (cell_count % 8 != 0 &&
+        (bitmap.back() & (0xffu << (cell_count % 8))) != 0) {
+        throw std::invalid_argument("unused bitmap bits must be zero");
+    }
+}
+
+inline Bytes serialize_bitmap(const Bytes& bitmap, const GridSpec& grid) {
+    auto output = bitmap_header(grid);
+    validate_bitmap(bitmap, grid.cell_count());
+    output.insert(output.end(), bitmap.begin(), bitmap.end());
     return output;
 }
 
-inline std::set<CellId> deserialize_gset(const std::uint8_t* data,
-                                        std::size_t size,
-                                        std::uint64_t cell_count) {
-    if (size != 0 && data == nullptr) {
-        throw std::invalid_argument("GSet payload pointer is null");
+inline Bytes deserialize_bitmap(const std::uint8_t* data, std::size_t size,
+                                const GridSpec& grid) {
+    const auto header = bitmap_header(grid);
+    if (data == nullptr || size != serialized_size_for_cells(grid.cell_count())) {
+        throw std::invalid_argument("invalid bitmap frame length or null payload");
     }
-    if (size % sizeof(CellId) != 0) {
-        throw std::invalid_argument("GSet payload has an odd byte count");
+    if (!std::equal(header.begin(), header.end(), data)) {
+        throw std::invalid_argument("incompatible bitmap encoding or GridSpec");
     }
-    std::set<CellId> cells;
-    std::optional<CellId> previous;
-    for (std::size_t offset = 0; offset < size; offset += 2) {
-        const CellId id = static_cast<CellId>(
-            (static_cast<std::uint16_t>(data[offset]) << 8) |
-            static_cast<std::uint16_t>(data[offset + 1]));
-        if (static_cast<std::uint64_t>(id) >= cell_count) {
-            throw std::invalid_argument("GSet payload contains an invalid cell id");
-        }
-        if (previous && id <= *previous) {
-            throw std::invalid_argument(
-                "GSet payload ids must be unique and strictly increasing");
-        }
-        cells.insert(id);
-        previous = id;
-    }
-    return cells;
+    Bytes bitmap(data + header.size(), data + size);
+    validate_bitmap(bitmap, grid.cell_count());
+    return bitmap;
 }
 
-inline std::set<CellId> deserialize_gset(const Bytes& data,
-                                        std::uint64_t cell_count) {
-    return deserialize_gset(data.data(), data.size(), cell_count);
+inline Bytes deserialize_bitmap(const Bytes& data, const GridSpec& grid) {
+    return deserialize_bitmap(data.data(), data.size(), grid);
 }
 
-inline std::set<CellId> deserialize_gset(const char* data,
-                                        std::size_t size,
-                                        std::uint64_t cell_count) {
-    return deserialize_gset(
-        reinterpret_cast<const std::uint8_t*>(data), size, cell_count);
+inline bool bitmap_contains(const Bytes& local, const Bytes& remote) {
+    if (local.size() != remote.size()) {
+        throw std::invalid_argument("cannot compare different bitmap lengths");
+    }
+    for (std::size_t i = 0; i < local.size(); ++i) {
+        if ((local[i] | remote[i]) != local[i]) return false;
+    }
+    return true;
 }
 
 struct StateUpdate {
@@ -408,105 +432,106 @@ struct StateUpdate {
     double timestamp_unix_s{0.0};
 };
 
-class GSetReplica {
+class BitmapReplica {
 public:
-    explicit GSetReplica(std::uint64_t cell_count)
-        : cell_count_(cell_count) {
-        constexpr std::uint64_t capacity =
-            static_cast<std::uint64_t>(std::numeric_limits<CellId>::max()) + 1ULL;
-        if (cell_count_ == 0 || cell_count_ > capacity) {
-            throw std::invalid_argument("invalid GSet cell count");
-        }
+    explicit BitmapReplica(GridSpec grid)
+        : grid_(std::move(grid)) {
+        grid_.validate();
+        bitmap_.resize(bitmap_size_for_cells(grid_.cell_count()), 0);
     }
 
     StateUpdate add_local(const std::vector<CellId>& candidates) {
+        // Validate the whole batch before mutating any bits.
+        for (CellId id : candidates) require_valid(id);
         std::lock_guard<std::mutex> lock(mutex_);
         StateUpdate result;
         for (CellId id : candidates) {
-            require_valid(id);
-            if (cells_.insert(id).second) {
+            const auto mask = static_cast<std::uint8_t>(1u << (id % 8));
+            if ((bitmap_[id / 8] & mask) == 0) {
+                bitmap_[id / 8] |= mask;
                 result.added.push_back(id);
             }
         }
         std::sort(result.added.begin(), result.added.end());
-        result.changed = !result.added.empty();
-        result.replica_size = cells_.size();
+        finish_update(result);
         if (result.changed) {
-            stamp_mutation(result);
-            // State mutation and trigger snapshot are one critical section.
-            result.snapshot = serialize_gset(cells_);
-        } else {
-            result.mutation_sequence = mutation_sequence_;
-        }
-        return result;
-    }
-
-    StateUpdate merge(const std::set<CellId>& remote) {
-        std::lock_guard<std::mutex> lock(mutex_);
-        StateUpdate result;
-        for (CellId id : remote) {
-            require_valid(id);
-            if (cells_.insert(id).second) {
-                result.added.push_back(id);
-            }
-        }
-        result.changed = !result.added.empty();
-        result.replica_size = cells_.size();
-        if (result.changed) {
-            stamp_mutation(result);
-        } else {
-            result.mutation_sequence = mutation_sequence_;
+            // Mutation and the complete trigger snapshot share one lock.
+            result.snapshot = serialize_bitmap(bitmap_, grid_);
         }
         return result;
     }
 
     StateUpdate merge_serialized(const std::uint8_t* data, std::size_t size) {
-        return merge(deserialize_gset(data, size, cell_count_));
+        const auto remote = deserialize_bitmap(data, size, grid_);
+        std::lock_guard<std::mutex> lock(mutex_);
+        StateUpdate result;
+        for (std::size_t i = 0; i < bitmap_.size(); ++i) {
+            const auto added = static_cast<std::uint8_t>(remote[i] & ~bitmap_[i]);
+            bitmap_[i] |= remote[i];
+            // Enumerate only for the existing change log.
+            for (unsigned bit = 0; bit < 8; ++bit) {
+                if (added & (1u << bit)) {
+                    result.added.push_back(static_cast<CellId>(i * 8 + bit));
+                }
+            }
+        }
+        finish_update(result);
+        return result; // Remote merges never create an application snapshot.
     }
 
     StateUpdate merge_serialized(const Bytes& data) {
-        return merge(deserialize_gset(data, cell_count_));
+        return merge_serialized(data.data(), data.size());
     }
 
     StateUpdate merge_serialized(const char* data, std::size_t size) {
-        return merge(deserialize_gset(data, size, cell_count_));
+        return merge_serialized(reinterpret_cast<const std::uint8_t*>(data), size);
     }
 
-    std::set<CellId> cells() const {
+    bool contains(CellId id) const {
+        require_valid(id);
         std::lock_guard<std::mutex> lock(mutex_);
-        return cells_;
+        return (bitmap_[id / 8] & (1u << (id % 8))) != 0;
+    }
+
+    Bytes bitmap() const {
+        std::lock_guard<std::mutex> lock(mutex_);
+        return bitmap_;
     }
 
     Bytes serialize() const {
         std::lock_guard<std::mutex> lock(mutex_);
-        return serialize_gset(cells_);
+        return serialize_bitmap(bitmap_, grid_);
     }
 
     std::size_t size() const {
         std::lock_guard<std::mutex> lock(mutex_);
-        return cells_.size();
+        return count_;
     }
 
 private:
-    void stamp_mutation(StateUpdate& result) {
-        ++mutation_sequence_;
+    void finish_update(StateUpdate& result) {
+        count_ += result.added.size();
+        result.changed = !result.added.empty();
+        result.replica_size = count_;
+        if (result.changed) {
+            ++mutation_sequence_;
+            last_mutation_timestamp_unix_s_ = std::max(
+                last_mutation_timestamp_unix_s_, unix_time_seconds());
+            result.timestamp_unix_s = last_mutation_timestamp_unix_s_;
+        }
         result.mutation_sequence = mutation_sequence_;
-        // The version is the authoritative tie-breaker. Clamping also avoids
-        // a wall-clock adjustment making a single replica's timeline regress.
-        last_mutation_timestamp_unix_s_ = std::max(
-            last_mutation_timestamp_unix_s_, unix_time_seconds());
-        result.timestamp_unix_s = last_mutation_timestamp_unix_s_;
     }
 
     void require_valid(CellId id) const {
-        if (static_cast<std::uint64_t>(id) >= cell_count_) {
+        if (static_cast<std::uint64_t>(id) >= grid_.cell_count()) {
             throw std::out_of_range("cell id is outside this replica's grid");
         }
     }
 
-    std::uint64_t cell_count_;
+    const GridSpec grid_;
     mutable std::mutex mutex_;
-    std::set<CellId> cells_;
+    Bytes bitmap_;
+    std::size_t count_{0};
     std::uint64_t mutation_sequence_{0};
     double last_mutation_timestamp_unix_s_{0.0};
 };
@@ -525,7 +550,7 @@ struct Observation {
 class CoverageWorkload {
 public:
     explicit CoverageWorkload(GridSpec grid)
-        : grid_(std::move(grid)), replica_(grid_.cell_count()) {
+        : grid_(std::move(grid)), replica_(grid_) {
         grid_.validate();
     }
 
@@ -571,8 +596,8 @@ public:
         return replica_.serialize();
     }
 
-    std::set<CellId> cells() const {
-        return replica_.cells();
+    Bytes bitmap() const {
+        return replica_.bitmap();
     }
 
     std::size_t size() const {
@@ -585,7 +610,7 @@ public:
 
 private:
     GridSpec grid_;
-    GSetReplica replica_;
+    BitmapReplica replica_;
     std::mutex position_mutex_;
     std::optional<Position> previous_position_;
 };

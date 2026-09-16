@@ -607,7 +607,7 @@ NodeConfig load_config(const std::string& path, const std::string& id) {
             configured_budget > static_cast<std::int64_t>(
                                     mace::coverage::kDefaultMaxDatagramBytes)) {
             throw std::invalid_argument(
-                "max_datagram_bytes must be between 1 and 1200");
+                "max_datagram_bytes must be between 1 and 1400");
         }
         config.max_datagram_bytes =
             static_cast<std::size_t>(configured_budget);
