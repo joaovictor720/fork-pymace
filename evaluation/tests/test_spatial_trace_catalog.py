@@ -35,6 +35,7 @@ class SpatialTraceCatalogTests(unittest.TestCase):
             self.assertEqual(manifest["grid"]["cols"], 24)
             self.assertEqual(manifest["coverage_speed_mps"], 20.0)
             self.assertEqual(manifest["patrol_speed_mps"], 20.0)
+            self.assertIsInstance(manifest["coverage_family"], str)
             coverage_counts = [
                 node["coverage_cell_count"]
                 for node in manifest["nodes"][:10]

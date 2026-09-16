@@ -7,8 +7,8 @@
     "x": 1000.0,
     "y": 1000.0
   },
-  "catalog_sha256": "aa04e893c89f6f22d963bd61318d17a6a721501b1ff66313585c0d37b65bd15d",
-  "combined_sha256": "2a353c052be39cc92cdfd887756f3fe2fecde2ad5821a26c70f699ed4114cdaa",
+  "catalog_sha256": "34382da270b81d66cf875283a2c2ec33ce52557ca593491ed78f4431542b2b56",
+  "combined_sha256": "8eb00d3850bacd86bd4f5d956263cb38c998e9d3917e58d04f2a7905e8ca4da1",
   "coverage_node_count": 10,
   "coverage_speed_mps": 20.0,
   "coverage_start_time_s": 30.0,
@@ -20,7 +20,7 @@
     50
   ],
   "duration_s": 220.0,
-  "generator_policy": "balanced_randomized_fixed_speed_sweep_v3",
+  "generator_policy": "compact_sector_fixed_speed_sweep_v4",
   "grid": {
     "cell_count": 576,
     "cell_height_m": 41.666666666666664,
@@ -40,33 +40,33 @@
   "runs": [
     {
       "central_seed": 2093518614,
-      "combined_sha256": "2e2da3d9bfe3dff6b201a2c5f7712af4aa5639e72c39a584100b9aedce5ae53b",
+      "combined_sha256": "229344741c91ab9c3fa42a9220f8f79c0da9a1b61e56039446c2b4934490cddf",
       "manifest": "run_001/manifest.json",
-      "manifest_sha256": "18a2d7b5c7d2dd5a5f148f6c8dc41e37d7bf6da8fb608990133e8f4966da8029",
+      "manifest_sha256": "51df9e5c66ed07823583895fa523069f828465fbf67425b2bc0071171845b1c9",
       "prefix_validations": {
         "10": {
           "covered_cell_count": 576,
-          "t_cover_s": 149.4,
+          "t_cover_s": 150.6,
           "total_cell_count": 576
         },
         "20": {
           "covered_cell_count": 576,
-          "t_cover_s": 149.4,
+          "t_cover_s": 147.2,
           "total_cell_count": 576
         },
         "30": {
           "covered_cell_count": 576,
-          "t_cover_s": 147.8,
+          "t_cover_s": 145.4,
           "total_cell_count": 576
         },
         "40": {
           "covered_cell_count": 576,
-          "t_cover_s": 147.8,
+          "t_cover_s": 145.4,
           "total_cell_count": 576
         },
         "50": {
           "covered_cell_count": 576,
-          "t_cover_s": 146.8,
+          "t_cover_s": 145.4,
           "total_cell_count": 576
         }
       },
@@ -74,18 +74,86 @@
     },
     {
       "central_seed": 17719117,
-      "combined_sha256": "c2f279f7e3d1bf73523a420ae9b4035f261704306f0308f9e3ae8dbeaaafd434",
+      "combined_sha256": "337db6f358b40e5b8b1b09b03d574ea5a6a0493d766256a2db7f0b396445cf98",
       "manifest": "run_002/manifest.json",
-      "manifest_sha256": "dcb0162492b78fa582d6fe92d33cb55b5f42e271ec40eaa777864364fd39e82b",
+      "manifest_sha256": "396438e44d6a31006ba847dcdf8f42025e994a3454389bd7e2c9d76bb25a3e1e",
       "prefix_validations": {
         "10": {
           "covered_cell_count": 576,
-          "t_cover_s": 150.0,
+          "t_cover_s": 157.8,
           "total_cell_count": 576
         },
         "20": {
           "covered_cell_count": 576,
-          "t_cover_s": 149.2,
+          "t_cover_s": 155.6,
+          "total_cell_count": 576
+        },
+        "30": {
+          "covered_cell_count": 576,
+          "t_cover_s": 155.6,
+          "total_cell_count": 576
+        },
+        "40": {
+          "covered_cell_count": 576,
+          "t_cover_s": 155.6,
+          "total_cell_count": 576
+        },
+        "50": {
+          "covered_cell_count": 576,
+          "t_cover_s": 155.6,
+          "total_cell_count": 576
+        }
+      },
+      "run": "run_002"
+    },
+    {
+      "central_seed": 340779781,
+      "combined_sha256": "0a997fbbe4a2843a292023f452a044a7be29ad7d7ee1ecc92479101794fd22b8",
+      "manifest": "run_003/manifest.json",
+      "manifest_sha256": "a91b62bcef609d5de169f8c1c8db60094f9f41cc95ba37bdfb0a9b81cd12477f",
+      "prefix_validations": {
+        "10": {
+          "covered_cell_count": 576,
+          "t_cover_s": 161.8,
+          "total_cell_count": 576
+        },
+        "20": {
+          "covered_cell_count": 576,
+          "t_cover_s": 161.8,
+          "total_cell_count": 576
+        },
+        "30": {
+          "covered_cell_count": 576,
+          "t_cover_s": 159.8,
+          "total_cell_count": 576
+        },
+        "40": {
+          "covered_cell_count": 576,
+          "t_cover_s": 159.8,
+          "total_cell_count": 576
+        },
+        "50": {
+          "covered_cell_count": 576,
+          "t_cover_s": 159.8,
+          "total_cell_count": 576
+        }
+      },
+      "run": "run_003"
+    },
+    {
+      "central_seed": 1261654888,
+      "combined_sha256": "1bc4bb8f505774aa47a57733d2d29f2d9665fb46bcd614b546bdbaa702807ac9",
+      "manifest": "run_004/manifest.json",
+      "manifest_sha256": "421694e5b3eb75aa5ce74633124f76e8ed5f972c9be96fe2497ab3a7d7e6ee6e",
+      "prefix_validations": {
+        "10": {
+          "covered_cell_count": 576,
+          "t_cover_s": 150.2,
+          "total_cell_count": 576
+        },
+        "20": {
+          "covered_cell_count": 576,
+          "t_cover_s": 149.8,
           "total_cell_count": 576
         },
         "30": {
@@ -95,80 +163,12 @@
         },
         "40": {
           "covered_cell_count": 576,
-          "t_cover_s": 146.8,
+          "t_cover_s": 145.4,
           "total_cell_count": 576
         },
         "50": {
           "covered_cell_count": 576,
-          "t_cover_s": 140.0,
-          "total_cell_count": 576
-        }
-      },
-      "run": "run_002"
-    },
-    {
-      "central_seed": 340779781,
-      "combined_sha256": "ebbdd9cd00f1a736da3f00b359e9038444ead162b066e365c582ddc0f34b30f5",
-      "manifest": "run_003/manifest.json",
-      "manifest_sha256": "11e90110295fc0d1b290979e7ca028b728c53b179ee0ab1612f8e5060bec5a9f",
-      "prefix_validations": {
-        "10": {
-          "covered_cell_count": 576,
-          "t_cover_s": 150.2,
-          "total_cell_count": 576
-        },
-        "20": {
-          "covered_cell_count": 576,
-          "t_cover_s": 150.2,
-          "total_cell_count": 576
-        },
-        "30": {
-          "covered_cell_count": 576,
-          "t_cover_s": 150.2,
-          "total_cell_count": 576
-        },
-        "40": {
-          "covered_cell_count": 576,
-          "t_cover_s": 150.2,
-          "total_cell_count": 576
-        },
-        "50": {
-          "covered_cell_count": 576,
-          "t_cover_s": 150.2,
-          "total_cell_count": 576
-        }
-      },
-      "run": "run_003"
-    },
-    {
-      "central_seed": 1261654888,
-      "combined_sha256": "e887572c7b5f07f9ade0238d5228649fbd5b98af909b9120c10cd0c3e9f33353",
-      "manifest": "run_004/manifest.json",
-      "manifest_sha256": "c3441bbe394ff80d416fb4917999fbf4316cf49033a66f730204114dc25889f4",
-      "prefix_validations": {
-        "10": {
-          "covered_cell_count": 576,
-          "t_cover_s": 150.4,
-          "total_cell_count": 576
-        },
-        "20": {
-          "covered_cell_count": 576,
-          "t_cover_s": 148.4,
-          "total_cell_count": 576
-        },
-        "30": {
-          "covered_cell_count": 576,
-          "t_cover_s": 148.4,
-          "total_cell_count": 576
-        },
-        "40": {
-          "covered_cell_count": 576,
-          "t_cover_s": 148.4,
-          "total_cell_count": 576
-        },
-        "50": {
-          "covered_cell_count": 576,
-          "t_cover_s": 148.4,
+          "t_cover_s": 145.4,
           "total_cell_count": 576
         }
       },
@@ -176,33 +176,33 @@
     },
     {
       "central_seed": 1250352480,
-      "combined_sha256": "b326d8e7c6b153502177260f56ab2868ecbd7b7dee8fb5d0e8f1759c85a99a11",
+      "combined_sha256": "07dc851eae009b95f154ddc32c243dc0dabc8ec0ecdb42e203b7f4700e1763a1",
       "manifest": "run_005/manifest.json",
-      "manifest_sha256": "7494b3c6fe2137e0a391a4200f5c0997520d2addd01ce881b350c4ded071184b",
+      "manifest_sha256": "92b2046172fc7cb4f103a94af24a89e86edd08c46d4e58e91190d796a2d5f8ef",
       "prefix_validations": {
         "10": {
           "covered_cell_count": 576,
-          "t_cover_s": 150.4,
+          "t_cover_s": 155.6,
           "total_cell_count": 576
         },
         "20": {
           "covered_cell_count": 576,
-          "t_cover_s": 149.2,
+          "t_cover_s": 155.6,
           "total_cell_count": 576
         },
         "30": {
           "covered_cell_count": 576,
-          "t_cover_s": 149.2,
+          "t_cover_s": 155.6,
           "total_cell_count": 576
         },
         "40": {
           "covered_cell_count": 576,
-          "t_cover_s": 149.2,
+          "t_cover_s": 155.6,
           "total_cell_count": 576
         },
         "50": {
           "covered_cell_count": 576,
-          "t_cover_s": 147.2,
+          "t_cover_s": 154.8,
           "total_cell_count": 576
         }
       },
@@ -210,81 +210,13 @@
     },
     {
       "central_seed": 1054724148,
-      "combined_sha256": "e7cd26859443ce4b09ca004da638f8e7fbfd1493eb3c5c9cb3e092d68ce777ef",
+      "combined_sha256": "b5e339626c173b4814ff6ece8b910834c7deb63a6d26aa198fd74fe44f0f5e0a",
       "manifest": "run_006/manifest.json",
-      "manifest_sha256": "8ed04a1a2ed9314418f5e820722ab9103828081f2282aa60a5e7e94615b28dce",
+      "manifest_sha256": "68ec257f421e78a7da057d02a55652da0ed5e19110152be6b7973202c4d1101e",
       "prefix_validations": {
         "10": {
           "covered_cell_count": 576,
-          "t_cover_s": 151.0,
-          "total_cell_count": 576
-        },
-        "20": {
-          "covered_cell_count": 576,
-          "t_cover_s": 151.0,
-          "total_cell_count": 576
-        },
-        "30": {
-          "covered_cell_count": 576,
-          "t_cover_s": 151.0,
-          "total_cell_count": 576
-        },
-        "40": {
-          "covered_cell_count": 576,
-          "t_cover_s": 146.4,
-          "total_cell_count": 576
-        },
-        "50": {
-          "covered_cell_count": 576,
-          "t_cover_s": 142.8,
-          "total_cell_count": 576
-        }
-      },
-      "run": "run_006"
-    },
-    {
-      "central_seed": 23851367,
-      "combined_sha256": "89ae1d2e0a13e3182b661cdfe00cd4832584c499a1d27275d774cac71b99b037",
-      "manifest": "run_007/manifest.json",
-      "manifest_sha256": "68075110ae750e9a83672946d2eed39c4f61ebdb4b2a8e6013d51831b997ebf6",
-      "prefix_validations": {
-        "10": {
-          "covered_cell_count": 576,
-          "t_cover_s": 149.8,
-          "total_cell_count": 576
-        },
-        "20": {
-          "covered_cell_count": 576,
-          "t_cover_s": 149.8,
-          "total_cell_count": 576
-        },
-        "30": {
-          "covered_cell_count": 576,
-          "t_cover_s": 149.8,
-          "total_cell_count": 576
-        },
-        "40": {
-          "covered_cell_count": 576,
-          "t_cover_s": 149.2,
-          "total_cell_count": 576
-        },
-        "50": {
-          "covered_cell_count": 576,
-          "t_cover_s": 147.6,
-          "total_cell_count": 576
-        }
-      },
-      "run": "run_007"
-    },
-    {
-      "central_seed": 1914507579,
-      "combined_sha256": "0d15ad85361de7161e4edc6d69dc36333a35294b5c94f135e3393ac33bf91393",
-      "manifest": "run_008/manifest.json",
-      "manifest_sha256": "e78086672f15bfc70fdc10dc52c3ff28568d8c6ddee3881e609cee00f96bb3a6",
-      "prefix_validations": {
-        "10": {
-          "covered_cell_count": 576,
-          "t_cover_s": 150.6,
+          "t_cover_s": 149.6,
           "total_cell_count": 576
         },
         "20": {
@@ -294,17 +226,85 @@
         },
         "30": {
           "covered_cell_count": 576,
-          "t_cover_s": 147.2,
+          "t_cover_s": 149.4,
           "total_cell_count": 576
         },
         "40": {
           "covered_cell_count": 576,
-          "t_cover_s": 147.2,
+          "t_cover_s": 148.0,
           "total_cell_count": 576
         },
         "50": {
           "covered_cell_count": 576,
-          "t_cover_s": 146.4,
+          "t_cover_s": 148.0,
+          "total_cell_count": 576
+        }
+      },
+      "run": "run_006"
+    },
+    {
+      "central_seed": 23851367,
+      "combined_sha256": "7367663e9786b67bf3eebd5b2cb6ae49fdd81001f0affaa05e164c3e8b7b3817",
+      "manifest": "run_007/manifest.json",
+      "manifest_sha256": "9fb68f3cb954a0caa51399e63f6f01ecb910222666e3ea3b951e0868af48e5c1",
+      "prefix_validations": {
+        "10": {
+          "covered_cell_count": 576,
+          "t_cover_s": 158.8,
+          "total_cell_count": 576
+        },
+        "20": {
+          "covered_cell_count": 576,
+          "t_cover_s": 158.8,
+          "total_cell_count": 576
+        },
+        "30": {
+          "covered_cell_count": 576,
+          "t_cover_s": 156.8,
+          "total_cell_count": 576
+        },
+        "40": {
+          "covered_cell_count": 576,
+          "t_cover_s": 156.8,
+          "total_cell_count": 576
+        },
+        "50": {
+          "covered_cell_count": 576,
+          "t_cover_s": 156.8,
+          "total_cell_count": 576
+        }
+      },
+      "run": "run_007"
+    },
+    {
+      "central_seed": 1914507579,
+      "combined_sha256": "85e36dc818f59646d89b6c6f81609c2b2c61cf79ebc7df399ae177db604957a6",
+      "manifest": "run_008/manifest.json",
+      "manifest_sha256": "4ebd9ecdce20834d0c1dad4180b04f2a8ee280056adfb3d94fbb54ae836660f6",
+      "prefix_validations": {
+        "10": {
+          "covered_cell_count": 576,
+          "t_cover_s": 156.2,
+          "total_cell_count": 576
+        },
+        "20": {
+          "covered_cell_count": 576,
+          "t_cover_s": 156.2,
+          "total_cell_count": 576
+        },
+        "30": {
+          "covered_cell_count": 576,
+          "t_cover_s": 155.2,
+          "total_cell_count": 576
+        },
+        "40": {
+          "covered_cell_count": 576,
+          "t_cover_s": 155.2,
+          "total_cell_count": 576
+        },
+        "50": {
+          "covered_cell_count": 576,
+          "t_cover_s": 155.2,
           "total_cell_count": 576
         }
       },
@@ -312,33 +312,33 @@
     },
     {
       "central_seed": 2071012138,
-      "combined_sha256": "e45378077c181bcab008c46994a6f5397a0a0bef4c9e08a5987baacba8ecd1a7",
+      "combined_sha256": "aa6c82a4eadc7356f46bd1629094de7330aa1c988074065ebb343dceb6caac7c",
       "manifest": "run_009/manifest.json",
-      "manifest_sha256": "d2ce57e0fcd43a42cd49bf13e0fa1febcb0654cc7fd79a482873371088c426ee",
+      "manifest_sha256": "f5a7b4cd45acf8d452a5713733d7c9b87e6f5a98309160ffdf7e098a06526cc7",
       "prefix_validations": {
         "10": {
           "covered_cell_count": 576,
-          "t_cover_s": 150.6,
+          "t_cover_s": 150.4,
           "total_cell_count": 576
         },
         "20": {
           "covered_cell_count": 576,
-          "t_cover_s": 149.8,
+          "t_cover_s": 147.8,
           "total_cell_count": 576
         },
         "30": {
           "covered_cell_count": 576,
-          "t_cover_s": 147.6,
+          "t_cover_s": 147.8,
           "total_cell_count": 576
         },
         "40": {
           "covered_cell_count": 576,
-          "t_cover_s": 147.6,
+          "t_cover_s": 147.8,
           "total_cell_count": 576
         },
         "50": {
           "covered_cell_count": 576,
-          "t_cover_s": 147.6,
+          "t_cover_s": 147.8,
           "total_cell_count": 576
         }
       },
@@ -346,33 +346,33 @@
     },
     {
       "central_seed": 1184596165,
-      "combined_sha256": "7537bfdfb09d823759d755f1a53ac7e3e555309dc45b375fa30256e7c0c3f92a",
+      "combined_sha256": "280eb75bc8784a9d95335d5711a46e7a56218c29cc79759b4cb67f7b2afdd7ab",
       "manifest": "run_010/manifest.json",
-      "manifest_sha256": "84441c8514bd115974b6b47ba41326410aa5f303d87d083d12b3807965a4d2d9",
+      "manifest_sha256": "7425698347eba2704590ceb599d13f862bb17904437b36eb766df637d3af1310",
       "prefix_validations": {
         "10": {
           "covered_cell_count": 576,
-          "t_cover_s": 149.2,
+          "t_cover_s": 155.4,
           "total_cell_count": 576
         },
         "20": {
           "covered_cell_count": 576,
-          "t_cover_s": 147.2,
+          "t_cover_s": 155.4,
           "total_cell_count": 576
         },
         "30": {
           "covered_cell_count": 576,
-          "t_cover_s": 147.2,
+          "t_cover_s": 155.4,
           "total_cell_count": 576
         },
         "40": {
           "covered_cell_count": 576,
-          "t_cover_s": 147.2,
+          "t_cover_s": 155.4,
           "total_cell_count": 576
         },
         "50": {
           "covered_cell_count": 576,
-          "t_cover_s": 146.2,
+          "t_cover_s": 155.4,
           "total_cell_count": 576
         }
       },

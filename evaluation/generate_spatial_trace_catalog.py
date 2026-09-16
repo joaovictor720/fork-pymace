@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
 """Generate deterministic trace sets for the spatial grid experiments.
 
-Each catalog run contains 50 node traces.  Nodes 0..9 execute balanced chunks
-of a randomized serpentine sweep at a fixed movement speed that guarantees
-full-grid coverage after the coverage start time; nodes 10..49 execute seeded
-random patrols to provide density and connectivity variation.
+Each catalog run contains 50 node traces.  Nodes 0..9 execute balanced compact
+coverage sectors at a fixed movement speed that guarantees full-grid coverage
+after the coverage start time; nodes 10..49 execute seeded random patrols to
+provide density and connectivity variation.
 """
 
 import argparse
@@ -31,9 +31,22 @@ from spatial_coverage import GridSpec, check_traces, read_traces
 
 
 CATALOG_POLICY = "mace_spatial_trace_catalog_v1"
-GENERATOR_POLICY = "balanced_randomized_fixed_speed_sweep_v3"
+GENERATOR_POLICY = "compact_sector_fixed_speed_sweep_v4"
 DEFAULT_CATALOG = (
     ROOT_DIR / "evaluation" / "trace_catalogs" / "spatial_grid_1km_24x24"
+)
+
+COVERAGE_SWEEP_FAMILIES = (
+    ("horizontal_forward", "row", False, False),
+    ("diagonal_165_forward", "angle", 165.0, False, False),
+    ("diagonal_15_reverse", "angle", 15.0, True, False),
+    ("horizontal_reverse", "row", True, True),
+    ("diagonal_75_reverse", "angle", 75.0, True, True),
+    ("vertical_forward", "col", False, False),
+    ("diagonal_105_reverse", "angle", 105.0, True, False),
+    ("diagonal_15_reverse_alt", "angle", 15.0, True, True),
+    ("vertical_reverse", "col", True, True),
+    ("diagonal_75_reverse_alt", "angle", 75.0, True, False),
 )
 
 Point = Tuple[float, float]
@@ -88,38 +101,184 @@ def _split_evenly(items: Sequence[CellCoord], parts: int) -> List[List[CellCoord
     return groups
 
 
-def _serpentine_cells(grid: GridSpec, rng: random.Random) -> List[CellCoord]:
+def _row_sweep_cells(
+    grid: GridSpec,
+    reverse_rows: bool,
+    first_col_asc: bool,
+) -> List[CellCoord]:
     cells: List[CellCoord] = []
-    primary_reverse = rng.random() < 0.5
-    first_secondary_asc = rng.random() < 0.5
-    row_major = rng.random() < 0.5
+    rows = list(range(grid.rows))
+    if reverse_rows:
+        rows.reverse()
+    for lane_idx, row in enumerate(rows):
+        ascending = first_col_asc if lane_idx % 2 == 0 else not first_col_asc
+        cols = range(grid.cols) if ascending else range(grid.cols - 1, -1, -1)
+        for col in cols:
+            cells.append((row, col))
+    return cells
 
-    if row_major:
-        rows = list(range(grid.rows))
-        if primary_reverse:
-            rows.reverse()
-        for lane_idx, row in enumerate(rows):
-            ascending = (
-                first_secondary_asc if lane_idx % 2 == 0
-                else not first_secondary_asc
-            )
-            cols = range(grid.cols) if ascending else range(grid.cols - 1, -1, -1)
-            for col in cols:
-                cells.append((row, col))
-    else:
-        cols = list(range(grid.cols))
-        if primary_reverse:
-            cols.reverse()
-        for lane_idx, col in enumerate(cols):
-            ascending = (
-                first_secondary_asc if lane_idx % 2 == 0
-                else not first_secondary_asc
-            )
-            rows = range(grid.rows) if ascending else range(grid.rows - 1, -1, -1)
-            for row in rows:
-                cells.append((row, col))
+
+def _col_sweep_cells(
+    grid: GridSpec,
+    reverse_cols: bool,
+    first_row_asc: bool,
+) -> List[CellCoord]:
+    cells: List[CellCoord] = []
+    cols = list(range(grid.cols))
+    if reverse_cols:
+        cols.reverse()
+    for lane_idx, col in enumerate(cols):
+        ascending = first_row_asc if lane_idx % 2 == 0 else not first_row_asc
+        rows = range(grid.rows) if ascending else range(grid.rows - 1, -1, -1)
+        for row in rows:
+            cells.append((row, col))
+    return cells
+
+
+def _projected_lane_cells(
+    grid: GridSpec,
+    angle_degrees: float,
+    reverse_lanes: bool,
+    first_lane_asc: bool,
+) -> List[CellCoord]:
+    theta = math.radians(angle_degrees)
+    normal_x = math.cos(theta)
+    normal_y = math.sin(theta)
+    along_x = -math.sin(theta)
+    along_y = math.cos(theta)
+    lane_width = min(grid.cell_width, grid.cell_height)
+    lanes: Dict[int, List[Tuple[float, CellCoord]]] = {}
+
+    for row in range(grid.rows):
+        for col in range(grid.cols):
+            x, y = _cell_center(grid, row, col)
+            lane = int(round((x * normal_x + y * normal_y) / lane_width))
+            along = x * along_x + y * along_y
+            lanes.setdefault(lane, []).append((along, (row, col)))
+
+    cells: List[CellCoord] = []
+    lane_keys = sorted(lanes, reverse=reverse_lanes)
+    for lane_idx, lane in enumerate(lane_keys):
+        ordered = [cell for _, cell in sorted(lanes[lane])]
+        ascending = first_lane_asc if lane_idx % 2 == 0 else not first_lane_asc
+        if not ascending:
+            ordered.reverse()
+        cells.extend(ordered)
 
     return cells
+
+
+def _subset_row_sweep(
+    cells: Sequence[CellCoord],
+    reverse_rows: bool,
+    first_col_asc: bool,
+) -> List[CellCoord]:
+    by_row: Dict[int, List[int]] = {}
+    for row, col in cells:
+        by_row.setdefault(row, []).append(col)
+    route: List[CellCoord] = []
+    for lane_idx, row in enumerate(sorted(by_row, reverse=reverse_rows)):
+        cols = sorted(by_row[row])
+        ascending = first_col_asc if lane_idx % 2 == 0 else not first_col_asc
+        if not ascending:
+            cols.reverse()
+        route.extend((row, col) for col in cols)
+    return route
+
+
+def _subset_col_sweep(
+    cells: Sequence[CellCoord],
+    reverse_cols: bool,
+    first_row_asc: bool,
+) -> List[CellCoord]:
+    by_col: Dict[int, List[int]] = {}
+    for row, col in cells:
+        by_col.setdefault(col, []).append(row)
+    route: List[CellCoord] = []
+    for lane_idx, col in enumerate(sorted(by_col, reverse=reverse_cols)):
+        rows = sorted(by_col[col])
+        ascending = first_row_asc if lane_idx % 2 == 0 else not first_row_asc
+        if not ascending:
+            rows.reverse()
+        route.extend((row, col) for row in rows)
+    return route
+
+
+def _subset_diag_sweep(
+    cells: Sequence[CellCoord],
+    sum_diagonal: bool,
+    reverse_lanes: bool,
+    first_lane_asc: bool,
+) -> List[CellCoord]:
+    by_lane: Dict[int, List[CellCoord]] = {}
+    for row, col in cells:
+        lane = row + col if sum_diagonal else row - col
+        by_lane.setdefault(lane, []).append((row, col))
+    route: List[CellCoord] = []
+    for lane_idx, lane in enumerate(sorted(by_lane, reverse=reverse_lanes)):
+        ordered = sorted(by_lane[lane])
+        ascending = first_lane_asc if lane_idx % 2 == 0 else not first_lane_asc
+        if not ascending:
+            ordered.reverse()
+        route.extend(ordered)
+    return route
+
+
+def _cell_route_distance(grid: GridSpec, cells: Sequence[CellCoord]) -> float:
+    if len(cells) < 2:
+        return 0.0
+    points = [_cell_center(grid, row, col) for row, col in cells]
+    return sum(
+        _distance(left, right)
+        for left, right in zip(points, points[1:])
+    )
+
+
+def _compact_route_for_cells(
+    grid: GridSpec,
+    cells: Sequence[CellCoord],
+) -> List[CellCoord]:
+    candidates: List[List[CellCoord]] = []
+    for reverse in (False, True):
+        for first_asc in (False, True):
+            candidates.append(_subset_row_sweep(cells, reverse, first_asc))
+            candidates.append(_subset_col_sweep(cells, reverse, first_asc))
+            candidates.append(_subset_diag_sweep(cells, True, reverse, first_asc))
+            candidates.append(_subset_diag_sweep(cells, False, reverse, first_asc))
+    return min(candidates, key=lambda route: _cell_route_distance(grid, route))
+
+
+def _coverage_segments(
+    grid: GridSpec,
+    coverage_node_count: int,
+    run_index: int,
+    rng: random.Random,
+) -> Tuple[str, List[List[CellCoord]]]:
+    family = COVERAGE_SWEEP_FAMILIES[
+        (run_index - 1) % len(COVERAGE_SWEEP_FAMILIES)
+    ]
+    family_name = str(family[0])
+    family_kind = str(family[1])
+    if family_kind == "row":
+        ordered_cells = _row_sweep_cells(grid, bool(family[2]), bool(family[3]))
+    elif family_kind == "col":
+        ordered_cells = _col_sweep_cells(grid, bool(family[2]), bool(family[3]))
+    elif family_kind == "angle":
+        ordered_cells = _projected_lane_cells(
+            grid,
+            float(family[2]),
+            bool(family[3]),
+            bool(family[4]),
+        )
+    else:
+        raise ValueError("unknown coverage sweep family: {}".format(family_kind))
+
+    segments = [
+        _compact_route_for_cells(grid, segment)
+        for segment in _split_evenly(ordered_cells, coverage_node_count)
+    ]
+    rng.shuffle(segments)
+    return family_name, segments
 
 
 def _coverage_route_from_cells(
@@ -343,11 +502,12 @@ def _generate_run(
     run_dir = out_dir / run_name
     run_dir.mkdir(parents=True, exist_ok=True)
 
-    coverage_segments = _split_evenly(
-        _serpentine_cells(grid, run_rng),
+    coverage_family, coverage_segments = _coverage_segments(
+        grid,
         coverage_node_count,
+        run_index,
+        run_rng,
     )
-    run_rng.shuffle(coverage_segments)
 
     node_entries: List[Dict[str, Any]] = []
     for node_index in range(node_count):
@@ -389,6 +549,7 @@ def _generate_run(
         })
         if coverage_cell_count:
             entry["coverage_cell_count"] = coverage_cell_count
+            entry["coverage_family"] = coverage_family
         node_entries.append(entry)
 
     prefix_validations: Dict[str, Dict[str, Any]] = {}
@@ -454,6 +615,7 @@ def _generate_run(
         "coverage_start_time_s": coverage_start_s,
         "coverage_speed_mps": coverage_speed_mps,
         "patrol_speed_mps": patrol_speed_mps,
+        "coverage_family": coverage_family,
         "accepted_t_cover_range_s": list(accepted_t_cover_range_s),
         "coverage_node_count": coverage_node_count,
         "node_count": node_count,
