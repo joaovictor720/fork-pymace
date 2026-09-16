@@ -10,6 +10,7 @@ from matplotlib.ticker import ScalarFormatter
 from matplotlib.patches import Patch
 import seaborn as sns
 from matplotlib.lines import Line2D
+from plot_timestamp import PLOT_TIMESTAMP, timestamped_path
 
 INPUT_CSV = "results/aggregated_results.csv"
 JOBS_JSON = os.environ.get("JOBS_JSON", "evaluation/jobs.json")
@@ -188,7 +189,7 @@ def _scenario_prefix(s: str):
 
 def _save_figure(fig, base_filename_no_ext: str):
     for ext in OUTPUT_FORMATS:
-        out_path = OUTPUT_DIR / f"{base_filename_no_ext}.{ext}"
+        out_path = timestamped_path(OUTPUT_DIR / f"{base_filename_no_ext}.{ext}")
         fig.savefig(out_path, bbox_inches="tight", dpi=DPI)
         print(f"[OK] Saved: {out_path}")
 
@@ -808,4 +809,4 @@ for prefix in prefixes:
     else:
         print(f"[WARN] Missing cap_node_* columns for prefix={prefix!r}; skipping capacity plot.")
 
-print("\nAll plots generated.")
+print(f"\nAll plots generated with timestamp {PLOT_TIMESTAMP}.")

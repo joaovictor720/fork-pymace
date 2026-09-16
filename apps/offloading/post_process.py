@@ -8,6 +8,10 @@ from matplotlib.ticker import MultipleLocator
 import argparse, statistics, warnings, traceback
 warnings.filterwarnings("ignore")
 import sys, os , operator
+from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "evaluation"))
+from plot_timestamp import timestamped_path
 
 from mpl_toolkits.axes_grid1.inset_locator import zoomed_inset_axes
 from mpl_toolkits.axes_grid1.inset_locator import mark_inset
@@ -255,7 +259,7 @@ class PostProcess ():
 
                 m+=1
         ax.legend(bbox_to_anchor=(1.1, 1.16), ncol=3, frameon=False)
-        plt.savefig(exp + "/" + figfile + '_' + '.' + self.type)
+        plt.savefig(timestamped_path(Path(exp) / f"{figfile}_.{self.type}"))
         plt.close()
 
         #plt.show()
@@ -281,11 +285,11 @@ class PostProcess ():
             #ax.spines['top'].set_visible(False)
             #ax.spines['bottom'].set_visible(False)
             plt.tight_layout()
-            plt.savefig(exp + "/" + figfile + '_' + offloadtype + '.' + self.type)
+            plt.savefig(timestamped_path(Path(exp) / f"{figfile}_{offloadtype}.{self.type}"))
             plt.close()
 
         #sys.exit(1)
-        self.fig.savefig(exp + "/" + figfile + '_flatten.' + self.type)
+        self.fig.savefig(timestamped_path(Path(exp) / f"{figfile}_flatten.{self.type}"))
         plt.close()
 
     def plot_times(self, exp, figfile, plot_data, title='Nice Tittle', save=False):
@@ -309,11 +313,11 @@ class PostProcess ():
             #ax.spines['top'].set_visible(False)
             #ax.spines['bottom'].set_visible(False)
             plt.tight_layout()
-            plt.savefig(exp + "/" + figfile + '_' + offloadtype + '.' + self.type)
+            plt.savefig(timestamped_path(Path(exp) / f"{figfile}_{offloadtype}.{self.type}"))
             plt.close()
 
         #sys.exit(1)
-        self.fig.savefig(exp + "/" + figfile + '_flatten.' + self.type)
+        self.fig.savefig(timestamped_path(Path(exp) / f"{figfile}_flatten.{self.type}"))
         plt.close()
      
     def movingaverage(self,interval, window_size):

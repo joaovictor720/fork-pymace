@@ -21,6 +21,7 @@ from matplotlib.backends.backend_pdf import PdfPages
 from matplotlib.lines import Line2D
 from matplotlib.patches import Patch
 from matplotlib.ticker import ScalarFormatter
+from plot_timestamp import PLOT_TIMESTAMP, timestamped_path
 
 
 FIGSIZE = (4.2, 4.0)
@@ -223,7 +224,7 @@ def _save(fig: plt.Figure, base: Path, formats: Iterable[str]) -> List[Path]:
     base.parent.mkdir(parents=True, exist_ok=True)
     written = []
     for extension in formats:
-        path = Path(f"{base}.{extension}")
+        path = timestamped_path(Path(f"{base}.{extension}"))
         fig.savefig(path, bbox_inches="tight", dpi=DPI)
         written.append(path)
     plt.close(fig)
@@ -764,6 +765,7 @@ def build_stacked_usage_bar_with_ci(
 def _write_pdf_pages(path: Path, figures: Sequence[plt.Figure]) -> Optional[Path]:
     if not figures:
         return None
+    path = timestamped_path(path)
     path.parent.mkdir(parents=True, exist_ok=True)
     with PdfPages(path) as pdf:
         for figure in figures:
@@ -938,6 +940,8 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
         print(f"Skipped usage plots; missing {usage_path}")
     for path in written:
         print(f"Saved {path}")
+    if written:
+        print(f"Plot timestamp: {PLOT_TIMESTAMP}")
     return 0
 
 

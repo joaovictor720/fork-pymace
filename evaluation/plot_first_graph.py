@@ -2,6 +2,7 @@ import pandas as pd
 import matplotlib.pyplot as plt
 import seaborn as sns
 from pathlib import Path
+from plot_timestamp import timestamped_path
 
 # ==========================
 # CONFIGURAÇÃO VISUAL
@@ -84,7 +85,8 @@ if 60 in df_teaser["nodes"].values:
     )
 
 plt.tight_layout()
-plt.savefig(OUTPUT_DIR / "teaser_batman_latency.png", dpi=300)
+output_path = timestamped_path(OUTPUT_DIR / "teaser_batman_latency.png")
+plt.savefig(output_path, dpi=300)
 plt.close()
 
-print("Teaser gerado com sucesso!")
+print(f"Teaser gerado com sucesso: {output_path}")

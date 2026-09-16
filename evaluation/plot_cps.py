@@ -2,6 +2,7 @@ import numpy as np
 import matplotlib.pyplot as plt
 from matplotlib.patches import Circle
 from pathlib import Path
+from plot_timestamp import timestamped_path
 
 # ==========================
 # CONFIGURAÇÕES GERAIS
@@ -93,10 +94,8 @@ ax.set_aspect("equal", adjustable="box")
 ax.grid(True, linestyle=":", alpha=0.4)
 
 plt.tight_layout()
-plt.savefig(
-    OUTPUT_DIR / "swarm_multihop.png",
-    dpi=300
-)
+output_path = timestamped_path(OUTPUT_DIR / "swarm_multihop.png")
+plt.savefig(output_path, dpi=300)
 plt.close()
 
-print("Figura salva em: results/plots/swarm_multihop.png")
+print(f"Figura salva em: {output_path}")

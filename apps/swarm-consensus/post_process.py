@@ -8,6 +8,10 @@ from matplotlib.ticker import MultipleLocator
 import argparse, statistics, warnings, traceback
 warnings.filterwarnings("ignore")
 import sys, os , operator
+from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "evaluation"))
+from plot_timestamp import timestamped_path
 
 class PostProcess ():
     def __init__ (self, indir, type):
@@ -117,7 +121,7 @@ class PostProcess ():
         self.ax1.legend(loc=1)
         #self.ax2.legend()
         if save:
-            self.fig.savefig(exp + "/" + figfile + '_flatten.' + self.type)
+            self.fig.savefig(timestamped_path(Path(exp) / f"{figfile}_flatten.{self.type}"))
             plt.close()
             
      

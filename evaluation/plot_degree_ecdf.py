@@ -7,6 +7,7 @@ import pandas as pd
 import matplotlib.pyplot as plt
 from matplotlib.ticker import MaxNLocator
 import seaborn as sns
+from plot_timestamp import timestamped_path
 
 # ==========================
 # STYLE: keep identical to plot_results.py
@@ -95,7 +96,7 @@ def save_points_csv(out_prefix: Path, metric: str, kind: str, label: str, x: np.
 
 def _save_fig(fig, out_path: Path):
     for ext in OUTPUT_FORMATS:
-        p = out_path.with_suffix(f".{ext}")
+        p = timestamped_path(out_path.with_suffix(f".{ext}"))
         fig.savefig(p, bbox_inches="tight", dpi=DPI)
         print(f"[OK] Saved: {p}")
 

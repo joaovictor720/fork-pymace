@@ -22,9 +22,12 @@ for libname in libnames:
         globals()[libname] = lib
 
 import os, shutil, sys, traceback, time, argparse, statistics, subprocess
+from pathlib import Path
 from matplotlib import markers, pyplot as plt
 from matplotlib import ticker as ticker
 import numpy as np
+sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "evaluation"))
+from plot_timestamp import timestamped_path
 pd = pandas
 
 class MACOverhead():
@@ -117,7 +120,7 @@ class MACOverhead():
                     current_marker = 0
         plt.legend()
         #plt.show()
-        self.fig.savefig("plot.png")
+        self.fig.savefig(timestamped_path(Path("plot.png")))
 
     def plot_composed(self, data):
         markers = ["*", "o", "+", "."]
@@ -159,7 +162,7 @@ class MACOverhead():
 
         #plt.legend()
         #plt.show()
-        self.fig.savefig("mac_overhead.png")
+        self.fig.savefig(timestamped_path(Path("mac_overhead.png")))
 
     def report(self):
         """_summary_

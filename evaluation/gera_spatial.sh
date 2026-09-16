@@ -7,7 +7,6 @@ PLOTS_DIR="${2:-$RESULTS_DIR/plots/spatial}"
 
 cd "$ROOT_DIR"
 mkdir -p "$PLOTS_DIR"
-rm -f "$PLOTS_DIR"/*.png "$PLOTS_DIR"/*.pdf
 
 python3 evaluation/spatial_results.py \
   --results-root "$RESULTS_DIR" \

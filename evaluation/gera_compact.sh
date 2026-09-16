@@ -5,7 +5,7 @@ ROOT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$ROOT_DIR"
 
 rm -f results/all_results.csv results/all_capacity_samples.csv results/aggregated_results.csv
-rm -f results/plots/*.png results/plots/*.pdf
+mkdir -p results/plots
 
 python3 evaluation/collect_all_results.py
 

@@ -27,6 +27,10 @@ def _write_json(path, value):
     path.write_text(json.dumps(value), encoding="utf-8")
 
 
+def _has_timestamped_pdf(names, stem):
+    return any(name.startswith(f"{stem}__") and name.endswith(".pdf") for name in names)
+
+
 def _analysis(first_car=0.5, final_car=1.0, t_cover=10.0):
     return {
         "trace_validation": {
@@ -234,9 +238,9 @@ class SpatialAggregationTests(unittest.TestCase):
             names = {path.name for path in plots.glob("*.pdf")}
 
         self.assertEqual(result, 0)
-        self.assertIn("coverage__convergence.pdf", names)
-        self.assertIn("coverage__convergence_zoom_y.pdf", names)
-        self.assertIn("coverage__usage.pdf", names)
+        self.assertTrue(_has_timestamped_pdf(names, "coverage__convergence"))
+        self.assertTrue(_has_timestamped_pdf(names, "coverage__convergence_zoom_y"))
+        self.assertTrue(_has_timestamped_pdf(names, "coverage__usage"))
         self.assertFalse(any(name.startswith("coverage__convergence_plus_") for name in names))
         self.assertFalse(any(name.startswith("coverage__total_packets") for name in names))
         self.assertFalse(any(name.startswith("car_recovery_") for name in names))
@@ -298,12 +302,12 @@ class SpatialAggregationTests(unittest.TestCase):
             names = {path.name for path in plots.glob("*.pdf")}
 
         self.assertEqual(result, 0)
-        self.assertIn("coverage__loss_0pct__convergence.pdf", names)
-        self.assertIn("coverage__loss_10pct__convergence.pdf", names)
-        self.assertIn("coverage__loss_0pct__convergence_zoom_y.pdf", names)
-        self.assertIn("coverage__loss_10pct__convergence_zoom_y.pdf", names)
-        self.assertIn("coverage__loss_0pct__usage.pdf", names)
-        self.assertIn("coverage__loss_10pct__usage.pdf", names)
+        self.assertTrue(_has_timestamped_pdf(names, "coverage__loss_0pct__convergence"))
+        self.assertTrue(_has_timestamped_pdf(names, "coverage__loss_10pct__convergence"))
+        self.assertTrue(_has_timestamped_pdf(names, "coverage__loss_0pct__convergence_zoom_y"))
+        self.assertTrue(_has_timestamped_pdf(names, "coverage__loss_10pct__convergence_zoom_y"))
+        self.assertTrue(_has_timestamped_pdf(names, "coverage__loss_0pct__usage"))
+        self.assertTrue(_has_timestamped_pdf(names, "coverage__loss_10pct__usage"))
         self.assertNotIn("coverage__convergence.pdf", names)
         self.assertNotIn("coverage__usage.pdf", names)
 

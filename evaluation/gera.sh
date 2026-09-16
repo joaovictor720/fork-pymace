@@ -5,7 +5,7 @@ cd /home/mace/git/fork-pymace
 
 # 0) (Opcional) limpar agregados/plots antigos
 rm -f results/all_results.csv results/all_capacity_samples.csv results/aggregated_results.csv
-rm -f results/plots/*.png
+mkdir -p results/plots
 
 # 1) Reparse: gerar summary.csv em cada (scenario__expanded/variant/app)
 # (usa parse_metrics.py que percorre run_* e escreve summary.csv no diretório pai)
