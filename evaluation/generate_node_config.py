@@ -3,7 +3,7 @@ import math
 import sys
 from pathlib import Path
 
-from seed_utils import central_seed, derive_seed
+from seed_utils import derive_seed, effective_seed
 from spatial_coverage import GridSpec
 
 
@@ -167,7 +167,7 @@ if isinstance(overrides, dict):
     node_cfg.update(overrides)
 
 node_count = sc["nodes"]["count"]
-seed = central_seed(sc)
+seed = effective_seed(sc)
 application_seed = derive_seed(seed, "application")
 
 udp_port = int(node_cfg.get("udp_port", 5001))

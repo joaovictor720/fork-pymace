@@ -13,7 +13,7 @@ if str(EVALUATION_DIR) not in sys.path:
     sys.path.insert(0, str(EVALUATION_DIR))
 
 from mobility_trace import TRACE_POLICY, file_sha256
-from seed_utils import central_seed, derive_seed
+from seed_utils import central_seed, derive_seed, effective_seed
 
 
 class SeedPolicyTests(unittest.TestCase):
@@ -29,6 +29,23 @@ class SeedPolicyTests(unittest.TestCase):
         self.assertEqual(seed_a, seed_b)
         self.assertNotEqual(seed_a, seed_c)
         self.assertGreater(seed_a, 0)
+
+    def test_effective_seed_can_be_derived_from_run_id(self):
+        scenario = {"seed": 22, "run_seed_policy": "central_seed_plus_run_id"}
+
+        self.assertEqual(effective_seed(scenario, {}), 22)
+        self.assertEqual(
+            effective_seed(scenario, {"MACE_RUN_ID": "run_001"}),
+            derive_seed(22, "run", 1),
+        )
+        self.assertEqual(
+            effective_seed(scenario, {"MACE_RUN_ID": "2"}),
+            derive_seed(22, "run", 2),
+        )
+        self.assertNotEqual(
+            effective_seed(scenario, {"MACE_RUN_ID": "run_001"}),
+            effective_seed(scenario, {"MACE_RUN_ID": "run_002"}),
+        )
 
     def test_generated_configs_are_driven_by_central_seed(self):
         with tempfile.TemporaryDirectory() as tmp:

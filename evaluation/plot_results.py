@@ -86,8 +86,8 @@ HATCHES = {
 LABELS_ALGO = {
     "broadcast": "Flooding Multicast",
     "multiunicast": "Best-effort Multicast",
-    "rapid": "Gossip-based Multicast",
-    "trickle": "Trickle",
+    "rapid": "Rapid Gossip",
+    "trickle": "Trickle Gossip",
     "usfdx3": "USFD-3x",
     "usfdx1": "USFD-1x",
 }
@@ -116,6 +116,8 @@ COLS = {
 
 PACKET_BREAKDOWN_COLS = {
     "payload": "pkt_payload_mean",
+    "payload_ci_low": "pkt_payload_ci_low",
+    "payload_ci_high": "pkt_payload_ci_high",
     "control": "pkt_control_mean",
     "unclassified": "pkt_unclassified_mean",
     "total": "pkt_total_mean",
@@ -137,8 +139,8 @@ LEGEND_FONT_SCALE = 0.88   # relative to rcParams legend.fontsize
 LEGEND_LABELS_SHORT = {
     "multiunicast": "Best-effort Multicast",
     "broadcast": "Flooding Multicast",
-    "rapid": "Gossip Multicast",
-    "trickle": "Trickle",
+    "rapid": "Rapid Gossip",
+    "trickle": "Trickle Gossip",
     "usfdx3": "USFD-3x",
     "usfdx1": "USFD-1x",
 }
@@ -625,6 +627,15 @@ def plot_packets_by_class(
                     linewidth=1.1 if packet_class == "unclassified" else 0.85,
                     alpha=style["alpha"], hatch=style["hatch"],
                 )
+            ax.errorbar(
+                position, payload,
+                yerr=np.array([
+                    [payload - values["payload_ci_low"]],
+                    [values["payload_ci_high"] - payload],
+                ]),
+                fmt="none", capsize=3, ecolor="#333333",
+                elinewidth=0.9, alpha=0.75,
+            )
             ax.errorbar(
                 position, total,
                 yerr=np.array([[total - values["total_ci_low"]], [values["total_ci_high"] - total]]),

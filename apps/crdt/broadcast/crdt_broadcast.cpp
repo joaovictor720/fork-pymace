@@ -47,6 +47,7 @@ struct node_config {
     double monitor_interval;
     double dissemination_interval;
     double cooldown;
+    int retriggers_budget{1};
     bool spatial_coverage{false};
     mace::coverage::GridSpec grid;
     std::chrono::milliseconds position_poll_interval{
@@ -122,6 +123,7 @@ node_config load_config(const std::string& cfg_path, const std::string& id) {
     }
     nc.log_file = log_dir + "node_" + id + ".log";
     nc.cooldown = cfg.value("cooldown", 10);
+    nc.retriggers_budget = std::max(0, cfg.value("retriggers_budget", 1));
 
     const std::string workload = cfg.value("workload", std::string{"gcounter"});
     if (workload != "gcounter" && workload != "spatial_coverage") {
@@ -280,11 +282,11 @@ void dissemination_loop(
     sockaddr_in broadcast_addr,
     gcounter<int, std::string>& delta_buffer,
     stats& st,
-    double interval
+    double interval,
+    int retriggers_budget
 ) {
     std::string last_payload;
     int retriggers_left = 0;
-    const int retriggers_budget = 1;
 
     auto next = std::chrono::steady_clock::now();
 
@@ -727,7 +729,7 @@ int main(int argc, char* argv[]) {
 
     std::thread t_recv(recv_loop, sockfd, std::ref(gc), std::ref(st), nc.id);
     std::thread t_mon(monitor_loop, std::ref(gc), std::ref(st), nc.monitor_interval, nc.log_file);
-    std::thread t_diss(dissemination_loop, sockfd, bcast_addr, std::ref(delta_buffer), std::ref(st), nc.dissemination_interval);
+    std::thread t_diss(dissemination_loop, sockfd, bcast_addr, std::ref(delta_buffer), std::ref(st), nc.dissemination_interval, nc.retriggers_budget);
 
     run_random_mode(nc, gc, delta_buffer);
 

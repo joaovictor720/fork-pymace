@@ -1,0 +1,10 @@
+{
+  "default_runs": 10,
+  "jobs": [
+    { "scenario": "area_batman", "app": "broadcast" },
+    { "scenario": "area_batman", "app": "multiunicast" },
+    { "scenario": "area_ip", "app": "rapid" },
+    { "scenario": "area_ip", "app": "trickle" },
+    { "scenario": "area_ip", "app": "usfdx3" }
+  ]
+}

@@ -6,6 +6,13 @@ APP="$2"
 RUN_ID="$3"
 
 ROOT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
+PPRZLINK_PYTHON="${PPRZLINK_PYTHON:-/home/mace/Documents/pprzlink/lib/v2.0/python}"
+if [[ -d "$PPRZLINK_PYTHON" ]]; then
+  case ":${PYTHONPATH:-}:" in
+    *":$PPRZLINK_PYTHON:"*) ;;
+    *) export PYTHONPATH="$PPRZLINK_PYTHON:${PYTHONPATH:-}" ;;
+  esac
+fi
 
 SCENARIO_DIR="$ROOT_DIR/scenarios/$SCENARIO"
 SCENARIO_SPEC="$SCENARIO_DIR/scenario.json"
@@ -120,6 +127,24 @@ fi
 # Generate mace.json (uses apps.json internally)
 # -------------------------------
 MACE_RUN_ID="$RUN_ID" python "$ROOT_DIR/evaluation/generate_scenario.py" "$SCENARIO_DIR" "$APP"
+
+python3 - "$SCENARIO_SPEC" "$MACE_JSON" <<'PY'
+import json
+import sys
+
+with open(sys.argv[1], encoding="utf-8") as stream:
+    scenario = json.load(stream)
+with open(sys.argv[2], encoding="utf-8") as stream:
+    mace = json.load(stream)
+
+expected = int(scenario["nodes"]["count"])
+actual = len(mace.get("nodes", []))
+if actual != expected:
+    raise SystemExit(
+        "[ERROR] generated mace.json node count mismatch: "
+        f"expected {expected}, got {actual}"
+    )
+PY
 
 # -------------------------------
 # Generate node_config.json
@@ -397,23 +422,24 @@ if [[ "$WORKLOAD" == "spatial_coverage" ]]; then
   # clock and start before the new replay epoch is published.  Delay removal
   # until all host-side preflight/build steps have succeeded.
   rm -f -- "$CLOCK_FILE"
-  sudo "$ROOT_DIR/pymace.py" -s "$MACE_JSON" || PYMACE_RC=$?
+  sudo env "PYTHONPATH=${PYTHONPATH:-}" "$ROOT_DIR/pymace.py" -s "$MACE_JSON" || PYMACE_RC=$?
 else
-  # Preserve the historical best-effort behavior for GCounter experiments.
-  PYMACE_START_TS="$(python3 - <<'PY'
-import time
-
-print(format(time.time() + 30.0, ".6f"))
-PY
-)"
-  export PYMACE_START_TS
-  sudo -E "$ROOT_DIR/pymace.py" -s "$MACE_JSON" || true
+  # GCounter scenarios keep the historical per-node startup delay in the
+  # generated node command, before BATMAN/IP setup.
+  sudo env "PYTHONPATH=${PYTHONPATH:-}" "$ROOT_DIR/pymace.py" -s "$MACE_JSON" || PYMACE_RC=$?
 fi
 
 # -------------------------------
 # Collect logs
 # -------------------------------
 python "$ROOT_DIR/evaluation/collect_logs.py" "$RESULT_DIR"
+
+if rg -n \
+  'Traceback|NameError|ModuleNotFoundError|SyntaxError|barrier_failed|command not found' \
+  "$RESULT_DIR"/*.net.log "$RESULT_DIR"/*.gps.stderr 2>/dev/null; then
+  echo "[ERROR] Runtime error signature found in node logs for $SCENARIO/$APP/$RUN_ID."
+  exit 1
+fi
 
 # -------------------------------
 # Spatial CAR analysis (host-side, aligned by experiment_clock.json)
@@ -432,6 +458,11 @@ fi
 # Post-process pcaps (host-side) and purge
 # -------------------------------
 python "$ROOT_DIR/evaluation/process_pcaps.py" "$RESULT_DIR" "$APP" --append-netlog
+
+if [[ "$WORKLOAD" != "spatial_coverage" && "$PYMACE_RC" -ne 0 && ! -s "$RESULT_DIR/pcap_metrics.csv" ]]; then
+  echo "[ERROR] PyMACE exited with status $PYMACE_RC before producing pcaps."
+  exit "$PYMACE_RC"
+fi
 
 if [[ "$WORKLOAD" == "spatial_coverage" && "$PYMACE_RC" -ne 0 ]]; then
   if [[ "$PYMACE_RC" -eq 137 && -f "$RESULT_DIR/spatial_coverage_analysis.json" ]]; then

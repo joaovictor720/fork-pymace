@@ -16,7 +16,7 @@ from mobility_trace import (
     trace_duration_s,
     trace_interval_s,
 )
-from seed_utils import central_seed, derive_seed
+from seed_utils import derive_seed, effective_seed
 
 APPLICATION_START_DELAY = 30
 
@@ -256,7 +256,7 @@ if not scenario_file.exists():
 with open(scenario_file, "r", encoding="utf-8") as f:
     sc = json.load(f)
 
-seed = central_seed(sc)
+seed = effective_seed(sc)
 node_position_seed = derive_seed(seed, "node_positions", avoid_zero=False)
 position_rng = random.Random(node_position_seed)
 
@@ -475,22 +475,16 @@ for i, (x, y) in enumerate(positions):
             f"/usr/bin/python3 {clock_waiter_path} "
             f"--clock __EXPERIMENT_CLOCK__; "
         )
-        start_barrier_command = ""
+        pre_capture_barrier_command = ""
+        pre_app_barrier_command = ""
         application_command = (
             f"timeout --signal=TERM --kill-after=2 {SPATIAL_RUN_SEC} "
             f"__CRDT_BIN__ -id {i} -config __CRDT_NODE_CONFIG__; "
         )
     else:
-        startup_sequence = f"{base_net_setup}"
-        start_barrier_command = (
-            f"START_TS=\\\"${{PYMACE_START_TS:-}}\\\"; "
-            f"echo \\\"PYMACE_START_TS=\\$START_TS\\\" >> \\\"\\$LOG_FILE\\\"; "
-            f"if [ -n \\\"\\$START_TS\\\" ]; then "
-            f"/usr/bin/python3 -c 'import os,time; "
-            f"s=float(os.environ.get(\"PYMACE_START_TS\", \"0\") or 0); "
-            f"time.sleep(max(0.0, s - time.time()))'; "
-            f"else sleep {APPLICATION_START_DELAY}; fi; "
-        )
+        startup_sequence = f"sleep {APPLICATION_START_DELAY}; {base_net_setup}"
+        pre_capture_barrier_command = ""
+        pre_app_barrier_command = ""
         application_command = (
             f"__CRDT_BIN__ -id {i} -config __CRDT_NODE_CONFIG__; "
         )
@@ -508,6 +502,8 @@ for i, (x, y) in enumerate(positions):
         f"GPS_FILE=\\\"\\$RESULT_DIR/node_{i}.gps.csv\\\"; "
         f"GPS_ERR=\\\"\\$RESULT_DIR/node_{i}.gps.stderr\\\"; "
         f"echo \\\"APP={app}\\\" > \\\"\\$LOG_FILE\\\"; "
+        f"exec >> \\\"\\$LOG_FILE\\\" 2>&1; "
+        f"{pre_capture_barrier_command}"
 
         # tcpdump com timeout
         f"sudo timeout -s INT {CAPTURE_SEC} tcpdump -i {ip_iface} -w \\\"\\$PCAP_FILE\\\" "
@@ -526,7 +522,7 @@ for i, (x, y) in enumerate(positions):
         f"echo \\\"GPS_FILE=\\$GPS_FILE\\\" >> \\\"\\$LOG_FILE\\\"; "
 
         # App
-        f"{start_barrier_command}"
+        f"{pre_app_barrier_command}"
         f"{application_command}"
         f"APP_RC=\\$?; "
         f"echo \\\"APP_RC=\\$APP_RC\\\" >> \\\"\\$LOG_FILE\\\"; "

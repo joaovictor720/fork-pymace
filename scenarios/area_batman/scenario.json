@@ -1,0 +1,48 @@
+{
+  "name": "area_batman",
+  "seed": 22,
+  "run_seed_policy": "central_seed_plus_run_id",
+  "simulation": {
+    "duration": 65,
+    "start_delay": 30,
+    "area": { "x": 1000, "y": 1000 }
+  },
+  "nodes": {
+    "count": 30,
+    "distribution": "random",
+    "seed": 22
+  },
+  "mobility": {
+    "model": "random_waypoint",
+    "pause": 0,
+    "speed": [4.0, 4.2]
+  },
+  "network": {
+    "routing": "batman",
+    "hardif_behavior": "emulated_wifi",
+    "bandwidth": "11000000",
+    "range": 160,
+    "delay": 5,
+    "jitter": 0,
+    "error": 0
+  },
+  "node_config": {
+    "workload": "gcounter",
+    "udp_port": 5001,
+    "ops_per_sec": 2.0,
+    "diss_per_sec": 1.0,
+    "retriggers_budget": 0,
+    "monitor_interval": 2,
+    "duration": 10,
+    "cooldown": 10
+  },
+  "experiment": {
+    "vary_tuples": [
+      { "simulation.area": [1732.050807569, 1732.050807569] },
+      { "simulation.area": [1224.744871392, 1224.744871392] },
+      { "simulation.area": [1000.0, 1000.0] },
+      { "simulation.area": [866.025403784, 866.025403784] },
+      { "simulation.area": [774.596669241, 774.596669241] }
+    ]
+  }
+}
