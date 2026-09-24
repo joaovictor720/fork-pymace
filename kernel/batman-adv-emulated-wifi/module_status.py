@@ -5,6 +5,7 @@ import argparse
 import datetime as dt
 import hashlib
 import json
+import os
 import platform
 import subprocess
 from pathlib import Path
@@ -13,10 +14,17 @@ from typing import Any, Dict, Optional
 
 SCRIPT_DIR = Path(__file__).resolve().parent
 REPOSITORY = SCRIPT_DIR.parent.parent
-PATCH = SCRIPT_DIR / "patches" / "0001-batman-adv-add-emulated-wifi-hardif.patch"
+PROFILE = os.environ.get("BATADV_PROFILE", platform.release())
+MODERN = PROFILE == "modern" or PROFILE.startswith("6.8.")
+PATCH = SCRIPT_DIR / "patches" / (
+    "0002-batman-adv-2024.0-emulated-wifi.patch" if MODERN else
+    "0001-batman-adv-add-emulated-wifi-hardif.patch"
+)
 UPSTREAM_URL = "https://github.com/open-mesh-mirror/batman-adv.git"
-UPSTREAM_TAG = "v2019.4"
-UPSTREAM_COMMIT = "933568baeba83d6bcaa451656ec1550346f35996"
+UPSTREAM_TAG = "v2024.0" if MODERN else "v2019.4"
+UPSTREAM_COMMIT = ("7ee009fb21955bc7977d96b00eb8362a558d0d3a" if MODERN
+                   else "933568baeba83d6bcaa451656ec1550346f35996")
+EXPECTED_VERSION = ("2024.0" if MODERN else "2019.4") + "-macewifi1"
 
 
 def run(*args: str) -> Optional[str]:
@@ -108,7 +116,8 @@ def main() -> None:
     parser.add_argument(
         "--artifact",
         type=Path,
-        default=SCRIPT_DIR / "build" / platform.release() / "batman-adv.ko",
+        default=Path(os.environ.get("BATADV_MODULE_ARTIFACT") or
+            SCRIPT_DIR / "build" / platform.release() / "batman-adv.ko"),
     )
     parser.add_argument(
         "--require-match",
@@ -121,11 +130,10 @@ def main() -> None:
 
     kernel_release = platform.release()
     artifact = args.artifact.resolve()
-    native_path = (
-        Path("/lib/modules")
-        / kernel_release
-        / "kernel/net/batman-adv/batman-adv.ko"
-    )
+    native_path = Path(os.environ.get("BATADV_NATIVE_MODULE") or
+                       modinfo("batman_adv", "filename") or "/nonexistent/batman-adv.ko")
+    installed_path = modinfo("batman_adv", "filename")
+    native_version = modinfo(str(native_path), "version")
     build_info = artifact.parent / "build-info.txt"
     sys_module = Path("/sys/module/batman_adv")
     loaded = sys_module.is_dir()
@@ -143,21 +151,21 @@ def main() -> None:
     if not loaded:
         effective_mode = "unloaded"
     elif (
-        loaded_version == "2019.4-macewifi1"
+        loaded_version == EXPECTED_VERSION
         and artifact_srcversion is not None
         and loaded_srcversion == artifact_srcversion
         and emulated is True
     ):
         effective_mode = "emulated_wifi"
     elif (
-        loaded_version == "2019.4-macewifi1"
+        loaded_version == EXPECTED_VERSION
         and artifact_srcversion is not None
         and loaded_srcversion == artifact_srcversion
         and emulated is False
     ):
         effective_mode = "experimental_native"
     elif (
-        loaded_version == "2019.4"
+        loaded_version == native_version
         and native_srcversion is not None
         and loaded_srcversion == native_srcversion
         and emulated_raw is None
@@ -177,6 +185,9 @@ def main() -> None:
         ),
         "kernel_release": kernel_release,
         "batctl_version": run("batctl", "-v"),
+        "routing_algorithm": read(sys_module / "parameters/routing_algo") if loaded else None,
+        "secure_boot": run("mokutil", "--sb-state"),
+        "native_provider": "system" if str(native_path) == installed_path else "repository",
         "loaded_module": {
             "loaded": loaded,
             "version": loaded_version,
@@ -198,8 +209,10 @@ def main() -> None:
                 modinfo(str(artifact), "vermagic") if artifact.is_file() else None
             ),
             "build_info": key_value_file(build_info),
+            "signer": modinfo(str(artifact), "signer") if artifact.is_file() else None,
         },
-        "installed_native_module": {
+        "selected_native_module": {
+            "build_info": key_value_file(native_path.parent / "build-info.txt"),
             "path": str(native_path),
             "exists": native_path.is_file(),
             "sha256": sha256(native_path),

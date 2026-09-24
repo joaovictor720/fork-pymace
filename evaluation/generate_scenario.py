@@ -5,6 +5,9 @@ import random
 import math
 import shutil
 import hashlib
+import getpass
+import sys
+import shlex
 from pathlib import Path
 from typing import Any, Dict, List, Mapping, Tuple
 
@@ -340,7 +343,7 @@ else:
     cooldown_s = float(node_cfg.get("cooldown", 10))
     SPATIAL_RUN_SEC = 0.0
     # Legacy GCounter capture covers duration+cooldown with a small margin.
-    CAPTURE_SEC = int(math.ceil(duration_s + cooldown_s + 1.0))
+    CAPTURE_SEC = APPLICATION_START_DELAY + int(math.ceil(duration_s + cooldown_s + 1.0))
 
 # GPS logging: conforme pedido do professor
 if spatial_coverage_enabled:
@@ -359,7 +362,7 @@ else:
 GPS_LOG_SEC = (
     "__SPATIAL_GPS_SECONDS__"
     if spatial_coverage_enabled
-    else float(node_cfg.get("gps_duration", duration_s + cooldown_s))
+    else float(node_cfg.get("gps_duration", APPLICATION_START_DELAY + duration_s + cooldown_s))
 )
 if not math.isfinite(GPS_INTERVAL_S) or GPS_INTERVAL_S <= 0.0 or (
     not spatial_coverage_enabled
@@ -456,24 +459,20 @@ for i, (x, y) in enumerate(positions):
             "trace_duration": trace_duration,
         })
 
+    python_arg = shlex.quote(sys.executable)
     if net_setup == "batman":
         base_net_setup = (
-            f"sudo ip addr flush dev eth0; "
-            f"sudo ip link set up dev eth0; "
-            f"sudo batctl if add eth0; "
-            f"sudo ip link set up dev bat0; "
-            f"sudo ip addr add 10.0.0.{i+1}/24 dev bat0; "
+            "ip addr flush dev eth0; ip link set up dev eth0; "
+            f"ip addr replace 10.0.0.{i+1}/24 dev bat0; "
         )
     else:
-        base_net_setup = (
-            f"sudo ip link set up dev {ip_iface}; "
-        )
+        base_net_setup = f"ip link set up dev {shlex.quote(ip_iface)}; "
 
     if spatial_coverage_enabled:
         startup_sequence = (
             f"{base_net_setup}"
-            f"/usr/bin/python3 {clock_waiter_path} "
-            f"--clock __EXPERIMENT_CLOCK__; "
+            f"{python_arg} {shlex.quote(str(clock_waiter_path))} "
+            "--clock __EXPERIMENT_CLOCK__ || exit $?; "
         )
         start_barrier_command = ""
         application_command = (
@@ -481,64 +480,47 @@ for i, (x, y) in enumerate(positions):
             f"__CRDT_BIN__ -id {i} -config __CRDT_NODE_CONFIG__; "
         )
     else:
-        startup_sequence = f"{base_net_setup}"
+        startup_sequence = base_net_setup
+        wait_code = ('import os,time; s=float(os.environ.get("PYMACE_START_TS", "0") or 0); '
+                     'time.sleep(max(0.0, s-time.time()))')
         start_barrier_command = (
-            f"START_TS=\\\"${{PYMACE_START_TS:-}}\\\"; "
-            f"echo \\\"PYMACE_START_TS=\\$START_TS\\\" >> \\\"\\$LOG_FILE\\\"; "
-            f"if [ -n \\\"\\$START_TS\\\" ]; then "
-            f"/usr/bin/python3 -c 'import os,time; "
-            f"s=float(os.environ.get(\"PYMACE_START_TS\", \"0\") or 0); "
-            f"time.sleep(max(0.0, s - time.time()))'; "
-            f"else sleep {APPLICATION_START_DELAY}; fi; "
+            'START_TS="${PYMACE_START_TS:-}"; '
+            'echo "PYMACE_START_TS=$START_TS" >> "$LOG_FILE"; '
+            'if [ -n "$START_TS" ]; then '
+            f'{python_arg} -c {shlex.quote(wait_code)}; '
+            f'else sleep {APPLICATION_START_DELAY}; fi; '
         )
-        application_command = (
-            f"__CRDT_BIN__ -id {i} -config __CRDT_NODE_CONFIG__; "
-        )
+        application_command = f"__CRDT_BIN__ -id {i} -config __CRDT_NODE_CONFIG__; "
 
-    function = [
-        f"/bin/bash -lc \""
-        f"ulimit -c 0; "
-        f"set -x; "
+    log_dir_code = 'import json,sys; print(json.load(open(sys.argv[1]))["log_dir"])'
+    script = (
+        "ulimit -c 0; set -x; "
         f"{startup_sequence}"
-        f"RESULT_DIR=\\$(grep '\\\"log_dir\\\"' __CRDT_NODE_CONFIG__ | "
-        f"sed -E 's/.*\\\"log_dir\\\"[[:space:]]*:[[:space:]]*\\\"([^\\\"]+)\\\".*/\\1/'); "
-        f"LOG_FILE=\\\"\\$RESULT_DIR/node_{i}.net.log\\\"; "
-        f"PCAP_FILE=\\\"\\$RESULT_DIR/node_{i}.pcap\\\"; "
-        f"TCPDUMP_ERR=\\\"\\$RESULT_DIR/node_{i}.tcpdump.stderr\\\"; "
-        f"GPS_FILE=\\\"\\$RESULT_DIR/node_{i}.gps.csv\\\"; "
-        f"GPS_ERR=\\\"\\$RESULT_DIR/node_{i}.gps.stderr\\\"; "
-        f"echo \\\"APP={app}\\\" > \\\"\\$LOG_FILE\\\"; "
-
-        # tcpdump com timeout
-        f"sudo timeout -s INT {CAPTURE_SEC} tcpdump -i {ip_iface} -w \\\"\\$PCAP_FILE\\\" "
-        f"'{tcpdump_filter}' >/dev/null 2>\\\"\\$TCPDUMP_ERR\\\" & "
-        f"TCPDUMP_PID=\\$!; "
-        f"echo \\\"TCPDUMP_PID=\\$TCPDUMP_PID\\\" >> \\\"\\$LOG_FILE\\\"; "
-
-        # GPS logger (background)
-        f"GPS_TAG=\\\"node{i}\\\"; "
-        f"/usr/bin/python3 {gps_logger_path} "
-        f"--tag \\\"\\$GPS_TAG\\\" --node {i} --out \\\"\\$GPS_FILE\\\" "
-        f"--interval {GPS_INTERVAL_S} --duration {GPS_LOG_SEC} "
-        f">/dev/null 2>\\\"\\$GPS_ERR\\\" & "
-        f"GPS_PID=\\$!; "
-        f"echo \\\"GPS_PID=\\$GPS_PID\\\" >> \\\"\\$LOG_FILE\\\"; "
-        f"echo \\\"GPS_FILE=\\$GPS_FILE\\\" >> \\\"\\$LOG_FILE\\\"; "
-
-        # App
-        f"{start_barrier_command}"
-        f"{application_command}"
-        f"APP_RC=\\$?; "
-        f"echo \\\"APP_RC=\\$APP_RC\\\" >> \\\"\\$LOG_FILE\\\"; "
-
-        # waits
-        f"wait \\$TCPDUMP_PID 2>/dev/null || true; "
-        f"wait \\$GPS_PID 2>/dev/null || true; "
-        f"sync; "
-        f"echo \\\"PCAP_SAVED=\\$PCAP_FILE\\\" >> \\\"\\$LOG_FILE\\\"; "
-        f"echo \\\"TCPDUMP_STDERR=\\$TCPDUMP_ERR\\\" >> \\\"\\$LOG_FILE\\\"; "
-        f"echo \\\"GPS_STDERR=\\$GPS_ERR\\\" >> \\\"\\$LOG_FILE\\\"\""
-    ]
+        f"RESULT_DIR=$({python_arg} -c {shlex.quote(log_dir_code)} __CRDT_NODE_CONFIG__); "
+        f'LOG_FILE="$RESULT_DIR/node_{i}.net.log"; '
+        f'PCAP_FILE="$RESULT_DIR/node_{i}.pcap"; '
+        f'TCPDUMP_ERR="$RESULT_DIR/node_{i}.tcpdump.stderr"; '
+        f'GPS_FILE="$RESULT_DIR/node_{i}.gps.csv"; '
+        f'GPS_ERR="$RESULT_DIR/node_{i}.gps.stderr"; '
+        f'echo {shlex.quote("APP=" + app)} > "$LOG_FILE"; '
+        f'timeout -s INT {CAPTURE_SEC} tcpdump -i {shlex.quote(ip_iface)} '
+        f'-w "$PCAP_FILE" {shlex.quote(tcpdump_filter)} >/dev/null 2>"$TCPDUMP_ERR" & '
+        'TCPDUMP_PID=$!; echo "TCPDUMP_PID=$TCPDUMP_PID" >> "$LOG_FILE"; '
+        f'{python_arg} {shlex.quote(str(gps_logger_path))} '
+        f'--tag node{i} --node {i} --out "$GPS_FILE" '
+        f'--interval {GPS_INTERVAL_S} --duration {GPS_LOG_SEC} '
+        '>/dev/null 2>"$GPS_ERR" & '
+        'GPS_PID=$!; echo "GPS_PID=$GPS_PID" >> "$LOG_FILE"; '
+        'echo "GPS_FILE=$GPS_FILE" >> "$LOG_FILE"; '
+        f"{start_barrier_command}{application_command}"
+        'APP_RC=$?; echo "APP_RC=$APP_RC" >> "$LOG_FILE"; '
+        'wait $TCPDUMP_PID 2>/dev/null || true; '
+        'wait $GPS_PID 2>/dev/null || true; sync; '
+        'echo "PCAP_SAVED=$PCAP_FILE" >> "$LOG_FILE"; '
+        'echo "TCPDUMP_STDERR=$TCPDUMP_ERR" >> "$LOG_FILE"; '
+        'echo "GPS_STDERR=$GPS_ERR" >> "$LOG_FILE"; exit "$APP_RC"'
+    )
+    function = [shlex.join(["/bin/bash", "-c", script])]
 
     node = {
         "name": f"node{i}",
@@ -568,9 +550,9 @@ mace = {
         "number_of_nodes": node_count,
         "start_delay": sc["simulation"]["start_delay"],
         "runtime": sc["simulation"]["duration"],
-        "username": "mace",
-        "disks_folder": "/mnt/pymace/",
-        "report_folder": "/home/mace/git/fork-pymace/reports/",
+        "username": os.environ.get("SUDO_USER") or getpass.getuser(),
+        "disks_folder": str(root / "disks") + "/",
+        "report_folder": str(root / "reports") + "/",
         "emane_location": "/usr/share/emane",
         "emane_scale": 1.0
     },
@@ -579,6 +561,7 @@ mace = {
             "name": "mesh",
             "prefix": "10.0.0.0/24",
             "routing": sc["network"]["routing"],
+            "hardif_behavior": sc["network"].get("hardif_behavior", "native"),
             "settings": {
                 "range": str(sc["network"]["range"]),
                 "bandwidth": str(sc["network"]["bandwidth"]),

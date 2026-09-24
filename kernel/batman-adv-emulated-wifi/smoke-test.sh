@@ -19,21 +19,29 @@ case "$MODE" in
 esac
 
 if (( EUID != 0 )); then
-  exec sudo -- "$0" "$@"
+  exec sudo env "BATADV_NATIVE_MODULE=${BATADV_NATIVE_MODULE:-}" \
+    "BATADV_MODULE_ARTIFACT=${BATADV_MODULE_ARTIFACT:-}" \
+    "SMOKE_OUTPUT_DIR=${SMOKE_OUTPUT_DIR:-}" "$0" "$@"
 fi
 
-for command in ip batctl tshark nc ping sysctl flock modinfo; do
+for command in ip batctl tshark python3 ping sysctl flock modinfo; do
   command -v "$command" >/dev/null 2>&1 || die "missing command: $command"
 done
 [[ -x "$CONTROL" ]] || die "module controller is not executable: $CONTROL"
 exec 8>"/run/mace-batman-adv-smoke.lock"
 flock -n 8 || die "another batman-adv smoke test is running"
-"$CONTROL" verify
+verify_mode="$MODE"
+[[ "$MODE" != both ]] || verify_mode=all
+"$CONTROL" verify "$verify_mode"
 KERNEL_RELEASE="$(uname -r)"
-NATIVE_MODULE="/lib/modules/$KERNEL_RELEASE/kernel/net/batman-adv/batman-adv.ko"
-ARTIFACT="$SCRIPT_DIR/build/$KERNEL_RELEASE/batman-adv.ko"
-NATIVE_SRCVERSION="$(modinfo -F srcversion "$NATIVE_MODULE")"
-ARTIFACT_SRCVERSION="$(modinfo -F srcversion "$ARTIFACT")"
+NATIVE_MODULE="${BATADV_NATIVE_MODULE:-$(modinfo -n batman_adv 2>/dev/null || true)}"
+ARTIFACT="${BATADV_MODULE_ARTIFACT:-$SCRIPT_DIR/build/$KERNEL_RELEASE/batman-adv.ko}"
+NATIVE_VERSION="$(modinfo -F version "$NATIVE_MODULE" 2>/dev/null || true)"
+ARTIFACT_VERSION="$(modinfo -F version "$ARTIFACT" 2>/dev/null || true)"
+OUTPUT_DIR="${SMOKE_OUTPUT_DIR:-$SCRIPT_DIR/../../results/batman-module-smoke/$(date -u +%Y%m%dT%H%M%SZ)-$$}"
+mkdir -p "$OUTPUT_DIR"
+NATIVE_SRCVERSION="$(modinfo -F srcversion "$NATIVE_MODULE" 2>/dev/null || true)"
+ARTIFACT_SRCVERSION="$(modinfo -F srcversion "$ARTIFACT" 2>/dev/null || true)"
 
 suffix="$$"
 NS1="mw1-$suffix"
@@ -63,11 +71,11 @@ if [[ -d /sys/module/batman_adv ]]; then
   }
 
   if [[ ! -e /sys/module/batman_adv/parameters/emulated_wifi &&
-        "$initial_version" == "2019.4" &&
+        "$initial_version" == "$NATIVE_VERSION" &&
         "$initial_srcversion" == "$NATIVE_SRCVERSION" ]]; then
     initial_mode="native"
   elif [[ -r /sys/module/batman_adv/parameters/emulated_wifi &&
-          "$initial_version" == "2019.4-macewifi1" &&
+          "$initial_version" == "$ARTIFACT_VERSION" &&
           "$initial_srcversion" == "$ARTIFACT_SRCVERSION" ]]; then
     initial_flag="$(tr '[:lower:]' '[:upper:]' \
       < /sys/module/batman_adv/parameters/emulated_wifi)"
@@ -80,7 +88,8 @@ if [[ -d /sys/module/batman_adv ]]; then
     die "smoke test refuses to alter an unknown loaded batman_adv module"
   fi
 
-  initial_routing_algo="$(batctl routing_algo)"
+  initial_routing_algo="$(cat /sys/module/batman_adv/parameters/routing_algo)" ||
+    die "cannot read initial BATMAN routing algorithm"
   case "$initial_routing_algo" in
     BATMAN_IV|BATMAN_V)
       ;;
@@ -88,6 +97,11 @@ if [[ -d /sys/module/batman_adv ]]; then
       die "unknown initial BATMAN routing algorithm: $initial_routing_algo"
       ;;
   esac
+fi
+
+# Validate the file needed to restore the initial state before changing it.
+if [[ "$initial_mode" != unloaded ]]; then
+  "$CONTROL" verify "$initial_mode"
 fi
 
 netns_exists() {
@@ -170,11 +184,11 @@ restore_initial_module() {
             < /sys/module/batman_adv/parameters/emulated_wifi)"
         fi
         current_known=0
-        if [[ "$current_version" == "2019.4" &&
+        if [[ "$current_version" == "$NATIVE_VERSION" &&
               "$current_srcversion" == "$NATIVE_SRCVERSION" &&
               "$current_flag" == "unsupported" ]]; then
           current_known=1
-        elif [[ "$current_version" == "2019.4-macewifi1" &&
+        elif [[ "$current_version" == "$ARTIFACT_VERSION" &&
                 "$current_srcversion" == "$ARTIFACT_SRCVERSION" &&
                 ( "$current_flag" == "Y" || "$current_flag" == "1" ) ]]; then
           current_known=1
@@ -218,6 +232,8 @@ cleanup() {
   fi
   if [[ -n "$TMP_DIR" && "$TMP_DIR" == /tmp/batadv-macewifi-smoke.* &&
         -d "$TMP_DIR" ]]; then
+    cp -a "$TMP_DIR/." "$OUTPUT_DIR/" || rc=1
+    echo "[INFO] Captures/diagnostics: $OUTPUT_DIR"
     rm -rf -- "$TMP_DIR"
   fi
   exit "$rc"
@@ -271,7 +287,7 @@ wait_for_neighbor() {
 
   for attempts in $(seq 1 60); do
     if ip netns exec "$NS1" batctl meshif bat0 neighbors 2>/dev/null |
-      awk '$1 == "eth0" {found = 1} END {exit !found}'; then
+      awk '{for (i=1;i<=NF;i++) if ($i == "eth0" || $i == "[eth0]") found=1} END {exit !found}'; then
       return 0
     fi
     sleep 0.25
@@ -283,10 +299,18 @@ start_capture() {
   local pcap="$1"
   local filter="$2"
 
-  tshark -Q -i "$HOST1" -a duration:2 -f "$filter" -w "$pcap" \
+  tshark -i "$HOST1" -a duration:4 -f "$filter" -w "$pcap" \
     > /dev/null 2> "$pcap.stderr" &
   CAPTURE_PID=$!
-  sleep 0.5
+  for attempt in $(seq 1 40); do
+    kill -0 "$CAPTURE_PID" 2>/dev/null || { cat "$pcap.stderr" >&2; die "capture exited before readiness"; }
+    if [[ -f "$pcap" && "$(stat -c %s "$pcap")" -ge 24 ]]; then
+      sleep 0.1
+      return 0
+    fi
+    sleep 0.05
+  done
+  die "capture did not create its pcap header within two seconds"
 }
 
 finish_capture() {
@@ -337,6 +361,17 @@ assert_unicast_count() {
   echo "[OK] BATADV_UNICAST copies: 1"
 }
 
+send_udp() {
+  # One datagram, then close: netcat's EOF behavior varies across distributions.
+  ip netns exec "$NS1" python3 - "$@" <<'PY_SEND'
+import socket, sys
+with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as s:
+    s.settimeout(2)
+    s.setsockopt(socket.SOL_SOCKET, socket.SO_BROADCAST, 1)
+    s.sendto(sys.argv[3].encode(), (sys.argv[1], int(sys.argv[2])))
+PY_SEND
+}
+
 run_case() {
   local mode="$1"
   local expected_bcasts="$2"
@@ -345,18 +380,33 @@ run_case() {
 
   echo "[INFO] Testing $mode"
   "$CONTROL" ensure "$mode"
+  python3 "$SCRIPT_DIR/module_status.py" --requested-mode "$mode" --require-match > "$TMP_DIR/$mode-module.json"
   batctl routing_algo BATMAN_V
   setup_network "$subnet"
   wait_for_neighbor || die "BATMAN neighbor did not appear within 15 seconds"
+  # Neighbor discovery precedes route/translation-table convergence. Bound the
+  # warmup and require bidirectional reachability before either capture.
+  local ready=0
+  for attempt in $(seq 1 15); do
+    if ip netns exec "$NS1" ping -q -c 1 -W 1 "10.254.$subnet.2" >/dev/null &&
+       ip netns exec "$NS2" ping -q -c 1 -W 1 "10.254.$subnet.1" >/dev/null; then
+      ready=1
+      break
+    fi
+    sleep 1
+  done
+  if (( ! ready )); then
+    ip netns exec "$NS1" batctl meshif bat0 neighbors > "$TMP_DIR/$mode-neighbors.txt" 2>&1 || true
+    ip netns exec "$NS1" batctl meshif bat0 originators > "$TMP_DIR/$mode-originators.txt" 2>&1 || true
+    die "BATMAN routes did not converge during bounded warmup"
+  fi
 
   hardif_mac="$(ip netns exec "$NS1" \
     cat /sys/class/net/eth0/address)"
   bcast_pcap="$TMP_DIR/$mode-broadcast.pcap"
   start_capture "$bcast_pcap" \
     "ether proto 0x4305 and ether src $hardif_mac and ether[14] = 1"
-  printf 'macewifi-broadcast-smoke' |
-    ip netns exec "$NS1" nc -4 -n -u -b -q 0 \
-      "10.254.$subnet.255" 45678
+  send_udp "10.254.$subnet.255" 45678 macewifi-broadcast-smoke
   finish_capture "$bcast_pcap"
   assert_broadcast_count "$bcast_pcap" "$expected_bcasts"
 
@@ -366,8 +416,7 @@ run_case() {
   unicast_pcap="$TMP_DIR/$mode-unicast.pcap"
   start_capture "$unicast_pcap" \
     "ether proto 0x4305 and ether src $hardif_mac and ether[14] >= 0x40 and ether[14] <= 0x7f"
-  printf 'macewifi-unicast-smoke' |
-    ip netns exec "$NS1" nc -4 -n -u -q 0 "10.254.$subnet.2" 45679
+  send_udp "10.254.$subnet.2" 45679 macewifi-unicast-smoke
   finish_capture "$unicast_pcap"
   assert_unicast_count "$unicast_pcap"
 

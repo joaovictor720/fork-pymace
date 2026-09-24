@@ -219,7 +219,7 @@ class SpatialConfigGenerationTests(unittest.TestCase):
             encoding="utf-8"
         )
         removal = 'rm -f -- "$CLOCK_FILE"'
-        launch = 'sudo "$ROOT_DIR/pymace.py"'
+        launch = 'sudo env "PATH=$PATH"'
         self.assertIn(removal, runner)
         self.assertLess(runner.index(removal), runner.index(launch))
 
@@ -309,7 +309,7 @@ class SpatialConfigGenerationTests(unittest.TestCase):
         runner = (EVALUATION_DIR / "run_scenario.sh").read_text(
             encoding="utf-8"
         )
-        self.assertIn('MACE_RUN_ID="$RUN_ID" python', runner)
+        self.assertIn('MACE_RUN_ID="$RUN_ID" "$MACE_PYTHON"', runner)
 
     def test_runner_tolerates_legacy_sigkill_after_valid_spatial_analysis(self):
         runner = (EVALUATION_DIR / "run_scenario.sh").read_text(

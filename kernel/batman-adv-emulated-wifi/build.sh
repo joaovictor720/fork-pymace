@@ -3,14 +3,18 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 UPSTREAM_URL="https://github.com/open-mesh-mirror/batman-adv.git"
-UPSTREAM_TAG="v2019.4"
-UPSTREAM_COMMIT="933568baeba83d6bcaa451656ec1550346f35996"
-MODULE_VERSION="2019.4-macewifi1"
-PATCH_FILE="$SCRIPT_DIR/patches/0001-batman-adv-add-emulated-wifi-hardif.patch"
-
 KERNEL_RELEASE="${KERNEL_RELEASE:-$(uname -r)}"
+source "$SCRIPT_DIR/profile.sh"
+BUILD_MODE="${1:-emulated_wifi}"
+[[ "$BUILD_MODE" == native || "$BUILD_MODE" == emulated_wifi ]] || {
+  echo "Usage: $0 [native|emulated_wifi]" >&2; exit 2;
+}
 KERNEL_DIR="${KERNEL_DIR:-/lib/modules/$KERNEL_RELEASE/build}"
 OUTPUT_DIR="${OUTPUT_DIR:-$SCRIPT_DIR/build/$KERNEL_RELEASE}"
+if [[ "$BUILD_MODE" == native ]]; then
+  OUTPUT_DIR="$OUTPUT_DIR/native"
+  MODULE_VERSION="$NATIVE_BUILD_VERSION"
+fi
 BUILD_JOBS="${BUILD_JOBS:-2}"
 BUILD_TMP_BASE="${TMPDIR:-/tmp}"
 
@@ -43,16 +47,22 @@ trap cleanup EXIT
 
 source_dir="$build_tmp/batman-adv"
 echo "[INFO] Cloning batman-adv $UPSTREAM_TAG"
-git -c advice.detachedHead=false clone --quiet --branch "$UPSTREAM_TAG" \
-  --depth 1 "$UPSTREAM_URL" "$source_dir"
+if [[ -n "${BATADV_SOURCE_DIR:-}" ]]; then
+  git clone --quiet --no-hardlinks "$BATADV_SOURCE_DIR" "$source_dir"
+else
+  git -c advice.detachedHead=false clone --quiet --branch "$UPSTREAM_TAG" \
+    --depth 1 "$UPSTREAM_URL" "$source_dir"
+fi
 
 actual_commit="$(git -C "$source_dir" rev-parse HEAD)"
 [[ "$actual_commit" == "$UPSTREAM_COMMIT" ]] || {
   die "unexpected upstream commit: $actual_commit (expected $UPSTREAM_COMMIT)"
 }
 
-git -C "$source_dir" apply --check "$PATCH_FILE"
-git -C "$source_dir" apply "$PATCH_FILE"
+if [[ "$BUILD_MODE" == emulated_wifi ]]; then
+  git -C "$source_dir" apply --check "$PATCH_FILE"
+  git -C "$source_dir" apply "$PATCH_FILE"
+fi
 
 kernel_option() {
   local option="$1"
@@ -77,7 +87,7 @@ make -C "$source_dir" -j"$BUILD_JOBS" \
   CONFIG_BATMAN_ADV_MCAST="$(kernel_option CONFIG_BATMAN_ADV_MCAST)" \
   CONFIG_BATMAN_ADV_SYSFS="$(kernel_option CONFIG_BATMAN_ADV_SYSFS)" \
   CONFIG_BATMAN_ADV_TRACING="$(kernel_option CONFIG_BATMAN_ADV_TRACING)" \
-  CONFIG_BATMAN_ADV_BATMAN_V="$(kernel_option CONFIG_BATMAN_ADV_BATMAN_V)"
+  CONFIG_BATMAN_ADV_BATMAN_V=y
 
 source_module="$source_dir/net/batman-adv/batman-adv.ko"
 [[ -f "$source_module" ]] || die "build did not produce $source_module"
@@ -89,7 +99,9 @@ strip --strip-debug "$artifact"
 
 actual_version="$(modinfo -F version "$artifact")"
 actual_vermagic="$(modinfo -F vermagic "$artifact" | awk '{print $1}')"
-modinfo -p "$artifact" | grep -q '^emulated_wifi:' || die "module parameter is missing"
+if [[ "$BUILD_MODE" == emulated_wifi ]]; then
+  modinfo -p "$artifact" | grep -q '^emulated_wifi:' || die "module parameter is missing"
+fi
 [[ "$actual_version" == "$MODULE_VERSION" ]] || die "unexpected module version: $actual_version"
 [[ "$actual_vermagic" == "$KERNEL_RELEASE" ]] || {
   die "vermagic mismatch: $actual_vermagic (expected $KERNEL_RELEASE)"
@@ -97,9 +109,11 @@ modinfo -p "$artifact" | grep -q '^emulated_wifi:' || die "module parameter is m
 
 artifact_sha256="$(sha256sum "$artifact" | awk '{print $1}')"
 patch_sha256="$(sha256sum "$PATCH_FILE" | awk '{print $1}')"
+[[ "$BUILD_MODE" == emulated_wifi ]] || patch_sha256=none
 printf '%s  %s\n' "$artifact_sha256" "$(basename "$artifact")" > "$artifact.sha256"
 printf '%s\n' \
   "module_version=$MODULE_VERSION" \
+  "build_mode=$BUILD_MODE" \
   "kernel_release=$KERNEL_RELEASE" \
   "upstream_tag=$UPSTREAM_TAG" \
   "upstream_commit=$UPSTREAM_COMMIT" \
@@ -115,7 +129,7 @@ printf '%s\n' \
   "config_batman_adv_mcast=$(kernel_option CONFIG_BATMAN_ADV_MCAST)" \
   "config_batman_adv_sysfs=$(kernel_option CONFIG_BATMAN_ADV_SYSFS)" \
   "config_batman_adv_tracing=$(kernel_option CONFIG_BATMAN_ADV_TRACING)" \
-  "config_batman_adv_batman_v=$(kernel_option CONFIG_BATMAN_ADV_BATMAN_V)" \
+  "config_batman_adv_batman_v=y" \
   > "$OUTPUT_DIR/build-info.txt"
 
 echo "[OK] Built $artifact"

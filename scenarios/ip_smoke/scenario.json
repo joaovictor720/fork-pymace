@@ -1,9 +1,12 @@
 {
-  "name": "batman_wifi_smoke",
+  "name": "ip_smoke",
   "simulation": {
     "duration": 55,
     "start_delay": 5,
-    "area": { "x": 100, "y": 100 }
+    "area": {
+      "x": 100,
+      "y": 100
+    }
   },
   "nodes": {
     "count": 2,
@@ -11,13 +14,15 @@
     "seed": 22
   },
   "mobility": {
-    "model": "none",
+    "model": "random_waypoint",
     "pause": 0,
-    "speed": [0.0, 0.0]
+    "speed": [
+      1.0,
+      2.0
+    ]
   },
   "network": {
-    "routing": "batman",
-    "hardif_behavior": "emulated_wifi",
+    "routing": "none",
     "bandwidth": "11000000",
     "range": 160,
     "delay": 5,

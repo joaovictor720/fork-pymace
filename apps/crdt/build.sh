@@ -10,6 +10,7 @@ build_one() {
   local source
   local output
   local -a extra_sources=()
+  local fingerprint stamp
 
   case "$app" in
     broadcast|multiunicast|usfd|usfdx1|usfdx3)
@@ -32,12 +33,21 @@ build_one() {
       ;;
   esac
 
+  # Each host builds its own binaries. Reuse requires matching sources,
+  # compiler, architecture, flags and output bytes, not just timestamps.
+  mkdir -p "$SCRIPT_DIR/../../.build/crdt"
+  stamp="$SCRIPT_DIR/../../.build/crdt/$app.sha256"
+  fingerprint="$({
+    "$CXX_BIN" --version
+    uname -m
+    printf '%s\n' "${COMMON_FLAGS[@]}"
+    find "$SCRIPT_DIR" -type f \( -name '*.cpp' -o -name '*.hpp' -o -name '*.cc' \) \
+      -print0 | sort -z | xargs -0 sha256sum
+  } | sha256sum | cut -d ' ' -f 1)"
   local rebuild=0
-  if [[ ! -x "$output" || "$source" -nt "$output" ]]; then
+  if [[ ! -x "$output" || ! -f "$stamp" || "$(head -n 1 "$stamp")" != "$fingerprint" ]]; then
     rebuild=1
-  elif find "$SCRIPT_DIR/common" "$SCRIPT_DIR/usfd" \
-      -type f \( -name '*.hpp' -o -name '*.cpp' -o -name '*.cc' \) \
-      -newer "$output" -print -quit | grep -q .; then
+  elif [[ "$(tail -n 1 "$stamp")" != "$(sha256sum "$output" | cut -d ' ' -f 1)" ]]; then
     rebuild=1
   fi
 
@@ -45,6 +55,7 @@ build_one() {
     echo "[BUILD] $app"
     "$CXX_BIN" "${COMMON_FLAGS[@]}" "$source" "${extra_sources[@]}" \
       -o "$output"
+    printf '%s\n' "$fingerprint" "$(sha256sum "$output" | cut -d ' ' -f 1)" > "$stamp"
   else
     echo "[BUILD] $app is up to date"
   fi

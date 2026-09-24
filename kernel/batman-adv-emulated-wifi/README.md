@@ -1,5 +1,38 @@
 # batman-adv emulated WiFi behavior for MACE/CORE
 
+O setup online fica em [`setup/`](../../setup/README.md). Use
+`./setup/setup.sh --batman emulated_wifi` na raiz; ele baixa a fonte fixada,
+aplica o patch e reutiliza artefatos válidos sem perder assinaturas.
+Não é preciso preparar um módulo nativo para esse perfil. Para verificar só
+esse arquivo, use `module-control.sh verify emulated_wifi`; sem argumento,
+`verify` continua verificando ambos para os fluxos antigos de comparação.
+Assinatura/confiança e carregamento continuam explícitos, fora do setup.
+
+## Native Ubuntu 24.04 port (2026-09-22)
+
+The [host portability procedure](../../docs/portabilidade-ubuntu.md) covers the
+new kernel 6.8 profile. It pins batman-adv `v2024.0` at
+`7ee009fb21955bc7977d96b00eb8362a558d0d3a`, with a separately ported patch.
+Both `build.sh native` (unpatched, `2024.0-macev1`) and
+`build.sh emulated_wifi` (`2024.0-macewifi1`) force BATMAN V on, even when the
+Ubuntu kernel configuration disabled it. These builds have compiled against
+`6.8.0-139-generic`. The emulated build has also passed the two-node MACE
+broadcast smoke test with Secure Boot enabled; the native comparison remains pending.
+`profile.sh` retains the original patch for kernel 5.4. Other kernels require
+an explicitly reviewed profile, not an automatic latest-version upgrade.
+
+Native mode defaults to the installed module, located with `modinfo -n`, including
+compressed `.ko.zst`/`.ko.xz` files. A separately built native module can be selected
+explicitly using `BATADV_NATIVE_MODULE`; its identity and provider are recorded.
+There is no fallback from `emulated_wifi` to native. The smoke test now handles
+different neighbor table layouts, warms up routes, uses one bounded Python UDP
+send, and preserves captures in `results/batman-module-smoke/`.
+
+The sections below describe the original VM experiment. The new Ubuntu build
+also requires signing and a trusted certificate with Secure Boot enabled;
+`sign-module.sh` signs local files and updates their hashes, but never enrolls
+a key or loads a module. Compilation alone does not validate research equivalence.
+
 This directory provides a reproducible, opt-in modification of batman-adv
 2019.4 for the `5.4.139-batmanv` MACE VM. It makes non-wireless hard
 interfaces such as CORE VETHs use batman-adv's generic WiFi policies. It does

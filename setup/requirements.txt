@@ -1,0 +1,32 @@
+# Ubuntu 24.04 / Python 3.12. CORE itself is built from a pinned commit by setup/python-core.sh (source pin in setup/versions.env).
+# The vendored pymobility is used; PAPARAZZI/EMANE/OMNeT++ are optional.
+numpy==1.26.4
+scipy==1.13.1
+pandas==2.2.3
+matplotlib==3.9.2
+seaborn==0.13.2
+Flask==2.1.1
+Werkzeug==2.0.1
+Flask-SocketIO==4.3.2
+python-socketio==4.6.1
+python-engineio==3.14.2
+APScheduler==3.10.4
+ping3==4.0.8
+geopy==2.4.1
+dpkt==1.9.8
+tqdm==4.66.5
+requests==2.32.3
+grpcio-tools==1.69.0
+poetry-core==2.1.2
+pytest==8.3.4
+# CORE 9.2.0 runtime requirements (upstream daemon/pyproject.toml).
+fabric==3.2.2
+grpcio==1.69.0
+invoke==2.2.0
+lxml==5.2.2
+netaddr==0.10.1
+protobuf==5.29.3
+pyproj==3.6.1
+Mako==1.2.3
+PyYAML==6.0.1
+pillow==11.1.0

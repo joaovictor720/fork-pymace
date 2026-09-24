@@ -1,7 +1,8 @@
 #!/bin/bash
+source "$(dirname "${BASH_SOURCE[0]}")/../scripts/runtime.sh"
 set -euo pipefail
 
-ROOT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
+ROOT_DIR="$MACE_ROOT"
 RUN_SCRIPT="$ROOT_DIR/evaluation/run_experiment.sh"
 JOBS_FILE="$ROOT_DIR/evaluation/jobs.json"
 

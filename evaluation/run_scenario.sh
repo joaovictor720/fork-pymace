@@ -1,11 +1,15 @@
 #!/bin/bash
-set -e
+set -euo pipefail
+
+source "$(dirname "${BASH_SOURCE[0]}")/../scripts/runtime.sh"
+[[ $# -eq 3 ]] || { echo "Usage: $0 <scenario> <app> <run-id>" >&2; exit 2; }
 
 SCENARIO="$1"
 APP="$2"
 RUN_ID="$3"
 
-ROOT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
+ROOT_DIR="$MACE_ROOT"
+cd "$ROOT_DIR"
 
 SCENARIO_DIR="$ROOT_DIR/scenarios/$SCENARIO"
 SCENARIO_SPEC="$SCENARIO_DIR/scenario.json"
@@ -26,7 +30,7 @@ mkdir -p "$RESULT_DIR"
 }
 
 WORKLOAD="$(
-  python3 - "$SCENARIO_SPEC" <<'PY'
+  "$MACE_PYTHON" - "$SCENARIO_SPEC" <<'PY'
 import json
 import sys
 
@@ -44,7 +48,7 @@ fi
 # Select batman-adv hard-interface behavior on the host
 # -------------------------------
 BATMAN_CONFIG="$(
-  python3 - "$SCENARIO_SPEC" <<'PY'
+  "$MACE_PYTHON" - "$SCENARIO_SPEC" <<'PY'
 import json
 import sys
 
@@ -68,10 +72,16 @@ PY
 
 IFS=$'\t' read -r NETWORK_ROUTING HARDIF_BEHAVIOR <<< "$BATMAN_CONFIG"
 
+CHECK_MODE=ip
+[[ "$NETWORK_ROUTING" != batman ]] || CHECK_MODE="$HARDIF_BEHAVIOR"
+"$ROOT_DIR/setup/doctor.sh" --mode "$CHECK_MODE" --output "$RESULT_DIR/host_environment.json"
+"$MACE_PYTHON" -m pip freeze > "$RESULT_DIR/python-packages.txt"
+
 if [[ "$NETWORK_ROUTING" == "batman" ]]; then
   BATADV_TOOLS="$ROOT_DIR/kernel/batman-adv-emulated-wifi"
-  sudo "$BATADV_TOOLS/module-control.sh" ensure "$HARDIF_BEHAVIOR"
-  python3 "$BATADV_TOOLS/module_status.py" \
+  "$BATADV_TOOLS/module-control.sh" ensure "$HARDIF_BEHAVIOR"
+  sudo batctl routing_algo BATMAN_V
+  "$MACE_PYTHON" "$BATADV_TOOLS/module_status.py" \
     --requested-mode "$HARDIF_BEHAVIOR" \
     --require-match \
     > "$RESULT_DIR/batman_module.json"
@@ -83,7 +93,7 @@ fi
 "$ROOT_DIR/apps/crdt/build.sh" "$APP"
 
 export ROOT_DIR
-BIN="$(python - "$APP" <<'PY'
+BIN="$("$MACE_PYTHON" - "$APP" <<'PY'
 import json
 import os
 import sys
@@ -119,12 +129,12 @@ fi
 # -------------------------------
 # Generate mace.json (uses apps.json internally)
 # -------------------------------
-MACE_RUN_ID="$RUN_ID" python "$ROOT_DIR/evaluation/generate_scenario.py" "$SCENARIO_DIR" "$APP"
+MACE_RUN_ID="$RUN_ID" "$MACE_PYTHON" "$ROOT_DIR/evaluation/generate_scenario.py" "$SCENARIO_DIR" "$APP"
 
 # -------------------------------
 # Generate node_config.json
 # -------------------------------
-python "$ROOT_DIR/evaluation/generate_node_config.py" \
+"$MACE_PYTHON" "$ROOT_DIR/evaluation/generate_node_config.py" \
   "$SCENARIO_SPEC" \
   "$APP" \
   "$NODE_CFG" \
@@ -137,7 +147,7 @@ SPATIAL_CHECKPOINTS=""
 
 if [[ "$WORKLOAD" == "spatial_coverage" ]]; then
   SPATIAL_CONFIG="$(
-    python3 - "$SCENARIO_SPEC" "$NODE_CFG" <<'PY'
+    "$MACE_PYTHON" - "$SCENARIO_SPEC" "$NODE_CFG" <<'PY'
 import json
 import math
 import sys
@@ -278,13 +288,13 @@ PY
   if [[ "$SPATIAL_REQUIRE_MOTION" == "1" ]]; then
     TRACE_CHECK_ARGS+=(--require-motion-after-cover)
   fi
-  python3 "$ROOT_DIR/evaluation/spatial_coverage.py" check-traces \
+  "$MACE_PYTHON" "$ROOT_DIR/evaluation/spatial_coverage.py" check-traces \
     "${TRACE_CHECK_ARGS[@]}" \
     --output "$TRACE_VALIDATION" \
     "${TRACE_FILES[@]}"
 
   SPATIAL_TIMING="$(
-    python3 - \
+    "$MACE_PYTHON" - \
       "$TRACE_VALIDATION" \
       "$SPATIAL_START_SECONDS" \
       "$SPATIAL_WINDOW_SECONDS" \
@@ -359,27 +369,14 @@ export CRDT_NODE_CONFIG="$NODE_CFG"
 # -------------------------------
 # Inject paths
 # -------------------------------
-if [[ "$WORKLOAD" == "spatial_coverage" ]]; then
-  sed -i \
-    -e "s|__CRDT_BIN__|$BIN|g" \
-    -e "s|__CRDT_NODE_CONFIG__|$NODE_CFG|g" \
-    -e "s|__EXPERIMENT_CLOCK__|$CLOCK_FILE|g" \
-    -e "s|__SPATIAL_RUN_SECONDS__|$SPATIAL_RUN_SECONDS|g" \
-    -e "s|__SPATIAL_CAPTURE_SECONDS__|$SPATIAL_CAPTURE_SECONDS|g" \
-    -e "s|__SPATIAL_GPS_SECONDS__|$SPATIAL_GPS_SECONDS|g" \
-    -e "s|__SPATIAL_END_TRACE_SECONDS__|$SPATIAL_END_TRACE_SECONDS|g" \
-    "$MACE_JSON"
-  if grep -q '__SPATIAL_' "$MACE_JSON"; then
-    echo "[ERROR] unresolved spatial timing token in $MACE_JSON"
-    exit 1
-  fi
-else
-  sed -i \
-    -e "s|__CRDT_BIN__|$BIN|g" \
-    -e "s|__CRDT_NODE_CONFIG__|$NODE_CFG|g" \
-    -e "s|__EXPERIMENT_CLOCK__|$CLOCK_FILE|g" \
-    "$MACE_JSON"
+SUBSTITUTIONS=("__CRDT_BIN__=$BIN" "__CRDT_NODE_CONFIG__=$NODE_CFG" "__EXPERIMENT_CLOCK__=$CLOCK_FILE")
+if [[ "$WORKLOAD" == spatial_coverage ]]; then
+  SUBSTITUTIONS+=("__SPATIAL_RUN_SECONDS__=$SPATIAL_RUN_SECONDS"
+    "__SPATIAL_CAPTURE_SECONDS__=$SPATIAL_CAPTURE_SECONDS"
+    "__SPATIAL_GPS_SECONDS__=$SPATIAL_GPS_SECONDS"
+    "__SPATIAL_END_TRACE_SECONDS__=$SPATIAL_END_TRACE_SECONDS")
 fi
+"$MACE_PYTHON" "$ROOT_DIR/evaluation/inject_scenario.py" "$MACE_JSON" "${SUBSTITUTIONS[@]}"
 
 cp "$SCENARIO_SPEC" "$RESULT_DIR/scenario.json"
 cp "$MACE_JSON" "$RESULT_DIR/mace.json"
@@ -397,29 +394,31 @@ if [[ "$WORKLOAD" == "spatial_coverage" ]]; then
   # clock and start before the new replay epoch is published.  Delay removal
   # until all host-side preflight/build steps have succeeded.
   rm -f -- "$CLOCK_FILE"
-  sudo "$ROOT_DIR/pymace.py" -s "$MACE_JSON" || PYMACE_RC=$?
+  sudo env "PATH=$PATH" "PYTHONDONTWRITEBYTECODE=1" \
+    "BATADV_NATIVE_MODULE=${BATADV_NATIVE_MODULE:-}" "BATADV_MODULE_ARTIFACT=${BATADV_MODULE_ARTIFACT:-}" "$MACE_PYTHON" "$ROOT_DIR/pymace.py" -s "$MACE_JSON" || PYMACE_RC=$?
 else
-  # Preserve the historical best-effort behavior for GCounter experiments.
-  PYMACE_START_TS="$(python3 - <<'PY'
+  # Preserve the common application start time across sudo.
+  PYMACE_START_TS="$("$MACE_PYTHON" - <<'PY'
 import time
 
 print(format(time.time() + 30.0, ".6f"))
 PY
 )"
   export PYMACE_START_TS
-  sudo -E "$ROOT_DIR/pymace.py" -s "$MACE_JSON" || true
+  sudo env "PATH=$PATH" "PYTHONDONTWRITEBYTECODE=1" \
+    "BATADV_NATIVE_MODULE=${BATADV_NATIVE_MODULE:-}" "BATADV_MODULE_ARTIFACT=${BATADV_MODULE_ARTIFACT:-}" "PYMACE_START_TS=$PYMACE_START_TS" "$MACE_PYTHON" "$ROOT_DIR/pymace.py" -s "$MACE_JSON" || PYMACE_RC=$?
 fi
 
 # -------------------------------
 # Collect logs
 # -------------------------------
-python "$ROOT_DIR/evaluation/collect_logs.py" "$RESULT_DIR"
+"$MACE_PYTHON" "$ROOT_DIR/evaluation/collect_logs.py" "$RESULT_DIR"
 
 # -------------------------------
 # Spatial CAR analysis (host-side, aligned by experiment_clock.json)
 # -------------------------------
 if [[ "$WORKLOAD" == "spatial_coverage" ]]; then
-  python3 "$ROOT_DIR/evaluation/spatial_coverage.py" analyze \
+  "$MACE_PYTHON" "$ROOT_DIR/evaluation/spatial_coverage.py" analyze \
     --run-dir "$RESULT_DIR" \
     --grid-config "$NODE_CFG" \
     --experiment-clock auto \
@@ -431,11 +430,11 @@ fi
 # -------------------------------
 # Post-process pcaps (host-side) and purge
 # -------------------------------
-python "$ROOT_DIR/evaluation/process_pcaps.py" "$RESULT_DIR" "$APP" --append-netlog
+"$MACE_PYTHON" "$ROOT_DIR/evaluation/process_pcaps.py" "$RESULT_DIR" "$APP" --append-netlog
 
 if [[ "$WORKLOAD" == "spatial_coverage" && "$PYMACE_RC" -ne 0 ]]; then
   if [[ "$PYMACE_RC" -eq 137 && -f "$RESULT_DIR/spatial_coverage_analysis.json" ]]; then
-    python3 - "$RESULT_DIR/spatial_coverage_analysis.json" <<'PY'
+    "$MACE_PYTHON" - "$RESULT_DIR/spatial_coverage_analysis.json" <<'PY'
 import json
 import sys
 
@@ -453,4 +452,9 @@ PY
     echo "[ERROR] PyMACE exited with status $PYMACE_RC"
     exit "$PYMACE_RC"
   fi
+fi
+
+if [[ "$WORKLOAD" != spatial_coverage && "$PYMACE_RC" -ne 0 ]]; then
+  echo "[ERROR] PyMACE failed with status $PYMACE_RC" >&2
+  exit "$PYMACE_RC"
 fi
