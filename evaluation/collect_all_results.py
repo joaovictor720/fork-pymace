@@ -33,16 +33,39 @@ def _load_algorithms():
     return ["broadcast", "rapid", "multiunicast", "trickle", "usfdx1", "usfdx3"]
 
 
+def _load_scenarios():
+    jobs_path = os.environ.get("JOBS_JSON")
+    if not jobs_path:
+        return None
+    try:
+        cfg = json.loads(Path(jobs_path).read_text(encoding="utf-8"))
+        scenarios = {
+            str(job.get("scenario", "")).strip()
+            for job in cfg.get("jobs", [])
+            if str(job.get("scenario", "")).strip()
+        }
+        return scenarios or None
+    except Exception:
+        return None
+
+
 def _read_variant_scenario_params(variant_dir: Path):
+    out = {}
+    if variant_dir.name.startswith("density="):
+        try:
+            out["density"] = float(variant_dir.name.split("=", 1)[1])
+        except Exception:
+            pass
+
     sc_path = variant_dir / "scenario.json"
     if not sc_path.exists():
-        return {}
+        return out
 
     try:
         import json
         sc = json.loads(sc_path.read_text(encoding="utf-8"))
     except Exception:
-        return {}
+        return out
 
     nodes_cfg = None
     area_x = None
@@ -69,7 +92,6 @@ def _read_variant_scenario_params(variant_dir: Path):
             area_x = None
             area_y = None
 
-    out = {}
     if nodes_cfg is not None:
         out["nodes_cfg"] = nodes_cfg
 
@@ -78,7 +100,7 @@ def _read_variant_scenario_params(variant_dir: Path):
         out["area_y_m"] = area_y
         area_km2 = (area_x * area_y) / 1_000_000.0
         out["area_km2"] = area_km2
-        if nodes_cfg is not None and area_km2 > 0:
+        if nodes_cfg is not None and area_km2 > 0 and "density" not in out:
             out["density"] = float(nodes_cfg) / area_km2
 
     return out
@@ -87,9 +109,12 @@ def _read_variant_scenario_params(variant_dir: Path):
 rows = []
 cap_rows = []
 algorithms = _load_algorithms()
+allowed_scenarios = _load_scenarios()
 
 for scenario_dir in ROOT.glob("*__expanded"):
     scenario = scenario_dir.name.replace("__expanded", "")
+    if allowed_scenarios is not None and scenario not in allowed_scenarios:
+        continue
 
     for variant_dir in scenario_dir.iterdir():
         if not variant_dir.is_dir():

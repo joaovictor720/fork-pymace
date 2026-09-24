@@ -158,7 +158,13 @@ for scenario_name, df_s in df.groupby("scenario"):
         row["runs_total"] = len(g)
 
         row["success_rate"] = pd.to_numeric(g.get("converged"), errors="coerce").mean()
-        row["avg_final_coverage"] = pd.to_numeric(g.get("avg_final_coverage"), errors="coerce").mean()
+        final_cov = mean_ci(g.get("avg_final_coverage"))
+        row["avg_final_coverage"] = final_cov["mean"]
+        row["final_coverage_mean"] = final_cov["mean"]
+        row["final_coverage_ci_low"] = final_cov["ci_low"]
+        row["final_coverage_ci_high"] = final_cov["ci_high"]
+        row["final_coverage_std"] = final_cov["std"]
+        row["final_coverage_n"] = int(final_cov["n"])
         row["max_abs_error"] = pd.to_numeric(g.get("max_abs_error"), errors="coerce").max()
 
         g_ok = g[g.get("converged") == True] if "converged" in g.columns else g.iloc[0:0]

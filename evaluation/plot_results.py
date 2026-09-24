@@ -94,7 +94,7 @@ LABELS_ALGO = {
 
 Y_LABELS = {
     "cap": "Synchronization (%)",
-    "pkt_total": "Total Packets",
+    "pkt_total": "Total Packets ($\\times 10^3$)",
 }
 
 PACKET_CLASS_STYLES = {
@@ -298,9 +298,9 @@ def _packet_breakdown_row(row):
 
 def _stacked_bar_geometry(algo_count: int, algo_index: int, x_pos):
     if algo_count <= 1:
-        width = 0.58
+        width = 0.46
         return width, x_pos
-    group_width = 0.82
+    group_width = 0.70
     width = group_width / algo_count
     first_center = -group_width / 2 + width / 2
     return width, x_pos + first_center + algo_index * width
@@ -502,6 +502,7 @@ def plot_bar_with_ci(
     base_filename_no_ext: str,
     *,
     y_axis_mode: str = "plain",
+    y_scale: float = 1.0,
 ):
     fig, ax = _new_fig_ax()
     algo_order = _algo_order(df, algo_col)
@@ -510,20 +511,20 @@ def plot_bar_with_ci(
     x_pos = np.arange(len(x_values))
 
     if len(algo_order) <= 1:
-        width = 0.58
+        width = 0.46
     elif len(algo_order) == 2:
-        width = 0.36
-    else:
         width = 0.26
+    else:
+        width = 0.16
 
     for i, algo in enumerate(algo_order):
         subset = df[df[algo_col] == algo].copy()
         subset = subset.sort_values(x)
         metrics = pd.DataFrame({x: x_values}).merge(subset, on=x, how="left")
 
-        means = pd.to_numeric(metrics[y], errors="coerce")
-        lo = pd.to_numeric(metrics[ci_low], errors="coerce")
-        hi = pd.to_numeric(metrics[ci_high], errors="coerce")
+        means = pd.to_numeric(metrics[y], errors="coerce") / y_scale
+        lo = pd.to_numeric(metrics[ci_low], errors="coerce") / y_scale
+        hi = pd.to_numeric(metrics[ci_high], errors="coerce") / y_scale
 
         mask = means.notna()
         means = means.where(mask)
@@ -539,7 +540,7 @@ def plot_bar_with_ci(
         elif len(algo_order) == 2:
             pos = x_pos - width / 2 if i == 0 else x_pos + width / 2
         else:
-            offsets = np.linspace(-width, width, len(algo_order))
+            offsets = np.linspace(-width * 1.45, width * 1.45, len(algo_order))
             pos = x_pos + offsets[i]
 
         color = PALETTE.get(algo, "gray")
@@ -584,6 +585,8 @@ def plot_packets_by_class(
     xlabel: str,
     ylabel: str,
     base_filename_no_ext: str,
+    *,
+    y_scale: float = 1.0,
 ):
     """Plot the existing packet total as an honest semantic decomposition."""
     fig, ax = _new_fig_ax()
@@ -613,10 +616,10 @@ def plot_packets_by_class(
                 )
                 continue
             position = float(positions[row_index])
-            payload = max(float(values["payload"]), 0.0)
-            control = max(float(values["control"]), 0.0)
-            unclassified = max(float(values["unclassified"]), 0.0)
-            total = float(values["total"])
+            payload = max(float(values["payload"]) / y_scale, 0.0)
+            control = max(float(values["control"]) / y_scale, 0.0)
+            unclassified = max(float(values["unclassified"]) / y_scale, 0.0)
+            total = float(values["total"]) / y_scale
             bottoms = (0.0, payload, payload + control)
             heights = (payload, control, unclassified)
             for packet_class, bottom, height in zip(PACKET_CLASS_STYLES, bottoms, heights):
@@ -630,15 +633,15 @@ def plot_packets_by_class(
             ax.errorbar(
                 position, payload,
                 yerr=np.array([
-                    [payload - values["payload_ci_low"]],
-                    [values["payload_ci_high"] - payload],
+                    [payload - values["payload_ci_low"] / y_scale],
+                    [values["payload_ci_high"] / y_scale - payload],
                 ]),
                 fmt="none", capsize=3, ecolor="#333333",
                 elinewidth=0.9, alpha=0.75,
             )
             ax.errorbar(
                 position, total,
-                yerr=np.array([[total - values["total_ci_low"]], [values["total_ci_high"] - total]]),
+                yerr=np.array([[total - values["total_ci_low"] / y_scale], [values["total_ci_high"] / y_scale - total]]),
                 fmt="none", capsize=4, ecolor="black", elinewidth=1.0, alpha=0.9,
             )
             if unclassified > 0 and total > 0:
@@ -658,7 +661,6 @@ def plot_packets_by_class(
     ax.set_xlabel(xlabel, labelpad=6)
     ax.set_ylabel(ylabel, labelpad=6)
     ax.grid(True, axis="y", linestyle=":", alpha=0.6)
-    _apply_thousands_sci(ax)
     for position, segment_center, percent in annotations:
         ax.text(
             position, segment_center, f"{percent:.1f}%", ha="center", va="center",
@@ -767,7 +769,8 @@ for prefix in prefixes:
             xlabel=xlabel,
             ylabel=Y_LABELS["pkt_total"],
             base_filename_no_ext=f"{prefix}__total_packets",
-            y_axis_mode="thousands_sci",
+            y_axis_mode="plain",
+            y_scale=1000.0,
         )
     else:
         print(f"[WARN] Missing total-packets columns for prefix={prefix!r}; skipping packets plot.")
@@ -791,6 +794,7 @@ for prefix in prefixes:
             xlabel=xlabel,
             ylabel=Y_LABELS["pkt_total"],
             base_filename_no_ext=f"{prefix}__total_packets_by_class",
+            y_scale=1000.0,
         )
     elif not missing_breakdown:
         print(
@@ -803,8 +807,23 @@ for prefix in prefixes:
             f"for prefix={prefix!r}; skipping packet-breakdown plot."
         )
 
-    # CAPACITY (line)
-    if _has_cols(df_p, [COLS["cap_node_mean"], COLS["cap_node_ci_low"], COLS["cap_node_ci_high"]]):
+    # GCounter convergence/synchronization (line). Spatial grid plots use their
+    # own coverage pipeline; for GCounter the meaningful response is final
+    # replica coverage from summary.csv.
+    if _has_cols(df_p, ["final_coverage_mean", "final_coverage_ci_low", "final_coverage_ci_high"]):
+        plot_line_with_ci(
+            df=df_p,
+            x=xcol,
+            y="final_coverage_mean",
+            ci_low="final_coverage_ci_low",
+            ci_high="final_coverage_ci_high",
+            algo_col=COLS["algorithm"],
+            xlabel=xlabel,
+            ylabel=Y_LABELS["cap"],
+            base_filename_no_ext=f"{prefix}__capacity_line",
+            y_axis_mode="percent_0_1",
+        )
+    elif _has_cols(df_p, [COLS["cap_node_mean"], COLS["cap_node_ci_low"], COLS["cap_node_ci_high"]]):
         plot_line_with_ci(
             df=df_p,
             x=xcol,

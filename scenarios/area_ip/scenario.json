@@ -36,11 +36,11 @@
   },
   "experiment": {
     "vary_tuples": [
-      { "simulation.area": [1732.050807569, 1732.050807569] },
-      { "simulation.area": [1224.744871392, 1224.744871392] },
-      { "simulation.area": [1000.0, 1000.0] },
-      { "simulation.area": [866.025403784, 866.025403784] },
-      { "simulation.area": [774.596669241, 774.596669241] }
+      { "_label": "density=10", "simulation.area": [1732.050807569, 1732.050807569] },
+      { "_label": "density=20", "simulation.area": [1224.744871392, 1224.744871392] },
+      { "_label": "density=30", "simulation.area": [1000.0, 1000.0] },
+      { "_label": "density=40", "simulation.area": [866.025403784, 866.025403784] },
+      { "_label": "density=50", "simulation.area": [774.596669241, 774.596669241] }
     ]
   }
 }

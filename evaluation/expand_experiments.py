@@ -68,11 +68,16 @@ if vary_tuples:
 
         params: Dict[str, Any] = {}
         tuple_tags: List[str] = []
+        label = t.get("_label")
 
         for k, v in t.items():
+            if k.startswith("_"):
+                continue
             set_path(base_variant, k, v)
             params[k] = v
             tuple_tags.append(f"{short_key(k)}={value_to_str(v)}")
+        if isinstance(label, str) and label:
+            tuple_tags = [label]
 
         if vary:
             for combo in itertools.product(*values):
