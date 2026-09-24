@@ -839,4 +839,58 @@ for prefix in prefixes:
     else:
         print(f"[WARN] Missing cap_node_* columns for prefix={prefix!r}; skipping capacity plot.")
 
+    # Zoom set: same figures without Best-effort Multicast, whose bars dominate
+    # the packet-cost scale in the fixed-swarm density experiment.
+    df_zoom = df_p[df_p[COLS["algorithm"]] != "multiunicast"].copy()
+    if "multiunicast" in set(df_p[COLS["algorithm"]]) and not df_zoom.empty:
+        if _has_cols(df_zoom, [COLS["pkt_total_mean"], COLS["pkt_total_ci_low"], COLS["pkt_total_ci_high"]]):
+            plot_bar_with_ci(
+                df=df_zoom,
+                x=xcol,
+                y=COLS["pkt_total_mean"],
+                ci_low=COLS["pkt_total_ci_low"],
+                ci_high=COLS["pkt_total_ci_high"],
+                algo_col=COLS["algorithm"],
+                xlabel=xlabel,
+                ylabel=Y_LABELS["pkt_total"],
+                base_filename_no_ext=f"{prefix}__total_packets__no_best_effort",
+                y_axis_mode="plain",
+                y_scale=1000.0,
+            )
+
+        zoom_missing_breakdown = [c for c in PACKET_BREAKDOWN_COLS.values() if c not in df_zoom.columns]
+        zoom_valid_breakdown_status = pd.Series(False, index=df_zoom.index)
+        if not zoom_missing_breakdown:
+            zoom_valid_breakdown_status = (
+                df_zoom[PACKET_BREAKDOWN_COLS["status"]]
+                .astype(str)
+                .str.strip()
+                .str.lower()
+                .isin({"ok", "warning_unclassified"})
+            )
+        if not zoom_missing_breakdown and zoom_valid_breakdown_status.any():
+            plot_packets_by_class(
+                df=df_zoom,
+                x=xcol,
+                algo_col=COLS["algorithm"],
+                xlabel=xlabel,
+                ylabel=Y_LABELS["pkt_total"],
+                base_filename_no_ext=f"{prefix}__total_packets_by_class__no_best_effort",
+                y_scale=1000.0,
+            )
+
+        if _has_cols(df_zoom, ["final_coverage_mean", "final_coverage_ci_low", "final_coverage_ci_high"]):
+            plot_line_with_ci(
+                df=df_zoom,
+                x=xcol,
+                y="final_coverage_mean",
+                ci_low="final_coverage_ci_low",
+                ci_high="final_coverage_ci_high",
+                algo_col=COLS["algorithm"],
+                xlabel=xlabel,
+                ylabel=Y_LABELS["cap"],
+                base_filename_no_ext=f"{prefix}__capacity_line__no_best_effort",
+                y_axis_mode="percent_0_1",
+            )
+
 print(f"\nAll plots generated with timestamp {PLOT_TIMESTAMP}.")
