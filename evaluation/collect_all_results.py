@@ -3,8 +3,8 @@ from pathlib import Path
 import json
 import os
 
-ROOT = Path("/home/mace/git/fork-pymace/results")
-REPO_ROOT = Path("/home/mace/git/fork-pymace")
+REPO_ROOT = Path(__file__).resolve().parent.parent
+ROOT = Path(os.environ.get("MACE_RESULTS_ROOT", REPO_ROOT / "results"))
 
 
 def _load_algorithms():

@@ -1,7 +1,8 @@
 #!/bin/bash
+source "$(dirname "${BASH_SOURCE[0]}")/../scripts/runtime.sh"
 set -euo pipefail
 
-ROOT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
+ROOT_DIR="$MACE_ROOT"
 RUN_SCRIPT="$ROOT_DIR/evaluation/run_experiment.sh"
 JOBS_FILE="$ROOT_DIR/evaluation/jobs.json"
 
@@ -44,7 +45,7 @@ fi
 # Carrega jobs via Python e imprime linhas: "scenario<TAB>app<TAB>runs"
 # -----------------------------------------------------------------------------
 JOBS_TSV="$(
-python3 - "$JOBS_FILE" "$OVERRIDE_RUNS" <<'PY'
+"$MACE_PYTHON" - "$JOBS_FILE" "$OVERRIDE_RUNS" <<'PY'
 import json
 import sys
 

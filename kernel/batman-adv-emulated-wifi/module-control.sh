@@ -3,13 +3,13 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 KERNEL_RELEASE="$(uname -r)"
+source "$SCRIPT_DIR/profile.sh"
 ARTIFACT="${BATADV_MODULE_ARTIFACT:-$SCRIPT_DIR/build/$KERNEL_RELEASE/batman-adv.ko}"
-NATIVE_MODULE="${BATADV_NATIVE_MODULE:-/lib/modules/$KERNEL_RELEASE/kernel/net/batman-adv/batman-adv.ko}"
-EXPECTED_VERSION="2019.4-macewifi1"
-EXPECTED_NATIVE_VERSION="2019.4"
-EXPECTED_UPSTREAM_COMMIT="933568baeba83d6bcaa451656ec1550346f35996"
+NATIVE_MODULE="${BATADV_NATIVE_MODULE:-$(modinfo -n batman_adv 2>/dev/null || true)}"
+EXPECTED_VERSION="$MODULE_VERSION"
+EXPECTED_NATIVE_VERSION="$(modinfo -F version "$NATIVE_MODULE" 2>/dev/null || true)"
+EXPECTED_UPSTREAM_COMMIT="$UPSTREAM_COMMIT"
 MODULE_NAME="batman_adv"
-PATCH_FILE="$SCRIPT_DIR/patches/0001-batman-adv-add-emulated-wifi-hardif.patch"
 
 die() {
   echo "[ERROR] $*" >&2
@@ -62,7 +62,8 @@ module_refcount() {
 
 require_root() {
   if (( EUID != 0 )); then
-    exec sudo -- "$0" "$@"
+    exec sudo env "BATADV_NATIVE_MODULE=$NATIVE_MODULE" \
+      "BATADV_MODULE_ARTIFACT=$ARTIFACT" "BATADV_PROFILE=${BATADV_PROFILE:-$KERNEL_RELEASE}" "$0" "$@"
   fi
 }
 
@@ -109,6 +110,16 @@ validate_native_module() {
   if modinfo -p "$NATIVE_MODULE" | grep -q '^emulated_wifi:'; then
     die "native module unexpectedly exposes emulated_wifi: $NATIVE_MODULE"
   fi
+  if [[ "$NATIVE_MODULE" != "$(modinfo -n batman_adv 2>/dev/null || true)" ]]; then
+    local info="$(dirname "$NATIVE_MODULE")/build-info.txt"
+    [[ -f "$info" && -f "$NATIVE_MODULE.sha256" ]] || die "custom native module lacks build metadata/checksum"
+    (cd "$(dirname "$NATIVE_MODULE")" && sha256sum --check --status "$(basename "$NATIVE_MODULE").sha256") || die "native checksum mismatch"
+    grep -qx "upstream_commit=$EXPECTED_UPSTREAM_COMMIT" "$info" || die "unrecognized native upstream commit"
+    grep -qx 'patch_sha256=none' "$info" || die "native build must be unpatched"
+    grep -qx 'config_batman_adv_batman_v=y' "$info" || die "native build lacks BATMAN V"
+    grep -qx "artifact_sha256=$(sha256sum "$NATIVE_MODULE" | awk '{print $1}')" "$info" || die "native metadata hash mismatch"
+    [[ "$EXPECTED_NATIVE_VERSION" == "$NATIVE_BUILD_VERSION" ]] || die "unexpected custom native version"
+  fi
 }
 
 validate_artifact() {
@@ -130,6 +141,7 @@ validate_artifact() {
 
   build_info="$(dirname "$ARTIFACT")/build-info.txt"
   [[ -f "$build_info" ]] || die "module build metadata is missing: $build_info"
+  grep -qx 'config_batman_adv_batman_v=y' "$build_info" || die "experimental artifact lacks BATMAN V"
   [[ -f "$PATCH_FILE" ]] || die "source patch is missing: $PATCH_FILE"
   actual_artifact_sha="$(sha256sum "$ARTIFACT" | awk '{print $1}')"
   actual_patch_sha="$(sha256sum "$PATCH_FILE" | awk '{print $1}')"
@@ -235,6 +247,16 @@ load_native_exact() {
   insmod "$NATIVE_MODULE"
 }
 
+require_signed_target() {
+  # Run before any unload. Signature presence does not prove trust; the kernel
+  # still enforces trust at insertion, with rollback on failure.
+  local target="$1"
+  if { command -v mokutil >/dev/null && mokutil --sb-state 2>/dev/null | grep -qi 'SecureBoot enabled'; } ||
+     { [[ -r /sys/kernel/security/lockdown ]] && grep -Eq '\[(integrity|confidentiality)\]' /sys/kernel/security/lockdown; }; then
+    [[ -n "$(modinfo -F signer "$target")" ]] || die "Secure Boot/lockdown requires a signed, trusted module: $target. See setup/README.md."
+  fi
+}
+
 restore_previous_mode() {
   local previous_mode="$1"
 
@@ -293,6 +315,7 @@ ensure_native() {
   local state version flag srcversion expected_srcversion
 
   validate_native_module
+  require_signed_target "$NATIVE_MODULE"
   state="$(classify_loaded_module)"
   case "$state" in
     native)
@@ -340,8 +363,10 @@ ensure_emulated_wifi() {
   local state version flag srcversion expected_srcversion
 
   validate_artifact
-  validate_native_module
+  require_signed_target "$ARTIFACT"
   state="$(classify_loaded_module)"
+  # Only require native when it is currently loaded and rollback could need it.
+  [[ "$state" != native ]] || validate_native_module
   case "$state" in
     emulated_wifi)
       assert_module_idle
@@ -412,12 +437,13 @@ usage() {
   cat <<EOF
 Usage:
   $(basename "$0") status
-  $(basename "$0") verify
+  $(basename "$0") verify [native|emulated_wifi|all]
   $(basename "$0") ensure native|emulated_wifi
   $(basename "$0") rollback
 
-The native mode uses the distro/kernel-installed module. The emulated_wifi
-mode loads the repository artifact without installing or replacing that module.
+Native uses the installed module or the explicit BATADV_NATIVE_MODULE path.
+Emulated-WiFi uses the repository artifact and can work without native installed.
+Verification is read-only; ensure and rollback modify the running kernel.
 EOF
 }
 
@@ -428,10 +454,14 @@ case "$command_name" in
     print_status
     ;;
   verify)
-    [[ $# -eq 1 ]] || die "verify takes no arguments"
-    validate_native_module
-    validate_artifact
-    echo "[OK] Native and experimental module files passed validation"
+    [[ $# -le 2 ]] || die "verify accepts native, emulated_wifi or all"
+    case "${2:-all}" in
+      native) validate_native_module ;;
+      emulated_wifi) validate_artifact ;;
+      all) validate_native_module; validate_artifact ;;
+      *) die "verify accepts native, emulated_wifi or all" ;;
+    esac
+    echo "[OK] Module files passed validation: ${2:-all}"
     ;;
   ensure)
     [[ $# -eq 2 ]] || die "ensure requires native or emulated_wifi"

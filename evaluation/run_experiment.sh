@@ -1,4 +1,5 @@
 #!/bin/bash
+source "$(dirname "${BASH_SOURCE[0]}")/../scripts/runtime.sh"
 set -e
 
 SCENARIO=""
@@ -44,7 +45,8 @@ if (( START_RUN > 1 )); then
   CLEAN_RESULTS=0
 fi
 
-ROOT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
+ROOT_DIR="$MACE_ROOT"
+cd "$ROOT_DIR"
 SCENARIO_JSON_PATH="$ROOT_DIR/scenarios/$SCENARIO/scenario.json"
 
 if [[ ! -f "$SCENARIO_JSON_PATH" ]]; then

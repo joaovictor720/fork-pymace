@@ -11,6 +11,7 @@ from classes.auxiliar.tracer import Tracer
 from classes.nodes.gen_node import GenericNode
 from classes.mobility.node_mobility import Mobility
 from classes.bus.bus import Bus
+from classes.core_compat import add_node
 
 #Core libs
 from core.emulator.data import IpPrefixes, NodeOptions
@@ -25,7 +26,7 @@ from core.emane.models.tdma import EmaneTdmaModel
 from core.emane.nodes import EmaneNet
 
 #Other libs
-import json, sys, subprocess, os, traceback, pprint, threading, time
+import json, sys, subprocess, os, traceback, pprint, threading, time, shlex
 
 class Scenario():
   """ The Scenario class has the function of reading the scenario file
@@ -162,8 +163,8 @@ class Scenario():
         session (_type_): _description_
     """
     for node in self.mace_nodes:
-      node.options = NodeOptions(name=node.name, x=node.coordinates[0], y=node.coordinates[1])
-      core_node = session.add_node(CoreNode, options=node.options)
+      core_node = add_node(session, CoreNode, name=node.name,
+                           x=node.coordinates[0], y=node.coordinates[1])
       node.corenode = core_node
       node.gps = VirtualGPS(node.name, node.tag_number)
       node.gps.start()
@@ -228,8 +229,7 @@ class Scenario():
         session (_type_): _description_
     """
     for network in self.networks:
-      options = NodeOptions(name=network, x=0, y=0)
-      lan = session.add_node(WlanNode,options=options)
+      lan = add_node(session, WlanNode, name=network, x=0, y=0)
       self.wlans[network] = lan
       session.mobility.set_model_config(lan.id, BasicRangeModel.name,self.networks[network]['settings'])
       #config = session.emane.get_model_config(lan.id, EmaneIeee80211abgModel.name)
@@ -377,13 +377,10 @@ class Scenario():
     broadcast = '.'.join(broadcast)
     network_prefix = '.'.join(network_prefix)
     ###TODO Change this to do only on fixed nodes
-    shell = session.get_node(id, CoreNode).termcmdstring(sh="/bin/bash")
-    command = "modprobe batman-adv && batctl ra BATMAN_V && batctl if add eth0 && ip link set up bat0 && ip addr add " + ip + "/255.255.255.0 broadcast " + broadcast + " dev bat0"
-    shell += " -c '" + command + "'"
-    node = subprocess.Popen([
-                  "bash",
-                  "-c",
-                  shell], stdin=subprocess.PIPE, shell=False)
+    # The host runner has already selected and verified BATMAN V. Configure
+    # synchronously, so an error prevents applications from starting.
+    command = "ip link add bat0 type batadv && batctl meshif bat0 interface add eth0 && ip link set up bat0 && ip addr add " + ip + "/24 broadcast " + broadcast + " dev bat0"
+    session.get_node(id, CoreNode).cmd(command, shell=True)
 
   def start_etcd(self, session):
     """_summary_
@@ -423,7 +420,7 @@ class Scenario():
         application (_type_): _description_
     """
     shell = session.get_node(i, CoreNode).termcmdstring(sh="/bin/bash")
-    shell = shell.split(" ")
+    shell = shlex.split(shell)
     shell.append("-c")
     command = application
     shell.append(command)

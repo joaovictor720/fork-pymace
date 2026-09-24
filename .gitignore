@@ -104,6 +104,8 @@ celerybeat.pid
 # Environments
 .env
 .venv
+.build/
+disks/
 env/
 venv/
 ENV/
@@ -156,3 +158,12 @@ CMakeUserPresets.json
 mace.json
 scenarios/*/mobility_traces/
 *__expanded*
+
+# CRDT executables are built for each host by apps/crdt/build.sh
+/apps/crdt/broadcast/crdt_broadcast
+/apps/crdt/multiunicast/crdt_multiunicast
+/apps/crdt/rapid/crdt_rapid
+/apps/crdt/trickle/crdt_trickle
+/apps/crdt/usfd/crdt_usfd
+/apps/crdt/usfdx1/crdt_usfdx1
+/apps/crdt/usfdx3/crdt_usfdx3

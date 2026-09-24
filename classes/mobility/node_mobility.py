@@ -12,7 +12,7 @@ from apscheduler.schedulers.background import BackgroundScheduler
 from classes.mobility.pymobility.models.mobility import *
 from classes.mobility.pymace_mobility import *
 from classes.mobility.trace_mobility import TraceMobility
-from classes.interfaces import pprz_interface
+from classes.mobility.mobility import _load_pprz_interface
 
 class Mobility():
   """_summary_
@@ -108,6 +108,7 @@ class Mobility():
       self.mobility_object = tvc(len(self.core_nodes), dimensions=(self.x_dim , self.y_dim ), velocity=(self.velocity_lower, self.velocity_upper), seed=self.seed)
       self.mobility_thread.start()
     elif self.mobility_model.upper() == 'PAPARAZZI':
+      pprz_interface = _load_pprz_interface()
       self.PprzInterface = pprz_interface.Interface(None)
       self.PprzInterface.register_callback(self.paparazzi_mobility_update)
       self.PprzInterface.start()

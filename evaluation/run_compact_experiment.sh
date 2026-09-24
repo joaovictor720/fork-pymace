@@ -1,4 +1,5 @@
 #!/bin/bash
+source "$(dirname "${BASH_SOURCE[0]}")/../scripts/runtime.sh"
 set -euo pipefail
 
 usage() {
@@ -68,7 +69,7 @@ if [[ -z "$SCENARIO" || -z "$APP" || -z "$RUNS" || -z "$EXPORT_ROOT" ]]; then
   exit 1
 fi
 
-ROOT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
+ROOT_DIR="$MACE_ROOT"
 EXPANDED_SCENARIO_DIR="$ROOT_DIR/scenarios/${SCENARIO}__expanded"
 LOCAL_SCENARIO_RESULTS_DIR="$ROOT_DIR/results/${SCENARIO}__expanded"
 EXPORT_RESULTS_DIR="$EXPORT_ROOT/results"

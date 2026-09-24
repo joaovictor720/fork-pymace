@@ -48,17 +48,20 @@ class Mace():
       try:
         #TODO: remove and just run as HET
         self.emulator = Emulator(args.daemon)
+        self.emulator.web_enabled = args.daemon or args.web
         self.emulation_data = self.fetch_data()
-        self.daemon = Daemon(self.emulator, self.emulation_data, self.daemon_callback)
+        if self.emulator.web_enabled:
+          self.daemon = Daemon(self.emulator, self.emulation_data, self.daemon_callback)
         if args.daemon == True:
           self.emulator.set_daemon_socket(self.daemon.get_socket())
           logging.info("Starting MACE daemon")
           self.daemon.start()
         else:
           if args.scenario != None:
-            self.socket_thread = threading.Thread(target=self.daemon.start, args=(), daemon=True)
-            self.socket_thread.start()
-            self.emulator.set_daemon_socket(self.daemon.get_socket())
+            if args.web:
+              self.socket_thread = threading.Thread(target=self.daemon.start, args=(), daemon=True)
+              self.socket_thread.start()
+              self.emulator.set_daemon_socket(self.daemon.get_socket())
             self._setup_emulation(self.emulator, args.scenario)
             self._start(self.emulator, 1)
           else:
@@ -259,6 +262,7 @@ def parse_args():
   parser.add_argument("name", help="New application name", nargs='?')
   parser.add_argument("-s", "--scenario", help="Scenario name", type=str)
   parser.add_argument("-d", "--daemon", help="Daemon mode", default=False, action='store_true')
+  parser.add_argument("--web", help="Enable the optional web interface during a CLI run", action="store_true")
   parser.add_argument("-l", "--log", help="Log level", choices=['debug', 'info', 'warning', 'error', 'critical'],default="info")
   return parser.parse_args()
 
@@ -319,7 +323,8 @@ if __name__ == '__main__':
     check_root()
     #Load settings and get username
     main_settings = load_settings()
-    username = main_settings['username']
+    import getpass
+    username = os.environ.get("SUDO_USER") or getpass.getuser()
     #Get local directory
     localdir = os.path.dirname(os.path.abspath(__file__))
     #############################################################################

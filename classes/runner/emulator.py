@@ -9,6 +9,7 @@ __email__ = "brunobcf@gmail.com"
 
 
 import traceback, os, logging, time, subprocess, threading, sys
+from pathlib import Path
 from classes.runner.runner import Runner
 
 from ..interfaces import iosocket
@@ -53,8 +54,8 @@ class Emulator(Runner):
     self.core_nodes_fixed = []
     self.core_nodes_mobile = []
     self.daemon_mode = daemon
+    self.web_enabled = daemon
     self.running = False
-    self.try_to_clean()
     self.coreemu = CoreEmu()
     #self.setup(scenario)
 
@@ -64,6 +65,25 @@ class Emulator(Runner):
     Args:
         scenario_config (_type_): _description_
     """
+    # A direct pymace.py invocation must not silently use the wrong module.
+    # Selection is the host runner's responsibility; this check is read-only.
+    for network in scenario_config.get("networks", []):
+      if str(network.get("routing", "none")).lower() == "batman":
+        mode = network.get("hardif_behavior", "native")
+        status = Path(__file__).resolve().parents[2] / "kernel/batman-adv-emulated-wifi/module_status.py"
+        subprocess.run([sys.executable, str(status), "--requested-mode", mode,
+                        "--require-match"], check=True, stdout=subprocess.DEVNULL)
+        # batctl prints a formatted report, not just the selected algorithm.
+        # Read the default for new mesh interfaces directly, without sudo.
+        algorithm_path = Path("/sys/module/batman_adv/parameters/routing_algo")
+        try:
+          algorithm = algorithm_path.read_text(encoding="utf-8").strip()
+        except OSError as exc:
+          raise RuntimeError(f"Cannot read selected BATMAN routing algorithm from {algorithm_path}: {exc}") from exc
+        if algorithm != "BATMAN_V":
+          raise RuntimeError(
+            f"BATMAN_V must be selected by evaluation/run_scenario.sh before starting CORE; selected: {algorithm!r}"
+          )
     self.scenario = Scenario(scenario_config)
 
   def callback(self):
@@ -82,12 +102,19 @@ class Emulator(Runner):
     """
     #pass
     self.running = True
-    self.run()
+    try:
+      self.run()
+    finally:
+      if not self.daemon_mode:
+        self.coreemu.shutdown()
 
   def try_to_clean(self):
     """_summary_
     """
-    os.system("core-cleanup")
+    # Only clean up resources owned by this emulator. core-cleanup operates
+    # globally and can destroy unrelated sessions on a shared SSH host.
+    if hasattr(self, "coreemu"):
+      self.coreemu.shutdown()
     #os.system("sudo ip link delete ctrl0.1")
     #os.system("sudo ip link delete vetha.0.1")
     #os.system("sudo ip link delete vetha.1.1")  
@@ -108,8 +135,11 @@ class Emulator(Runner):
     #self.scenario.setup_wlan_emane(self.session)
     self.scenario.setup_links(self.session)
 
-    self.session.instantiate()
-    self.session.write_nodes()
+    errors = self.session.instantiate()
+    if errors:
+      raise RuntimeError(f"CORE could not start node services: {errors}")
+    if hasattr(self.session, "write_nodes"):
+      self.session.write_nodes()
 
   def configure_batman(self, network_prefix, list_of_nodes):
     """_summary_
@@ -182,8 +212,10 @@ class Emulator(Runner):
     self.scenario.tcpdump(self.session, simdir)
 
     #Start socketio thread
-    sthread = threading.Thread(target=self.server_thread, args=())
-    sthread.start()
+    sthread = None
+    if self.web_enabled:
+      sthread = threading.Thread(target=self.server_thread, args=())
+      sthread.start()
 
     #Start routing and applications
     self.scenario.start_routing(self.session)
@@ -203,7 +235,8 @@ class Emulator(Runner):
       except:
         logging.warning("Failed to shutdown emulation interface cleanly.", exc_info=True)
 
-      sthread.join(timeout=2)
+      if sthread is not None:
+        sthread.join(timeout=2)
 
       try:
         self.session.shutdown()
@@ -217,12 +250,16 @@ class Emulator(Runner):
 
       try:
         self.killsim()
-        os.system("chown -R " + self.scenario.username + ":" + self.scenario.username + " ./reports")
+        import pwd
+        owner = pwd.getpwnam(self.scenario.username)
+        subprocess.run(["chown", "-R", f"{owner.pw_uid}:{owner.pw_gid}",
+                        self.scenario.report_folder], check=True)
       except:
         pass
     else:
       self.running = False
-      sthread.join()
+      if sthread is not None:
+        sthread.join()
       self.coreemu.shutdown()
       self.scenario = None
       #self.try_to_clean()
