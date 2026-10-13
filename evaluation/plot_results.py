@@ -227,6 +227,8 @@ def _xlabel_for(prefix: str):
         return "Nodes per km$^2$"
     if prefix == "scalability":
         return "Number of Nodes"
+    if prefix.startswith("workload_diss_sweep"):
+        return "Dissemination rate (s$^{-1}$)"
     return "X"
 
 def _xcol_for(prefix: str, df_prefix: pd.DataFrame):

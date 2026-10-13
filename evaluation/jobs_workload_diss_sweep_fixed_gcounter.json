@@ -1,0 +1,10 @@
+{
+  "default_runs": 10,
+  "jobs": [
+    { "scenario": "workload_diss_sweep_fixed_batman", "app": "broadcast" },
+    { "scenario": "workload_diss_sweep_fixed_batman", "app": "multiunicast" },
+    { "scenario": "workload_diss_sweep_fixed_ip", "app": "rapid" },
+    { "scenario": "workload_diss_sweep_fixed_ip", "app": "trickle" },
+    { "scenario": "workload_diss_sweep_fixed_ip", "app": "usfdx3" }
+  ]
+}
