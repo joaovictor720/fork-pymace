@@ -225,7 +225,7 @@ def _format_xticks(vals):
 def _xlabel_for(prefix: str):
     if prefix in {"density", "area"}:
         return "Nodes per km$^2$"
-    if prefix == "scalability":
+    if prefix.startswith("scalability"):
         return "Number of Nodes"
     if prefix.startswith("workload_diss_sweep"):
         return "Dissemination rate (s$^{-1}$)"
@@ -234,7 +234,7 @@ def _xlabel_for(prefix: str):
 def _xcol_for(prefix: str, df_prefix: pd.DataFrame):
     if prefix in {"density", "area"}:
         return "density" if "density" in df_prefix.columns else "nodes"
-    if prefix == "scalability":
+    if prefix.startswith("scalability"):
         return "nodes"
     for c in ["density", "nodes", "ops_per_sec", "diss_per_sec", "duration", "cooldown", "error"]:
         if c in df_prefix.columns and pd.to_numeric(df_prefix[c], errors="coerce").dropna().nunique() >= 2:

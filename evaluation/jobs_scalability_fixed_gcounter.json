@@ -1,0 +1,10 @@
+{
+  "default_runs": 10,
+  "jobs": [
+    { "scenario": "scalability_fixed_batman", "app": "broadcast" },
+    { "scenario": "scalability_fixed_batman", "app": "multiunicast" },
+    { "scenario": "scalability_fixed_ip", "app": "rapid" },
+    { "scenario": "scalability_fixed_ip", "app": "trickle" },
+    { "scenario": "scalability_fixed_ip", "app": "usfdx3" }
+  ]
+}
